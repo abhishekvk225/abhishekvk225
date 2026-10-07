@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Restore
+        run: dotnet restore NexaVerify.slnx
+      - name: Build (warnings are errors)
+        run: dotnet build NexaVerify.slnx --no-restore -c Release
+      - name: Test (Testcontainers starts SQL Server via Docker)
+        run: dotnet test NexaVerify.slnx --no-build -c Release --logger "trx" --collect:"XPlat Code Coverage" --results-directory ./TestResults
+      - name: Vulnerable packages
+        run: |
+          dotnet list NexaVerify.slnx package --vulnerable --include-transitive 2>&1 | tee vuln.txt
+          ! grep -q "has the following vulnerable packages" vuln.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: TestResults
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

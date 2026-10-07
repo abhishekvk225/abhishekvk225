@@ -1,0 +1,11 @@
+{
+  "name": "NexaVerify",
+  "image": "mcr.microsoft.com/devcontainers/dotnet:10.0",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "postCreateCommand": "dotnet restore NexaVerify.slnx",
+  "customizations": {
+    "vscode": { "extensions": ["ms-dotnettools.csdevkit", "editorconfig.editorconfig"] }
+  }
+}

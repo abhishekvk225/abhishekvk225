@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsTestSupport>true</IsTestSupport>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Infrastructure\NexaVerify.Infrastructure.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Testcontainers.MsSql" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+    <PackageReference Include="xunit" />
+  </ItemGroup>
+</Project>

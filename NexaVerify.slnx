@@ -1,0 +1,37 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/Api/">
+    <Project Path="src/Api/NexaVerify.Api.csproj" />
+  </Folder>
+  <Folder Name="/src/Application/">
+    <Project Path="src/Application/NexaVerify.Application.csproj" />
+  </Folder>
+  <Folder Name="/src/Contracts/">
+    <Project Path="src/Contracts/NexaVerify.Contracts.csproj" />
+  </Folder>
+  <Folder Name="/src/Domain/">
+    <Project Path="src/Domain/NexaVerify.Domain.csproj" />
+  </Folder>
+  <Folder Name="/src/Infrastructure/">
+    <Project Path="src/Infrastructure/NexaVerify.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/" />
+  <Folder Name="/tests/Api.IntegrationTests/">
+    <Project Path="tests/Api.IntegrationTests/NexaVerify.Api.IntegrationTests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Application.UnitTests/">
+    <Project Path="tests/Application.UnitTests/NexaVerify.Application.UnitTests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Architecture.Tests/">
+    <Project Path="tests/Architecture.Tests/NexaVerify.Architecture.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Domain.UnitTests/">
+    <Project Path="tests/Domain.UnitTests/NexaVerify.Domain.UnitTests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Infrastructure.IntegrationTests/">
+    <Project Path="tests/Infrastructure.IntegrationTests/NexaVerify.Infrastructure.IntegrationTests.csproj" />
+  </Folder>
+  <Folder Name="/tests/TestSupport/">
+    <Project Path="tests/TestSupport/NexaVerify.TestSupport.csproj" />
+  </Folder>
+</Solution>
