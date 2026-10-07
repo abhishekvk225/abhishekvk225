@@ -1,0 +1,8 @@
+@{ var style = StatusMap.Resolve(Kind, Value); }
+<MudChip T="string" Size="Size.Small" Color="@style.Color" Variant="Variant.Text" Icon="@style.Icon" Class="nv-status-chip" Style="font-weight: 600;" tabindex="-1" data-status="@style.Label">@style.Label</MudChip>
+
+@code {
+    [Parameter, EditorRequired] public StatusKind Kind { get; set; }
+
+    [Parameter, EditorRequired] public string? Value { get; set; }
+}

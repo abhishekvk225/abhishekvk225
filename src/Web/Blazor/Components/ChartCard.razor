@@ -1,0 +1,65 @@
+<MudPaper Class="nv-card nv-card-pad" Elevation="0">
+    <div class="d-flex align-start justify-space-between mb-3" style="gap: var(--nv-space-3);">
+        <div style="min-width: 0;">
+            <MudText Typo="Typo.h5" HtmlTag="h2">@Title</MudText>
+            @if (!string.IsNullOrWhiteSpace(Subtitle))
+            {
+                <MudText Class="nv-muted" Typo="Typo.body2">@Subtitle</MudText>
+            }
+        </div>
+        @if (TableContent is not null && !Loading && Error is null)
+        {
+            <MudToggleIconButton Toggled="_showTable" ToggledChanged="OnToggle"
+                                 Icon="@Icons.Material.Outlined.TableChart" ToggledIcon="@Icons.Material.Outlined.BarChart"
+                                 title="@(_showTable ? "Show chart" : "Show data table")"
+                                 aria-label="@(_showTable ? "Show chart" : "Show data table")" />
+        }
+    </div>
+
+    @if (Loading)
+    {
+        <SkeletonChart Height="Height" />
+    }
+    else if (Error is not null)
+    {
+        <ErrorState Error="Error" OnRetry="OnRetry" />
+    }
+    else if (IsEmpty)
+    {
+        <EmptyState Icon="@Icons.Material.Outlined.QueryStats" Title="No data for this period" Message="Try a longer time range." />
+    }
+    else if (_showTable && TableContent is not null)
+    {
+        <div data-testid="chart-table">@TableContent</div>
+    }
+    else
+    {
+        <div data-testid="chart-body" style="min-height: @(Height)px;">@ChildContent</div>
+    }
+</MudPaper>
+
+@code {
+    private bool _showTable;
+
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    [Parameter] public string? Subtitle { get; set; }
+
+    [Parameter] public bool Loading { get; set; }
+
+    [Parameter] public bool IsEmpty { get; set; }
+
+    [Parameter] public ApiError? Error { get; set; }
+
+    [Parameter] public EventCallback OnRetry { get; set; }
+
+    [Parameter] public int Height { get; set; } = 260;
+
+    /// <summary>The chart itself (usually a MudChart). Always supply <see cref="TableContent"/> so the data is reachable without sight.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>Accessible tabular alternative of the same data; enables the chart/table toggle.</summary>
+    [Parameter] public RenderFragment? TableContent { get; set; }
+
+    private void OnToggle(bool value) => _showTable = value;
+}

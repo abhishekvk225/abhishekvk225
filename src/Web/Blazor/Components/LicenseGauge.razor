@@ -1,0 +1,77 @@
+@inject TimeProvider Clock
+
+<div class="d-flex align-center flex-wrap" style="gap: var(--nv-space-5);" data-testid="license-gauge" data-level="@Level">
+    <div class="nv-gauge-wrap" role="img" aria-label="@Summary">
+        <MudProgressCircular Value="@Percent" Min="0" Max="100" Color="@LevelColor" Size="Size.Large" StrokeWidth="5" />
+        <div class="nv-gauge-center">
+            <span class="nv-gauge-pct" data-testid="gauge-percent">@Math.Round(Percent)%</span>
+            <MudText Class="nv-muted" Typo="Typo.caption">left</MudText>
+        </div>
+    </div>
+    <div style="min-width: 0; flex: 1 1 220px;">
+        <div class="d-flex align-center" style="gap: var(--nv-space-2);">
+            <MudIcon Icon="@LevelIcon" Color="@LevelColor" Size="Size.Small" />
+            <MudText Typo="Typo.h5" HtmlTag="p" data-testid="gauge-summary">@Summary</MudText>
+        </div>
+        <MudText Typo="Typo.body2" Class="nv-muted mt-1" data-testid="gauge-help">@HelpText</MudText>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public long Remaining { get; set; }
+
+    [Parameter, EditorRequired] public long Total { get; set; }
+
+    [Parameter] public DateTimeOffset? ExpiresAt { get; set; }
+
+    /// <summary>Overrides the clock (tests, previews).</summary>
+    [Parameter] public DateTimeOffset? Now { get; set; }
+
+    internal LicenseHealthLevel Level => LicenseHealth.Evaluate(Remaining, Total, Days);
+
+    private double? Days => LicenseHealth.DaysLeft(ExpiresAt, Now ?? Clock.GetUtcNow());
+
+    private double Percent => LicenseHealth.PercentLeft(Remaining, Total);
+
+    private Color LevelColor => Level switch
+    {
+        LicenseHealthLevel.Critical => Color.Error,
+        LicenseHealthLevel.Warning => Color.Warning,
+        _ => Color.Success,
+    };
+
+    private string LevelIcon => Level switch
+    {
+        LicenseHealthLevel.Critical => Icons.Material.Filled.Error,
+        LicenseHealthLevel.Warning => Icons.Material.Filled.Warning,
+        _ => Icons.Material.Filled.CheckCircle,
+    };
+
+    private string Summary
+    {
+        get
+        {
+            var credits = $"{UiText.Number(Remaining)} of {UiText.Number(Total)} credits left";
+            if (Days is not { } d)
+            {
+                return credits;
+            }
+
+            if (d <= 0)
+            {
+                return $"{credits} · expired";
+            }
+
+            var whole = (int)Math.Floor(d);
+            return whole < 1 ? $"{credits} · expires today" : $"{credits} · expires in {UiText.Plural(whole, "day")}";
+        }
+    }
+
+    private string HelpText => Level switch
+    {
+        LicenseHealthLevel.Critical when Days is <= 0 => "Your licence has expired and face checks are paused. Contact your account manager to renew.",
+        LicenseHealthLevel.Critical => "You are almost out of credits or time. Contact your account manager soon so checks do not stop.",
+        LicenseHealthLevel.Warning => "Plan ahead: credits or time are running lower than usual. Consider a top-up or renewal.",
+        _ => "You are all set. Each face check uses credits from this balance.",
+    };
+}

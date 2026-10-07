@@ -1,0 +1,71 @@
+@* Thin wrapper over MudChart so pages never touch chart-library details. Colours come from the theme palette (NexaTheme.ChartPalette). *@
+<div role="img" aria-label="@Description" data-testid="simple-chart">
+    @if (Kind == ChartKind.Bar)
+    {
+        var points = Series.FirstOrDefault()?.Points ?? [];
+        var max = points.Count == 0 ? 1 : Math.Max(1, points.Max(p => p.Value));
+        <ul class="nv-bars">
+            @foreach (var point in points)
+            {
+                <li>
+                    <span class="nv-bar-label" title="@point.Label">@point.Label</span>
+                    <span class="nv-bar-track" aria-hidden="true"><span class="nv-bar-fill" style="@($"display:block;width:{(point.Value / max * 100).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}%")"></span></span>
+                    <span class="nv-bar-value">@UiText.Number((long)point.Value)</span>
+                </li>
+            }
+        </ul>
+    }
+    else if (Kind == ChartKind.Donut)
+    {
+        <MudChart T="double" ChartType="ChartType.Donut" ChartSeries="_donut" ChartLabels="_labels" ChartOptions="_options" Width="@(Size + "px")" Height="@(Size + "px")" LegendPosition="Position.Bottom" />
+    }
+    else
+    {
+        <MudChart T="double" ChartType="ChartType.Line" ChartSeries="_cartesian" ChartLabels="_labels"
+                  ChartOptions="_lineOptions" Width="100%" Height="@(Size + "px")" LegendPosition="Position.Bottom" />
+    }
+</div>
+
+@code {
+    private List<ChartSeries<double>> _cartesian = [];
+    private List<ChartSeries<double>> _donut = [];
+    private string[] _labels = [];
+    private readonly ChartOptions _options = new() { ChartPalette = NexaTheme.ChartPalette, ShowLegend = true };
+    private readonly LineChartOptions _lineOptions = new() { ChartPalette = NexaTheme.ChartPalette, ShowLegend = true, LineStrokeWidth = 2.5, YAxisLines = true, YAxisRequireZeroPoint = true, YAxisFormat = "N0" };
+
+    [Parameter, EditorRequired] public ChartKind Kind { get; set; }
+
+    /// <summary>Line/Bar: one entry per series, sharing the first series' labels. Donut: each series' first point is one slice.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<TrendSeries> Series { get; set; } = [];
+
+    /// <summary>Plain-language summary for screen readers (the data table toggle on <see cref="ChartCard"/> gives the numbers).</summary>
+    [Parameter, EditorRequired] public string Description { get; set; } = string.Empty;
+
+    [Parameter] public int Size { get; set; } = 260;
+
+    protected override void OnParametersSet()
+    {
+        if (Kind == ChartKind.Donut)
+        {
+            _labels = Series.Select(s => s.Name).ToArray();
+            _donut = [new ChartSeries<double> { Name = "Total", Data = Series.Select(s => s.Points.FirstOrDefault()?.Value ?? 0).ToArray() }];
+        }
+        else
+        {
+            _labels = ThinLabels(Series.FirstOrDefault()?.Points.Select(p => p.Label).ToArray() ?? []);
+            _cartesian = Series.Select(s => new ChartSeries<double> { Name = s.Name, Data = s.Points.Select(p => p.Value).ToArray() }).ToList();
+        }
+    }
+
+    /// <summary>Keeps at most ~8 x-axis labels so long ranges stay readable (the data table has every value).</summary>
+    private static string[] ThinLabels(string[] labels)
+    {
+        if (labels.Length <= 8)
+        {
+            return labels;
+        }
+
+        var step = (int)Math.Ceiling(labels.Length / 8.0);
+        return labels.Select((l, i) => i % step == 0 ? l : string.Empty).ToArray();
+    }
+}

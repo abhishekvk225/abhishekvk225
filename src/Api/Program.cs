@@ -1,22 +1,26 @@
-using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using NexaVerify.Api.Configuration;
-using NexaVerify.Api.Filters;
 using NexaVerify.Api.Http;
 using NexaVerify.Api.Logging;
 using NexaVerify.Api.Middleware;
+using NexaVerify.Api.Startup;
 using NexaVerify.Application;
 using NexaVerify.Application.Abstractions;
-using NexaVerify.Application.Common;
-using NexaVerify.Contracts.Common;
 using NexaVerify.Infrastructure;
 using NexaVerify.Infrastructure.Persistence;
+using NexaVerify.Infrastructure.Persistence.Guards;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+
+if (builder.Environment.IsProduction() && builder.Configuration["AllowedHosts"] is null or "" or "*")
+{
+    throw new InvalidOperationException("AllowedHosts must list the real host names in Production ('*' disables host-header validation).");
+}
 
 builder.Host.UseSerilog((context, services, logger) => logger
     .ReadFrom.Configuration(context.Configuration)
@@ -27,96 +31,65 @@ builder.Host.UseSerilog((context, services, logger) => logger
 
 builder.WebHost.ConfigureKestrel((context, kestrel) =>
 {
-    kestrel.AddServerHeader = false;
     var limits = context.Configuration.GetSection(RequestLimitsOptions.SectionName).Get<RequestLimitsOptions>() ?? new RequestLimitsOptions();
+    kestrel.AddServerHeader = false;
     kestrel.Limits.MaxRequestBodySize = limits.MaxRequestBodyBytes;
+    kestrel.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(limits.RequestHeadersTimeoutSeconds);
+    kestrel.Limits.MaxRequestHeadersTotalSize = limits.MaxRequestHeadersTotalSizeBytes;
+    kestrel.Limits.MinRequestBodyDataRate = new Microsoft.AspNetCore.Server.Kestrel.Core.MinDataRate(limits.MinRequestBodyBytesPerSecond, TimeSpan.FromSeconds(10));
 });
 
-// Typed, validated configuration (fail fast at startup).
-builder.Services.AddOptions<SecurityHeadersOptions>().Bind(builder.Configuration.GetSection(SecurityHeadersOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
-builder.Services.AddOptions<RequestLimitsOptions>().Bind(builder.Configuration.GetSection(RequestLimitsOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
-builder.Services.AddOptions<HostingOptions>().Bind(builder.Configuration.GetSection(HostingOptions.SectionName)).ValidateOnStart();
-builder.Services.AddOptions<CorsAllowListOptions>().Bind(builder.Configuration.GetSection(CorsAllowListOptions.SectionName)).ValidateOnStart();
-
+builder.Services.AddApiOptions(builder.Configuration);
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>(); // overrides Infrastructure's anonymous default
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
+// Must come after AddInfrastructure: replaces its anonymous fallback with the HTTP-backed principal.
+builder.Services.Replace(ServiceDescriptor.Scoped<ICurrentUser, HttpCurrentUser>());
+builder.Services.Replace(ServiceDescriptor.Scoped<IRequestInfo, HttpRequestInfo>());
 
-builder.Services
-    .AddControllers(options => options.Filters.Add<ValidationFilter>())
-    .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()))
-    .ConfigureApiBehaviorOptions(options =>
-    {
-        // Model-binding failures use the same problem format as everything else.
-        options.InvalidModelStateResponseFactory = context =>
-        {
-            var errors = context.ModelState
-                .Where(kv => kv.Value?.Errors.Count > 0)
-                .ToDictionary(
-                    kv => kv.Key,
-                    kv => kv.Value!.Errors.Select(e => string.IsNullOrWhiteSpace(e.ErrorMessage) ? "Invalid value." : e.ErrorMessage).ToArray());
-            var problem = ApiProblem.Create(context.HttpContext, Error.Validation("One or more validation errors occurred.", errors));
-            return new ObjectResult(problem) { StatusCode = problem.Status, ContentTypes = { "application/problem+json" } };
-        };
-    });
-
-builder.Services.AddProblemDetails();
-builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
-
-builder.Services.AddAuthentication(NoAuthenticationHandler.SchemeName)
-    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, NoAuthenticationHandler>(NoAuthenticationHandler.SchemeName, null);
-builder.Services.AddAuthorization(options =>
-{
-    // Deny by default: every endpoint requires authentication unless it opts out with [AllowAnonymous].
-    options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
-        .RequireAuthenticatedUser()
-        .Build();
-});
-
-var allowedOrigins = builder.Configuration.GetSection(CorsAllowListOptions.SectionName).Get<CorsAllowListOptions>()?.AllowedOrigins ?? [];
-if (allowedOrigins.Any(o => o.Trim() == "*"))
-{
-    throw new InvalidOperationException("Cors:AllowedOrigins must list explicit origins; '*' is not permitted.");
-}
-
-builder.Services.AddCors(options => options.AddPolicy(CorsAllowListOptions.PolicyName, policy =>
-{
-    if (allowedOrigins.Length > 0)
-    {
-        policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod();
-    }
-}));
-
+builder.Services.AddApiControllers(builder.Configuration);
+builder.Services.AddApiAuthorization();
+builder.Services.AddApiCors(builder.Configuration, builder.Environment);
+builder.Services.AddApiRateLimiting(builder.Configuration);
+builder.Services.AddApiForwardedHeaders(builder.Configuration);
 builder.Services.AddHealthChecks()
-    .AddDbContextCheck<AppDbContext>("database", tags: ["ready"]);
-
+    .AddDbContextCheck<AppDbContext>("database", tags: ["ready"])
+    .AddCheck<TenantProtectionHealthCheck>("tenant-protection", tags: ["ready"]);
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-var hosting = app.Services.GetRequiredService<IOptions<HostingOptions>>().Value;
+var forwarded = app.Services.GetRequiredService<IOptions<ForwardedHeadersSettings>>().Value;
+if (forwarded.Enabled)
+{
+    app.UseForwardedHeaders();
+}
 
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseExceptionHandler();
-if (!app.Environment.IsDevelopment())
-{
-    app.UseHsts();
-}
 
-if (hosting.RedirectToHttps)
+if (app.Services.GetRequiredService<IOptions<HostingOptions>>().Value.RedirectToHttps)
 {
-    app.UseHttpsRedirection();
+    app.UseMiddleware<HttpsEnforcementMiddleware>();
 }
 
 app.UseSerilogRequestLogging(options =>
 {
     // Route template only: raw paths/queries can carry identifiers or PII.
-    options.MessageTemplate = "HTTP {RequestMethod} {RequestPath} responded {StatusCode} in {Elapsed:0.0} ms";
+    options.MessageTemplate = "HTTP {RequestMethod} {RouteTemplate} responded {StatusCode} in {Elapsed:0.0000} ms";
     options.EnrichDiagnosticContext = (diagnostic, http) =>
-        diagnostic.Set("RouteTemplate", http.GetEndpoint()?.DisplayName ?? "unmatched");
+    {
+        diagnostic.Set("RouteTemplate", (http.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText ?? "unmatched");
+        var user = http.RequestServices.GetService<ICurrentUser>();
+        if (user is { IsAuthenticated: true })
+        {
+            diagnostic.Set("ActorType", user.ActorType.ToString());
+            diagnostic.Set("ActorId", user.ActorId);
+            diagnostic.Set("ClientId", user.ClientId);
+        }
+    };
 });
 
 app.UseStatusCodePages(async context =>
@@ -127,23 +100,18 @@ app.UseStatusCodePages(async context =>
         return;
     }
 
-    var code = http.Response.StatusCode switch
-    {
-        401 => ErrorCodes.Unauthenticated,
-        403 => ErrorCodes.Forbidden,
-        404 => ErrorCodes.NotFound,
-        405 => ErrorCodes.NotFound,
-        _ => ErrorCodes.InternalError,
-    };
-    var problem = ApiProblem.Create(http, http.Response.StatusCode, code, "The request could not be completed.");
+    var status = http.Response.StatusCode;
+    var problem = ApiProblem.Create(http, status, ApiProblem.CodeForStatus(status), "The request could not be completed.");
     http.Response.ContentType = "application/problem+json";
     await http.Response.WriteAsJsonAsync(problem, options: null, contentType: "application/problem+json");
 });
 
-if (!app.Environment.IsProduction())
+app.UseRateLimiter();
+app.UseRequestTimeouts();
+
+if (app.Environment.IsDevelopment())
 {
-    // Interactive docs are never mapped in production. Registered before authorization so the static UI assets load;
-    // the OpenAPI document endpoint itself is mapped below.
+    // Interactive docs exist only in Development. Registered before authorization so the static UI assets load.
     app.UseSwaggerUI(options => options.SwaggerEndpoint("/openapi/v1.json", "NexaVerify API v1"));
 }
 
@@ -154,7 +122,7 @@ app.UseMiddleware<RequestContextLoggingMiddleware>();
 
 app.MapControllers();
 
-if (!app.Environment.IsProduction())
+if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi().AllowAnonymous();
 }

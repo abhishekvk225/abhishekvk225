@@ -5,8 +5,8 @@ Gate legend: ✅ passed · 🔄 in progress · ⬜ not started · ❌ failed. A 
 | Module | Design | DB | Backend | UI | Security | QA | Code review | DevOps | Final regression | Complete |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | M0 Design docs | 🔄 (awaiting your sign-off) | – | – | – | 🔄 | – | 🔄 | – | – | ⬜ |
-| M1 Foundation | ✅ | ✅ (no entities yet) | ✅ | – | 🔄 | 🔄 | 🔄 | 🔄 | ⬜ | ⬜ |
-| M2 Identity & Access | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
+| M1 Foundation | ✅ | ✅ | ✅ | – | ✅ conditions fixed (re-verify in M2 gate) | ✅ | ✅ changes applied | 🔄 | ⬜ | ⬜ |
+| M2 Identity & Access | ✅ | ✅ | ✅ | 🔄 UI shell+components done; screens wire to real API in M8 | 🔄 | 🔄 | 🔄 | ⬜ | ⬜ | ⬜ |
 | M3 Client Management | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M4 Licensing & Metering | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M5 Face Recognition | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |

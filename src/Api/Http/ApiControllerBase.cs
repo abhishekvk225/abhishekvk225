@@ -13,13 +13,5 @@ public abstract class ApiControllerBase : ControllerBase
     protected IActionResult ToActionResult<T>(Result<T> result, Func<T, IActionResult>? onSuccess = null) =>
         result.IsSuccess ? (onSuccess?.Invoke(result.Value) ?? Ok(result.Value)) : ProblemFor(result.Error!);
 
-    protected IActionResult ProblemFor(Error error)
-    {
-        var problem = ApiProblem.Create(HttpContext, error);
-        return new ObjectResult(problem)
-        {
-            StatusCode = problem.Status,
-            ContentTypes = { "application/problem+json" },
-        };
-    }
+    protected IActionResult ProblemFor(Error error) => ApiProblem.ToResult(HttpContext, error);
 }

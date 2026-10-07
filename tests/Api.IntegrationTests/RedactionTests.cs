@@ -64,4 +64,62 @@ public class RedactionTests
         rendered.ShouldNotContain("tok_123");
         rendered.ShouldContain("a@b.c");
     }
+
+    public sealed class UploadDto
+    {
+        public string Name { get; set; } = "photo.jpg";
+
+        public byte[] Content { get; set; } = new byte[4096];
+
+        public Dictionary<string, string> Headers { get; set; } = new() { ["Authorization"] = "Bearer abc.def.ghi", ["Accept"] = "json" };
+    }
+
+    [Fact]
+    public void Binary_payloads_and_secret_dictionary_entries_are_masked()
+    {
+        var (logger, sink) = Create();
+
+        logger.Information("upload {@Upload}", new UploadDto());
+
+        var rendered = sink.Events.Single().RenderMessage();
+        rendered.ShouldNotContain("0000");
+        rendered.ShouldContain("Content: \"***\"");
+        rendered.ShouldNotContain("abc.def.ghi");
+        rendered.ShouldContain("json");
+    }
+
+    [Fact]
+    public void Plain_dictionaries_with_sensitive_keys_are_masked()
+    {
+        var (logger, sink) = Create();
+
+        logger.Information("bag {@Bag}", new Dictionary<string, string> { ["password"] = "pw1", ["user"] = "ada" });
+
+        var rendered = sink.Events.Single().RenderMessage();
+        rendered.ShouldNotContain("pw1");
+        rendered.ShouldContain("ada");
+    }
+
+    [Theory]
+    [InlineData("Password", true)]
+    [InlineData("RefreshToken", true)]
+    [InlineData("ConnectionString", true)]
+    [InlineData("Hash", true)]
+    [InlineData("Code", true)]
+    [InlineData("Name", false)]
+    [InlineData("Pinned", false)]
+    public void Sensitive_name_detection(string name, bool sensitive)
+    {
+        SensitiveDataDestructuringPolicy.IsSensitiveName(name).ShouldBe(sensitive);
+    }
+
+    [Fact]
+    public void Exceptions_are_left_to_serilog()
+    {
+        var (logger, sink) = Create();
+
+        logger.Error(new NexaVerify.Domain.Common.DomainException("X", "bad"), "failed {@Ex}", new NexaVerify.Domain.Common.DomainException("Y", "worse"));
+
+        sink.Events.Single().Exception.ShouldNotBeNull();
+    }
 }

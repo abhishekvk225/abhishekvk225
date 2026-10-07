@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <!-- BFF rule (docs/01 §2): the web app only knows the wire contracts. -->
+    <ProjectReference Include="..\..\Contracts\NexaVerify.Contracts.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="MudBlazor" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="NexaVerify.Web.ComponentTests" />
+  </ItemGroup>
+</Project>

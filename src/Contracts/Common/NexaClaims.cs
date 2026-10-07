@@ -8,7 +8,9 @@ public static class NexaClaims
     public const string Role = "role";
     public const string ActorType = "actor";
     public const string SecurityVersion = "sv";
+    public const string MustChangePassword = "mcp";
     public const string PlatformActor = "platform";
+    public const string ApiKeyActor = "apikey";
 }
 
 public static class HttpHeaderNames

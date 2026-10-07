@@ -2,7 +2,7 @@ using NexaVerify.Application.Abstractions;
 using NexaVerify.Infrastructure.Tenancy;
 using NexaVerify.TestSupport;
 
-namespace NexaVerify.Infrastructure.IntegrationTests.Tenancy;
+namespace NexaVerify.Infrastructure.UnitTests.Tenancy;
 
 public class TenantContextTests
 {
@@ -61,7 +61,7 @@ public class TenantContextTests
             }
 
             tenant.ClientId.ShouldBe(a);
-            using (tenant.BeginPlatform())
+            using (tenant.BeginPlatform("test"))
             {
                 tenant.IsPlatform.ShouldBeTrue();
                 tenant.ClientId.ShouldBeNull();

@@ -35,6 +35,7 @@ public class PipelineTests : IClassFixture<ApiFactory>
         response.Headers.GetValues("Cache-Control").ShouldBe(["no-store"]);
         response.Headers.Contains("Server").ShouldBeFalse();
         response.Headers.Contains(HttpHeaderNames.CorrelationId).ShouldBeTrue();
+        (await response.Content.ReadAsStringAsync()).ShouldNotContain("Development");
     }
 
     [Fact]
@@ -132,8 +133,8 @@ public class PipelineTests : IClassFixture<ApiFactory>
         var problem = await ReadProblemAsync(response);
         problem.GetProperty("code").GetString().ShouldBe(ErrorCodes.ValidationFailed);
         var errors = problem.GetProperty("errors");
-        errors.GetProperty("Name")[0].GetString().ShouldBe("Name is required.");
-        errors.GetProperty("Age")[0].GetString().ShouldBe("Must be an adult.");
+        errors.GetProperty("name")[0].GetString().ShouldBe("Name is required.");
+        errors.GetProperty("age")[0].GetString().ShouldBe("Must be an adult.");
     }
 
     [Fact]
@@ -152,7 +153,7 @@ public class PipelineTests : IClassFixture<ApiFactory>
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         var problem = await ReadProblemAsync(response);
         problem.GetProperty("code").GetString().ShouldBe(ErrorCodes.ValidationFailed);
-        problem.GetProperty("errors").TryGetProperty("Code", out _).ShouldBeTrue();
+        problem.GetProperty("errors").TryGetProperty("code", out _).ShouldBeTrue();
     }
 
     [Theory]
@@ -232,5 +233,18 @@ public class PipelineTests : IClassFixture<ApiFactory>
         (await doc.Content.ReadAsStringAsync()).ShouldContain("/api/v1/system/info");
 
         (await _client.GetAsync("/swagger/index.html")).StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Page_requests_bind_from_the_query_string_and_are_clamped()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, "/test/page?pageSize=2000&page=3&search=ada");
+        request.Headers.Add(TestAuthHandler.ClientHeader, Guid.NewGuid().ToString());
+
+        var body = await (await _client.SendAsync(request)).Content.ReadFromJsonAsync<JsonElement>();
+
+        body.GetProperty("page").GetInt32().ShouldBe(3);
+        body.GetProperty("search").GetString().ShouldBe("ada");
+        body.GetProperty("skip").GetInt32().ShouldBe(2 * 100); // pageSize clamped to 100
     }
 }

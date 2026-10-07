@@ -8,5 +8,6 @@ public interface ITenantScope
 {
     IDisposable BeginTenant(Guid clientId);
 
-    IDisposable BeginPlatform();
+    /// <summary>Enters platform scope. <paramref name="reason"/> is logged; callers are restricted by an architecture test.</summary>
+    IDisposable BeginPlatform(string reason);
 }

@@ -1,0 +1,38 @@
+@* Accessible data-table alternative for a chart. *@
+<div class="nv-table-wrap" style="display:block;">
+    <table class="nv-table nv-dense" aria-label="@Caption">
+        <thead>
+            <tr>
+                <th scope="col">@LabelHeader</th>
+                @foreach (var s in Series)
+                {
+                    <th scope="col" style="text-align:right">@s.Name</th>
+                }
+            </tr>
+        </thead>
+        <tbody>
+            @if (Series.Count > 0)
+            {
+                @for (var i = 0; i < Series[0].Points.Count; i++)
+                {
+                    var index = i;
+                    <tr>
+                        <td>@Series[0].Points[index].Label</td>
+                        @foreach (var s in Series)
+                        {
+                            <td style="text-align:right; font-variant-numeric: tabular-nums;">@(index < s.Points.Count ? UiText.Number((long)s.Points[index].Value) : "—")</td>
+                        }
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<TrendSeries> Series { get; set; } = [];
+
+    [Parameter] public string LabelHeader { get; set; } = "Date";
+
+    [Parameter] public string Caption { get; set; } = "Chart data";
+}

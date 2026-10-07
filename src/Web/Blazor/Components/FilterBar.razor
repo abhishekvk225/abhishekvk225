@@ -1,0 +1,48 @@
+<div class="d-flex flex-wrap align-center" style="gap: var(--nv-space-3);" role="search" data-testid="filter-bar">
+    <div style="min-width: 220px; flex: 1 1 260px; max-width: 420px;">
+    <MudTextField T="string" Value="_search" ValueChanged="OnSearchChanged" DebounceInterval="@DebounceMs"
+                  Label="@SearchLabel" Placeholder="@SearchPlaceholder" Variant="Variant.Outlined" Margin="Margin.Dense"
+                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search" AdornmentAriaLabel="Search"
+                  Clearable Immediate="true" />
+    </div>
+    @Filters
+    @if (HasActiveFilters)
+    {
+        <MudButton Variant="Variant.Text" Color="Color.Default" StartIcon="@Icons.Material.Outlined.FilterAltOff" OnClick="ResetAsync">Clear filters</MudButton>
+    }
+</div>
+
+@code {
+    private string? _search;
+
+    [Parameter] public string SearchLabel { get; set; } = "Search";
+
+    [Parameter] public string? SearchPlaceholder { get; set; }
+
+    [Parameter] public int DebounceMs { get; set; } = 350;
+
+    /// <summary>Extra filter controls (selects, chips). The page owns their state.</summary>
+    [Parameter] public RenderFragment? Filters { get; set; }
+
+    /// <summary>Tell the bar that page-owned filters are active so "Clear filters" shows.</summary>
+    [Parameter] public bool ExtraFiltersActive { get; set; }
+
+    [Parameter] public EventCallback<string?> OnSearch { get; set; }
+
+    [Parameter] public EventCallback OnReset { get; set; }
+
+    private bool HasActiveFilters => !string.IsNullOrEmpty(_search) || ExtraFiltersActive;
+
+    private async Task OnSearchChanged(string? value)
+    {
+        _search = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        await OnSearch.InvokeAsync(_search);
+    }
+
+    private async Task ResetAsync()
+    {
+        _search = null;
+        await OnSearch.InvokeAsync(null);
+        await OnReset.InvokeAsync();
+    }
+}

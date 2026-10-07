@@ -1,0 +1,11 @@
+@page "/not-found"
+@layout AuthLayout
+
+<PageTitle>Page not found · NexaVerify</PageTitle>
+<EmptyState Icon="@Icons.Material.Outlined.SearchOff" Title="We couldn't find that page" Message="The link may be out of date, or you may not have access to it." ActionText="Go to sign in" OnAction="GoHome" />
+
+@code {
+    [Inject] private NavigationManager Nav { get; set; } = default!;
+
+    private void GoHome() => Nav.NavigateTo("login");
+}

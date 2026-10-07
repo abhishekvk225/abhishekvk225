@@ -1,0 +1,125 @@
+@page "/client"
+@layout ClientLayout
+@implements IDisposable
+@inject IDashboardApiClient Api
+@inject DashboardRangeState Range
+
+<PageTitle>Dashboard · NexaVerify</PageTitle>
+
+<PageHeader Title="Dashboard" Subtitle="How your face checks and credits are doing.">
+    <Actions><RangeSelector /></Actions>
+</PageHeader>
+
+<PageState T="ClientDashboardModel" Result="_result" OnRetry="LoadAsync">
+    <Loading><DashboardSkeleton Cards="4" /></Loading>
+    <ChildContent Context="model">
+        <MudGrid Spacing="3">
+            <MudItem xs="12" lg="8">
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0" Style="height: 100%;">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-4">Your credits</MudText>
+                    <LicenseGauge Remaining="model.CreditsRemaining" Total="model.CreditsTotal" ExpiresAt="model.LicenseExpiresAt" />
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" lg="4">
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0" Style="height: 100%;">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Your account</MudText>
+                    <MudText Typo="Typo.subtitle1">@model.Account.CompanyName</MudText>
+                    <MudText Typo="Typo.body2" Class="nv-muted mb-2">@model.Account.ContactEmail</MudText>
+                    <div class="d-flex align-center flex-wrap" style="gap: var(--nv-space-2);">
+                        <StatusChip Kind="StatusKind.Client" Value="@model.Account.Status" />
+                        <MudText Typo="Typo.body2">@model.Account.Plan plan</MudText>
+                    </div>
+                </MudPaper>
+            </MudItem>
+
+            @foreach (var kpi in model.Kpis)
+            {
+                <MudItem xs="12" sm="6" lg="3">
+                    <StatCard Title="@kpi.Title" Value="@kpi.Value" Icon="@kpi.Icon" DeltaPercent="@kpi.DeltaPercent" HigherIsBetter="kpi.HigherIsBetter" Sparkline="@kpi.Sparkline" />
+                </MudItem>
+            }
+
+            <MudItem xs="12" lg="8">
+                <ChartCard Title="Face checks over time" Subtitle="@($"Last {Range.Days} days")" IsEmpty="model.UsageTrend.Count == 0">
+                    <ChildContent><SimpleChart Kind="ChartKind.Line" Series="model.UsageTrend" Description="Line chart of verify and identify checks per day." /></ChildContent>
+                    <TableContent><SeriesTable Series="model.UsageTrend" Caption="Face checks per day" /></TableContent>
+                </ChartCard>
+            </MudItem>
+            <MudItem xs="12" lg="4">
+                <ChartCard Title="How checks ended" Subtitle="Successful, no match and could not process" IsEmpty="@(Outcomes(model).Sum(s => s.Points[0].Value) == 0)">
+                    <ChildContent><SimpleChart Kind="ChartKind.Donut" Series="Outcomes(model)" Description="Donut chart of check results: successful, no match, could not be processed." Size="220" /></ChildContent>
+                    <TableContent><SeriesTable Series="Outcomes(model)" LabelHeader="Result" Caption="Check results" /></TableContent>
+                </ChartCard>
+            </MudItem>
+
+            <MudItem xs="12" lg="8">
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Recent checks</MudText>
+                    <DataTable T="RecognitionRow" Caption="Recent checks" Columns="_recentColumns" LoadData="@(_ => Task.FromResult(InMemory(model.RecentRecognitions)))" PageSize="10" Dense="true"
+                               EmptyMessage="Checks you run will show up here." />
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" lg="4">
+                <div class="d-flex flex-column" style="gap: var(--nv-space-3);">
+                    <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+                        <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">API usage</MudText>
+                        <dl class="ma-0" style="display:grid; grid-template-columns: 1fr auto; gap: var(--nv-space-2);">
+                            <dt>Calls</dt><dd class="ma-0 text-right">@UiText.Number(model.ApiUsage.Calls)</dd>
+                            <dt>Errors</dt><dd class="ma-0 text-right">@model.ApiUsage.ErrorRatePercent.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)%</dd>
+                            <dt>Typical response time</dt><dd class="ma-0 text-right">@model.ApiUsage.P95LatencyMs ms</dd>
+                        </dl>
+                    </MudPaper>
+                    <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+                        <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Good to know</MudText>
+                        <AlertList Alerts="model.Alerts" />
+                    </MudPaper>
+                </div>
+            </MudItem>
+        </MudGrid>
+    </ChildContent>
+</PageState>
+
+@code {
+    private ApiResult<ClientDashboardModel>? _result;
+    private IReadOnlyList<DataColumn<RecognitionRow>> _recentColumns = [];
+    private int _version;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _recentColumns =
+        [
+            DataColumn<RecognitionRow>.Text("When", r => r.At.ToString("d MMM, HH:mm", System.Globalization.CultureInfo.InvariantCulture)),
+            DataColumn<RecognitionRow>.Text("Type", r => r.Operation),
+            DataColumn<RecognitionRow>.Custom("Result", r => @<StatusChip Kind="StatusKind.Outcome" Value="@r.Outcome" />),
+            DataColumn<RecognitionRow>.Text("Reference", r => r.Reference),
+        ];
+        Range.Changed += OnRangeChanged;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var version = ++_version;
+        _result = null;
+        StateHasChanged();
+        var result = await Api.GetClientDashboardAsync(Range.Range);
+        if (version == _version)
+        {
+            _result = result;
+        }
+    }
+
+    private void OnRangeChanged() => _ = InvokeAsync(LoadAsync);
+
+    private static ApiResult<PagedResult<T>> InMemory<T>(IReadOnlyList<T> rows) =>
+        ApiResult<PagedResult<T>>.Ok(new PagedResult<T>(rows, 1, Math.Max(1, rows.Count), rows.Count));
+
+    private static IReadOnlyList<TrendSeries> Outcomes(ClientDashboardModel m) =>
+    [
+        new TrendSeries("Successful", [new TrendPoint("Total", m.Outcomes.Successful)]),
+        new TrendSeries("No match", [new TrendPoint("Total", m.Outcomes.NoMatch)]),
+        new TrendSeries("Could not process", [new TrendPoint("Total", m.Outcomes.Failed)]),
+    ];
+
+    public void Dispose() => Range.Changed -= OnRangeChanged;
+}

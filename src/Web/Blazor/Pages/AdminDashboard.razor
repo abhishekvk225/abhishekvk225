@@ -1,0 +1,116 @@
+@page "/admin"
+@layout AdminLayout
+@implements IDisposable
+@inject IDashboardApiClient Api
+@inject DashboardRangeState Range
+@inject TimeProvider Clock
+
+<PageTitle>Dashboard · Admin · NexaVerify</PageTitle>
+
+<PageHeader Title="Dashboard" Subtitle="Platform health, usage and licences at a glance.">
+    <Actions><RangeSelector /></Actions>
+</PageHeader>
+
+<PageState T="AdminDashboardModel" Result="_result" OnRetry="LoadAsync">
+    <Loading><DashboardSkeleton Cards="6" /></Loading>
+    <ChildContent Context="model">
+        <MudGrid Spacing="3">
+            @foreach (var kpi in model.Kpis)
+            {
+                <MudItem xs="12" sm="6" md="4" lg="2">
+                    <StatCard Title="@kpi.Title" Value="@kpi.Value" Icon="@kpi.Icon" DeltaPercent="@kpi.DeltaPercent" HigherIsBetter="kpi.HigherIsBetter" Sparkline="@kpi.Sparkline" />
+                </MudItem>
+            }
+
+            <MudItem xs="12" lg="8">
+                <ChartCard Title="Recognition requests" Subtitle="@($"Last {Range.Days} days")" IsEmpty="model.RequestsTrend.Count == 0">
+                    <ChildContent><SimpleChart Kind="ChartKind.Line" Series="model.RequestsTrend" Description="@($"Line chart of successful and failed recognition requests over the last {Range.Days} days.")" /></ChildContent>
+                    <TableContent><SeriesTable Series="model.RequestsTrend" Caption="Recognition requests per day" /></TableContent>
+                </ChartCard>
+            </MudItem>
+            <MudItem xs="12" lg="4">
+                <ChartCard Title="Client-wise usage" Subtitle="Top clients by requests" IsEmpty="model.ClientUsage.Count == 0">
+                    <ChildContent><SimpleChart Kind="ChartKind.Bar" Series="ClientSeries(model)" Description="Bar chart of requests per client." /></ChildContent>
+                    <TableContent><SeriesTable Series="ClientSeries(model)" LabelHeader="Client" Caption="Requests per client" /></TableContent>
+                </ChartCard>
+            </MudItem>
+
+            <MudItem xs="12" lg="6">
+                <ChartCard Title="Credits consumed" Subtitle="@($"Last {Range.Days} days")" IsEmpty="model.CreditsTrend.Count == 0">
+                    <ChildContent><SimpleChart Kind="ChartKind.Line" Series="model.CreditsTrend" Description="Line chart of credits consumed per day." /></ChildContent>
+                    <TableContent><SeriesTable Series="model.CreditsTrend" Caption="Credits consumed per day" /></TableContent>
+                </ChartCard>
+            </MudItem>
+            <MudItem xs="12" lg="6">
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Licences expiring soon</MudText>
+                    <DataTable T="ExpiringLicenseRow" Caption="Licences expiring soon" Columns="_expiringColumns" LoadData="@(_ => Task.FromResult(InMemory(model.ExpiringLicenses)))" PageSize="10" Dense="true"
+                               EmptyMessage="No licences are close to expiring." />
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" lg="7">
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-2">Recent activity</MudText>
+                    <ActivityFeed Items="Activity(model)" />
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" lg="5">
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">System alerts</MudText>
+                    <AlertList Alerts="model.Alerts" />
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    </ChildContent>
+</PageState>
+
+@code {
+    private ApiResult<AdminDashboardModel>? _result;
+    private IReadOnlyList<DataColumn<ExpiringLicenseRow>> _expiringColumns = [];
+    private int _version;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _expiringColumns =
+        [
+            DataColumn<ExpiringLicenseRow>.Text("Client", r => r.Client),
+            DataColumn<ExpiringLicenseRow>.Text("Licence", r => r.LicenseNumber),
+            DataColumn<ExpiringLicenseRow>.Text("Credits left", r => $"{UiText.Number(r.Remaining)} / {UiText.Number(r.Total)}", numeric: true),
+            DataColumn<ExpiringLicenseRow>.Custom("Expires", r => @<span>@UiText.Plural(Math.Max(0, (int)(r.ExpiresAt - Clock.GetUtcNow()).TotalDays), "day")</span>),
+        ];
+        Range.Changed += OnRangeChanged;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var version = ++_version;
+        _result = null;
+        StateHasChanged();
+        var result = await Api.GetAdminDashboardAsync(Range.Range);
+        if (version == _version)
+        {
+            _result = result;
+        }
+    }
+
+    private void OnRangeChanged() => _ = InvokeAsync(LoadAsync);
+
+    private static ApiResult<PagedResult<T>> InMemory<T>(IReadOnlyList<T> rows) =>
+        ApiResult<PagedResult<T>>.Ok(new PagedResult<T>(rows, 1, Math.Max(1, rows.Count), rows.Count));
+
+    private static IReadOnlyList<TrendSeries> ClientSeries(AdminDashboardModel m) =>
+        [new TrendSeries("Requests", m.ClientUsage.Select(c => new TrendPoint(c.Client, c.Requests)).ToList())];
+
+    private static IReadOnlyList<ActivityItem> Activity(AdminDashboardModel m) =>
+        m.RecentActivity.Select(a => new ActivityItem(a.Id, a.Title, a.Detail, a.At, a.Kind switch
+        {
+            "license" => Icons.Material.Outlined.VpnKey,
+            "client" => Icons.Material.Outlined.Business,
+            "key" => Icons.Material.Outlined.Key,
+            _ => Icons.Material.Outlined.History,
+        })).ToList();
+
+    public void Dispose() => Range.Changed -= OnRangeChanged;
+}

@@ -1,0 +1,28 @@
+@implements IDisposable
+@inject ThemeService Theme
+
+@* Mounted once at the app root: theme + the MudBlazor service providers every dialog/snackbar/popover needs. *@
+<MudThemeProvider Theme="NexaTheme.Instance" IsDarkMode="Theme.IsDarkMode" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+@ChildContent
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    protected override void OnInitialized() => Theme.Changed += OnThemeChanged;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Theme.InitializeAsync();
+        }
+    }
+
+    private void OnThemeChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Theme.Changed -= OnThemeChanged;
+}

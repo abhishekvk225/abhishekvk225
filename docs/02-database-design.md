@@ -8,7 +8,7 @@
 |---|---|
 | Schemas | `iam` (identity/access), `tenancy`, `licensing`, `face`, `api` (API access & webhooks), `audit`, `ops` (notifications, outbox, usage, settings) |
 | Keys | `uniqueidentifier` PKs generated app-side with `Guid.CreateVersion7()` (time-ordered → no page-split fragmentation). High-volume append-only tables (`ApiRequestLogs`, `AuditLogs`, `LicenseTransactions`) use `bigint IDENTITY` as clustered key. |
-| Tenant column | `ClientId uniqueidentifier NOT NULL` on every tenant-owned table, **first column of every non-unique index**, FK to `tenancy.Clients`. Platform-level tables (`Plans`, `Permissions`, `SystemSettings`) have none. |
+| Tenant column | `ClientId uniqueidentifier NOT NULL` on every tenant-owned table, **first column of every non-unique index**, FK to `tenancy.Clients`. Rows owned by "nobody" use the well-known platform tenant id (`PlatformTenant.ClientId`, a seeded system client) — **there are no nullable `ClientId` columns on tenant tables** (a NULL would be invisible to RLS and unwritable by the guard). Global reference tables (`Roles`, `Permissions`, `Plans`, `SystemSettings`, platform default cost rules) carry no `ClientId`; per-client overrides live in separate tenant-owned tables (e.g. `ClientCostRules`). |
 | Audit columns | `CreatedAt datetime2(3)`, `CreatedBy uniqueidentifier NULL`, `UpdatedAt`, `UpdatedBy`, `IsActive bit` on mutable entities (set by `SaveChanges` interceptor). User asked for *CreatedDate/UpdatedDate*; we name them `CreatedAt/UpdatedAt` (same meaning, .NET convention) — all values UTC. |
 | Concurrency | `RowVersion rowversion` on mutable aggregates (Clients, Licenses, ApiKeys, FaceProfiles). |
 | Soft delete | Only `Clients` (and `Users`) — via `Status`. Everything else is hard-deleted when erasure applies (biometrics) or never deleted (ledgers). |
@@ -59,22 +59,21 @@ erDiagram
 
 ### 3.1 `iam` schema
 
-**iam.Users** (ASP.NET Identity user, Guid key) — `Id PK`, `Email`, `NormalizedEmail`, `UserName`, `NormalizedUserName`, `PasswordHash`, `SecurityStamp`, `ConcurrencyStamp`, `FullName nvarchar(150)`, `PhoneNumber`, `Status` (`Active|Inactive|Locked|PendingActivation`), `IsPlatformUser bit`, `MustChangePassword bit`, `LockoutEnd`, `LockoutEnabled`, `AccessFailedCount`, `TwoFactorEnabled`, `LastLoginAt`, `LastPasswordChangedAt`, `(A)`, `IsActive`.
-Indexes: `UQ(NormalizedEmail)`, `IX(IsPlatformUser, Status)`.
+**iam.Users** (our own entity; ASP.NET Core Identity's `PasswordHasher` hashes passwords, the user/role/permission model stays in the Domain) — `Id PK`, `ClientId` (tenant-owned: platform staff belong to the platform tenant; a user belongs to one client in v1), `Email`, `NormalizedEmail`, `UserName`, `NormalizedUserName`, `PasswordHash`, `SecurityVersion int` (bumped to invalidate sessions), `FullName nvarchar(150)`, `PhoneNumber`, `Status` (`Active|Inactive|Locked|PendingActivation`), `IsPlatformUser bit`, `MustChangePassword bit`, `LockoutEnd`, `LockoutEnabled`, `AccessFailedCount`, `TwoFactorEnabled`, `LastLoginAt`, `LastPasswordChangedAt`, `(A)`, `IsActive`.
+Indexes: `UQ(NormalizedEmail)` (global uniqueness), `IX(ClientId, Status)`. Login looks users up by email in a narrowly scoped, reasoned platform scope (the only way to find a user before the tenant is known).
 
-**iam.Roles** — `Id PK`, `Name varchar(60)`, `NormalizedName`, `Scope` (`Platform|Client`), `IsSystem bit` (system roles cannot be edited/deleted), `ClientId NULL FK` (reserved for future client-defined custom roles), `Description`, `(A)`.
-Indexes: `UQ(NormalizedName) WHERE ClientId IS NULL`, `UQ(ClientId, NormalizedName) WHERE ClientId IS NOT NULL`.
+**iam.Roles** — global (no `ClientId`): `Id PK`, `Name varchar(60)`, `NormalizedName UQ`, `Scope` (`Platform|Client`), `IsSystem bit` (system roles cannot be edited/deleted), `Description`, `(A)`. Client-defined custom roles are a later feature and will use a separate tenant-owned table.
 
 **iam.Permissions** — `Id PK`, `Key varchar(80) UQ` (e.g. `licenses.manage`), `Group varchar(40)`, `Scope` (`Platform|Client|Both`), `Description`. Seeded from `Contracts.Permissions` (code is the source of truth; a startup sync inserts missing keys, never deletes).
 
 **iam.RolePermissions** — `RoleId FK`, `PermissionId FK`, `PK(RoleId, PermissionId)`.
 
-**iam.UserRoles** — `UserId FK`, `RoleId FK`, `PK(UserId, RoleId)`. Constraint (app + trigger-free check in service): a user's roles must match its scope (platform users ↔ Platform roles).
+**iam.UserRoles** — tenant-owned (carries the user's `ClientId`): `ClientId`, `UserId FK`, `RoleId FK`, `PK(UserId, RoleId)`. Constraint (app + trigger-free check in service): a user's roles must match its scope (platform users ↔ Platform roles).
 
-**iam.RefreshTokens** — `Id PK`, `UserId FK`, `TokenHash binary(32)`, `FamilyId uniqueidentifier` (rotation chain), `ExpiresAt`, `RevokedAt NULL`, `RevokedReason`, `ReplacedByTokenId NULL`, `CreatedAt`, `CreatedByIp varchar(45)`, `UserAgent nvarchar(300)`.
+**iam.RefreshTokens** — `Id PK`, `ClientId` (tenant-owned), `UserId FK`, `TokenHash binary(32)`, `FamilyId uniqueidentifier` (rotation chain), `ExpiresAt`, `AbsoluteExpiresAt`, `RevokedAt NULL`, `RevokedReason`, `ReplacedByTokenId NULL`, `CreatedAt`, `CreatedByIp varchar(45)`, `UserAgent nvarchar(300)`.
 Indexes: `UQ(TokenHash)`, `IX(UserId, RevokedAt)`, `IX(FamilyId)`, `IX(ExpiresAt)` (purge). Re-use of a rotated token revokes the whole family.
 
-**iam.LoginHistory** — `Id bigint IDENTITY PK`, `UserId NULL FK`, `ClientId NULL FK`, `EmailAttempted nvarchar(256)` (truncated, for unknown-user attempts), `Outcome` (`Success|InvalidCredentials|LockedOut|Inactive|ClientSuspended|MfaFailed|PasswordReset`), `FailureReason`, `IpAddress varchar(45)`, `UserAgent`, `CorrelationId`, `OccurredAt`.
+**iam.LoginHistory** — `Id bigint IDENTITY PK`, `UserId NULL FK`, `ClientId` (platform tenant for unknown-email attempts), `EmailAttempted nvarchar(256)` (truncated, for unknown-user attempts), `Outcome` (`Success|InvalidCredentials|LockedOut|Inactive|ClientSuspended|MfaFailed|PasswordReset`), `FailureReason`, `IpAddress varchar(45)`, `UserAgent`, `CorrelationId`, `OccurredAt`.
 Indexes: `IX(ClientId, OccurredAt DESC)`, `IX(UserId, OccurredAt DESC)`, `IX(IpAddress, OccurredAt)` (brute-force detection). Append-only.
 
 > Standard Identity side tables (`UserClaims`, `UserLogins`, `UserTokens`, `RoleClaims`) are created in `iam` by the Identity model but not used in v1 except `UserTokens` (password-reset/email-confirm tokens).
@@ -101,7 +100,7 @@ Indexes: `UQ(LicenseKey)`, `IX(ClientId, Status, ExpiresAt) INCLUDE (RemainingCr
 State machine (enforced in `License` domain entity, covered by tests):
 `Draft → Active ⇄ Inactive`, `Active ⇄ Suspended`, `Active → Expired` (time or sweeper), `Expired → (renew creates a new license; or reactivate by extending ExpiresAt)`, `Any → Revoked` (terminal). A license is **usable** iff `Status = Active AND StartsAt ≤ now < ExpiresAt AND Remaining ≥ cost`.
 
-**licensing.LicenseCostRules** — `Id PK`, `ClientId NULL FK` (null = not client-specific), `PlanId NULL FK`, `Operation` (`Enroll|Verify|Identify|Detect`), `Credits int`, `ChargePolicy` (`OnCompleted|OnSuccess|OnAttempt`), `EffectiveFrom`, `EffectiveTo NULL`, `(A)`, `IsActive`. Resolution: active client rule → active plan rule → platform default row (`ClientId NULL AND PlanId NULL`). Index: `IX(ClientId, PlanId, Operation, EffectiveFrom)`. Rules are versioned by `EffectiveFrom` (never edited in place for past ranges) so historical charges stay explainable.
+**licensing.CostRules** (global: platform default `PlanId NULL`, or per-plan) and **licensing.ClientCostRules** (tenant-owned overrides) — shared shape: `Id PK`, `ClientId` (overrides only), `PlanId NULL FK`, `Operation` (`Enroll|Verify|Identify|Detect`), `Credits int`, `ChargePolicy` (`OnCompleted|OnSuccess|OnAttempt`), `EffectiveFrom`, `EffectiveTo NULL`, `(A)`, `IsActive`. Resolution: active client rule → active plan rule → platform default row (`ClientId NULL AND PlanId NULL`). Index: `IX(ClientId, PlanId, Operation, EffectiveFrom)`. Rules are versioned by `EffectiveFrom` (never edited in place for past ranges) so historical charges stay explainable.
 
 **licensing.LicenseTransactions** — **immutable ledger** — `Id bigint IDENTITY PK`, `LicenseId FK`, `ClientId FK`, `Type` (`Grant|Consume|Refund|Adjustment|Renewal|ExpiryWriteOff|Revocation`), `Credits int` (signed delta on balance: Consume = −n), `BalanceBefore int`, `BalanceAfter int`, `Operation NULL`, `RecognitionRequestId NULL FK`, `IdempotencyKey varchar(100) NULL`, `Reason nvarchar(500)`, `ActorType` (`User|ApiKey|System`), `ActorId NULL`, `CorrelationId`, `PrevHash binary(32)`, `RowHash binary(32)`, `CreatedAt`.
 Indexes: `IX(LicenseId, Id)`, `IX(ClientId, CreatedAt DESC)`, `UQ(ClientId, IdempotencyKey) WHERE IdempotencyKey IS NOT NULL`, `IX(RecognitionRequestId)`.
@@ -134,7 +133,7 @@ Indexes: `CLUSTERED(CreatedAt, Id)` (partition-aligned), `IX(ClientId, CreatedAt
 
 ### 3.6 `audit` schema
 
-**audit.AuditLogs** — append-only, same protections as the ledger: `Id bigint IDENTITY`, `ClientId NULL`, `ActorType` (`User|ApiKey|System`), `ActorId NULL`, `ActorEmail nvarchar(256) NULL` (denormalised snapshot), `Action varchar(80)` (`client.suspended`, `license.deducted`, `apikey.revoked`, …), `EntityType varchar(60)`, `EntityId varchar(64)`, `OldValuesJson`, `NewValuesJson` (**redacted** — secrets/templates/PII fields excluded by attribute `[AuditIgnore]`), `IpAddress`, `UserAgent`, `CorrelationId`, `OccurredAt`, `PrevHash`, `RowHash`.
+**audit.AuditLogs** — append-only (INSTEAD OF triggers + `DENY UPDATE, DELETE`): `Id bigint IDENTITY`, `ClientId` (the client the event concerns; platform tenant for platform-level events), `ActorType` (`User|ApiKey|System`), `ActorId NULL`, `ActorEmail nvarchar(256) NULL` (denormalised snapshot), `Action varchar(80)` (`client.suspended`, `license.deducted`, `apikey.revoked`, …), `EntityType varchar(60)`, `EntityId varchar(64)`, `OldValuesJson`, `NewValuesJson` (**redacted** — secrets/templates/PII fields excluded by attribute `[AuditIgnore]`), `IpAddress`, `UserAgent`, `CorrelationId`, `OccurredAt`, `PrevHash NULL`, `RowHash NULL` (hash chain deferred to hardening: a single global chain would serialise every audit write; the ledger keeps its per-license chain).
 Indexes: `IX(ClientId, OccurredAt DESC)`, `IX(EntityType, EntityId, OccurredAt)`, `IX(ActorId, OccurredAt)`, `IX(Action, OccurredAt)`. Monthly partitions; retention ≥ 1 year (config).
 
 ### 3.7 `ops` schema
@@ -146,22 +145,27 @@ Indexes: `IX(ClientId, OccurredAt DESC)`, `IX(EntityType, EntityId, OccurredAt)`
 
 ## 4. Row-Level Security
 
+Generated from the EF model by `RowLevelSecurityScriptBuilder` (so every `ITenantOwned` table is covered automatically; unsupported shapes fail the model build) and installed **in one transaction** by the migrator, after migrations:
+
 ```sql
-CREATE SCHEMA security;
-GO
-CREATE FUNCTION security.fn_TenantFilter(@ClientId uniqueidentifier)
-RETURNS TABLE WITH SCHEMABINDING AS
+-- two inline TVFs (SCHEMABINDING): fn_TenantFilter (tenant OR platform) and fn_StrictTenantFilter (tenant only)
+CREATE FUNCTION security.fn_TenantFilter(@ClientId uniqueidentifier) RETURNS TABLE WITH SCHEMABINDING AS
 RETURN SELECT 1 AS allowed
-WHERE CAST(SESSION_CONTEXT(N'IsPlatform') AS bit) = 1
+WHERE CAST(SESSION_CONTEXT(N'IsPlatform') AS int) = 1
    OR @ClientId = CAST(SESSION_CONTEXT(N'ClientId') AS uniqueidentifier);
-GO
+
 CREATE SECURITY POLICY security.TenantPolicy
-  ADD FILTER PREDICATE security.fn_TenantFilter(ClientId) ON licensing.Licenses,
-  ADD BLOCK  PREDICATE security.fn_TenantFilter(ClientId) ON licensing.Licenses AFTER INSERT,
-  -- … same pair for every tenant-owned table …
-  WITH (STATE = ON);
+  ADD FILTER PREDICATE security.fn_TenantFilter([ClientId]) ON test.Widgets,
+  ADD BLOCK PREDICATE  security.fn_TenantFilter([ClientId]) ON test.Widgets AFTER INSERT,
+  ADD BLOCK PREDICATE  security.fn_TenantFilter([ClientId]) ON test.Widgets AFTER UPDATE,
+  ADD BLOCK PREDICATE  security.fn_TenantFilter([ClientId]) ON test.Widgets BEFORE UPDATE,
+  ADD BLOCK PREDICATE  security.fn_TenantFilter([ClientId]) ON test.Widgets BEFORE DELETE
+  -- … strict tables use fn_StrictTenantFilter …
+WITH (STATE = ON, SCHEMABINDING = ON);
 ```
-A `DbConnectionInterceptor` runs `sp_set_session_context` on **every** `ConnectionOpened` (pooling-safe). If neither value is set the predicate yields no rows (fail closed). Migrations/maintenance use a separate DB principal that is not subject to the policy.
+The tenant is written to `SESSION_CONTEXT` by EF interceptors on every connection open and before any command whose scope changed. With neither key set the predicates return no rows (fail-closed). Because the policy is `SCHEMABINDING`, the migrator drops it before running migrations and re-creates it afterwards (a readiness check compares `sys.security_predicates` with the model and fails if a tenant table is unprotected).
+
+**Database principals:** the application connects as a least-privilege login (data read/write + execute only; **no** `ALTER ANY SECURITY POLICY`, no DDL), so a compromised app cannot disable RLS. Migrations and the RLS installer run as a separate administrative principal supplied only to the migrator job. `TrustServerCertificate=True` is for local development only; production connection strings must use `Encrypt=True` with a trusted certificate.
 
 ## 5. Stored procedures / SQL objects — what and why
 
@@ -183,6 +187,6 @@ A `DbConnectionInterceptor` runs `sp_set_session_context` on **every** `Connecti
 
 ## 7. Migrations & seeding
 - EF Core migrations (one per module PR) generated from the model; **idempotent SQL scripts** produced in CI for production (`dotnet ef migrations script --idempotent`) — the app never auto-migrates in production.
-- Raw SQL objects (RLS, triggers, procedures, partitions) live in versioned `Migrations/Sql/*.sql` files executed by migrations, so the schema is reproducible from an empty database.
+- Raw SQL objects: RLS and the append-only triggers are **generated from the model** and applied by the migrator (`NexaVerify.Migrator`: drop policy → migrate → install guards → seed); procedures/partition scripts live in versioned `Migrations/Sql/*.sql` files. `Migrator --script` emits the equivalent idempotent script for DBA-run deployments.
 - Seed (idempotent): system roles (`SuperAdmin`, `ClientAdmin`, `ClientUser`), permission sync, role→permission map, platform default cost rules, default plans, first Super Admin from **environment-provided** one-time credentials (forced password change on first login; no default password in the repo).
 - Backward-compatible (expand → migrate → contract) changes only, so rolling deploys are safe.

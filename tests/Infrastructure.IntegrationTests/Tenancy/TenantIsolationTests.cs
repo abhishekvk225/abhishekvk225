@@ -1,5 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using NexaVerify.Infrastructure.Tenancy;
+using NexaVerify.Application.Common;
 using NexaVerify.TestSupport;
 
 namespace NexaVerify.Infrastructure.IntegrationTests.Tenancy;
@@ -62,7 +62,7 @@ public class TenantIsolationTests : IAsyncLifetime
     [Fact]
     public async Task Platform_scope_sees_all_tenant_owned_rows()
     {
-        using var scope = _db.Tenant.BeginPlatform();
+        using var scope = _db.Tenant.BeginPlatform("test");
         await using var context = _db.NewContext();
 
         (await context.Widgets.CountAsync()).ShouldBe(3);
@@ -71,7 +71,7 @@ public class TenantIsolationTests : IAsyncLifetime
     [Fact]
     public async Task Platform_scope_cannot_read_strict_tenant_rows()
     {
-        using var scope = _db.Tenant.BeginPlatform();
+        using var scope = _db.Tenant.BeginPlatform("test");
         await using var context = _db.NewContext();
 
         (await context.SecretWidgets.CountAsync()).ShouldBe(0);
@@ -89,7 +89,7 @@ public class TenantIsolationTests : IAsyncLifetime
     [Fact]
     public async Task Non_tenant_entities_are_unaffected()
     {
-        using (_db.Tenant.BeginPlatform())
+        using (_db.Tenant.BeginPlatform("test"))
         {
             await using var seed = _db.NewContext();
             seed.GlobalThings.Add(new GlobalThing { Name = "g" });
@@ -136,7 +136,7 @@ public class TenantIsolationTests : IAsyncLifetime
     [Fact]
     public async Task Platform_must_set_client_id_explicitly_when_adding()
     {
-        using var scope = _db.Tenant.BeginPlatform();
+        using var scope = _db.Tenant.BeginPlatform("test");
         await using var context = _db.NewContext();
         context.Widgets.Add(new Widget { Name = "no-owner" });
 
@@ -146,7 +146,7 @@ public class TenantIsolationTests : IAsyncLifetime
     [Fact]
     public async Task Platform_can_add_for_an_explicit_tenant()
     {
-        using var scope = _db.Tenant.BeginPlatform();
+        using var scope = _db.Tenant.BeginPlatform("test");
         await using var context = _db.NewContext();
         context.Widgets.Add(new Widget { Name = "by-platform", ClientId = _b });
 
@@ -158,7 +158,7 @@ public class TenantIsolationTests : IAsyncLifetime
     [Fact]
     public async Task Reassigning_a_row_to_another_tenant_is_rejected_even_for_platform()
     {
-        using var scope = _db.Tenant.BeginPlatform();
+        using var scope = _db.Tenant.BeginPlatform("test");
         await using var context = _db.NewContext();
         var widget = await context.Widgets.FirstAsync(w => w.ClientId == _a);
         widget.ClientId = _b;
@@ -171,7 +171,7 @@ public class TenantIsolationTests : IAsyncLifetime
     {
         await using var context = _db.NewContext();
         Widget victim;
-        using (_db.Tenant.BeginPlatform())
+        using (_db.Tenant.BeginPlatform("test"))
         {
             victim = await context.Widgets.FirstAsync(w => w.ClientId == _b);
         }

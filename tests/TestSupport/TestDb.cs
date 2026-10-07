@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Time.Testing;
 using NexaVerify.Application.Abstractions;
 using NexaVerify.Infrastructure.Persistence.Interceptors;
+using NexaVerify.Infrastructure.Persistence.Guards;
 using NexaVerify.Infrastructure.Persistence.Rls;
 using NexaVerify.Infrastructure.Tenancy;
 
@@ -18,6 +19,8 @@ public sealed class StubCurrentUser : ICurrentUser
     public Guid? ClientId { get; set; }
 
     public bool IsPlatformUser { get; set; }
+
+    public IReadOnlyCollection<string> Roles { get; set; } = [];
 }
 
 /// <summary>A fresh database with the test schema and row-level security applied, plus factories for tenant-aware contexts.</summary>
@@ -42,11 +45,11 @@ public sealed class TestDb
     public static async Task<TestDb> CreateAsync(SqlServerFixture fixture)
     {
         var db = new TestDb(await fixture.CreateDatabaseAsync());
-        using (db.Tenant.BeginPlatform())
+        using (db.Tenant.BeginPlatform("test setup"))
         {
             await using var context = db.NewContext();
             await context.Database.EnsureCreatedAsync();
-            await new RowLevelSecurityInstaller(db.Tenant).InstallAsync(context);
+            await new DatabaseGuardsInstaller(new RowLevelSecurityInstaller(db.Tenant)).InstallAsync(context);
         }
 
         return db;
@@ -54,11 +57,13 @@ public sealed class TestDb
 
     public TestDbContext NewContext()
     {
+        var applier = new TenantSessionContextApplier(Tenant);
         var options = new DbContextOptionsBuilder<TestDbContext>()
             .UseSqlServer(ConnectionString)
             .AddInterceptors(
                 new AuditAndTenantSaveChangesInterceptor(Tenant, User, Time),
-                new TenantSessionContextInterceptor(Tenant))
+                new TenantSessionContextInterceptor(applier),
+                new TenantSessionContextCommandInterceptor(applier))
             .Options;
         return new TestDbContext(options, Tenant);
     }

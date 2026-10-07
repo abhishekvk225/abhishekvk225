@@ -1,0 +1,93 @@
+<MudPaper Class="nv-card nv-card-pad" Elevation="0" Style="height: 100%;">
+    @if (Loading)
+    {
+        <SkeletonCard Lines="2" />
+    }
+    else
+    {
+        <div class="d-flex align-start justify-space-between" style="gap: var(--nv-space-3);">
+            <div style="min-width: 0;">
+                <MudText Class="nv-muted" Typo="Typo.body2">@Title</MudText>
+                <div class="nv-stat-value mt-1" data-testid="stat-value">@Value</div>
+            </div>
+            @if (!string.IsNullOrEmpty(Icon))
+            {
+                <div class="nv-stat-icon" aria-hidden="true"><MudIcon Icon="@Icon" /></div>
+            }
+        </div>
+        @if (DeltaPercent is not null)
+        {
+            <div class="mt-2 d-flex align-center flex-wrap" style="gap: var(--nv-space-2);">
+                <span class="nv-delta @DeltaClass" data-testid="stat-delta" aria-label="@DeltaAriaLabel">
+                    <MudIcon Icon="@DeltaIcon" Size="Size.Small" />
+                    @DeltaText
+                </span>
+                <MudText Class="nv-muted" Typo="Typo.caption">@DeltaLabel</MudText>
+            </div>
+        }
+        @if (Sparkline is { Count: > 1 })
+        {
+            <svg class="nv-spark mt-2" viewBox="0 0 100 36" preserveAspectRatio="none" role="img" aria-label="Trend over the selected period">
+                <polyline points="@SparkPoints" vector-effect="non-scaling-stroke" />
+            </svg>
+        }
+        @if (ChildContent is not null)
+        {
+            <div class="mt-2">@ChildContent</div>
+        }
+    }
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired] public string Value { get; set; } = string.Empty;
+
+    [Parameter] public string? Icon { get; set; }
+
+    /// <summary>Change versus the previous period, in percent (e.g. 12.5 = +12.5 %). Null hides the delta.</summary>
+    [Parameter] public double? DeltaPercent { get; set; }
+
+    [Parameter] public string DeltaLabel { get; set; } = "vs previous period";
+
+    /// <summary>For metrics where a rise is bad (failed requests) set to false so a rise is shown in the "bad" colour.</summary>
+    [Parameter] public bool HigherIsBetter { get; set; } = true;
+
+    [Parameter] public IReadOnlyList<double>? Sparkline { get; set; }
+
+    [Parameter] public bool Loading { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private bool IsFlat => DeltaPercent is { } d && Math.Abs(d) < 0.05;
+
+    private bool IsUp => DeltaPercent is > 0;
+
+    internal string DeltaClass => IsFlat ? "nv-delta-flat" : (IsUp == HigherIsBetter ? "nv-delta-good" : "nv-delta-bad");
+
+    private string DeltaIcon => IsFlat ? Icons.Material.Filled.Remove : IsUp ? Icons.Material.Filled.ArrowUpward : Icons.Material.Filled.ArrowDownward;
+
+    private string DeltaText => IsFlat ? "0%" : $"{Math.Abs(DeltaPercent!.Value).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)}%";
+
+    private string DeltaAriaLabel => IsFlat
+        ? $"No change {DeltaLabel}"
+        : $"{(IsUp ? "Up" : "Down")} {DeltaText} {DeltaLabel}";
+
+    private string SparkPoints
+    {
+        get
+        {
+            var data = Sparkline!;
+            var min = data.Min();
+            var max = data.Max();
+            var range = max - min;
+            var parts = data.Select((v, i) =>
+            {
+                var x = i * 100.0 / (data.Count - 1);
+                var y = range <= 0 ? 18 : 34 - ((v - min) / range * 32);
+                return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{x:0.##},{y:0.##}");
+            });
+            return string.Join(' ', parts);
+        }
+    }
+}

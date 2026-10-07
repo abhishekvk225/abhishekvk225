@@ -1,0 +1,13 @@
+<div aria-hidden="true" data-testid="skeleton-card">
+    <MudSkeleton SkeletonType="SkeletonType.Text" Width="40%" />
+    <MudSkeleton SkeletonType="SkeletonType.Text" Height="2.2rem" Width="60%" Class="mt-2" />
+    @for (var i = 1; i < Lines; i++)
+    {
+        <MudSkeleton SkeletonType="SkeletonType.Text" Width="30%" Class="mt-2" />
+    }
+</div>
+<span class="nv-sr" role="status">Loading</span>
+
+@code {
+    [Parameter] public int Lines { get; set; } = 2;
+}

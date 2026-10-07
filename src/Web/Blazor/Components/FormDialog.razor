@@ -1,0 +1,120 @@
+@typeparam T where T : class
+
+<EditForm EditContext="_context" OnValidSubmit="SubmitAsync">
+    <MudDialog>
+        <TitleContent>
+            <MudText Typo="Typo.h5" HtmlTag="h2">@Title</MudText>
+        </TitleContent>
+        <DialogContent>
+            <DataAnnotationsValidator />
+            @if (_generalErrors.Count > 0)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3" data-testid="form-error">
+                    @foreach (var message in _generalErrors)
+                    {
+                        <div>@message</div>
+                    }
+                </MudAlert>
+            }
+            @FormContent?.Invoke(Model)
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick="Cancel" Disabled="_submitting">Cancel</MudButton>
+            <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Disabled="_submitting" data-testid="form-submit">
+                @if (_submitting)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                }
+                @SubmitText
+            </MudButton>
+        </DialogActions>
+    </MudDialog>
+</EditForm>
+
+@code {
+    private readonly List<string> _generalErrors = [];
+    private EditContext _context = default!;
+    private ValidationMessageStore _store = default!;
+    private bool _submitting;
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired] public T Model { get; set; } = default!;
+
+    [Parameter] public RenderFragment<T>? FormContent { get; set; }
+
+    [Parameter] public string SubmitText { get; set; } = "Save";
+
+    /// <summary>Performs the save. Return null on success, or the API error: field errors are mapped back onto the form fields.</summary>
+    [Parameter, EditorRequired] public Func<T, Task<ApiError?>> OnSubmit { get; set; } = default!;
+
+    protected override void OnInitialized()
+    {
+        _context = new EditContext(Model);
+        _store = new ValidationMessageStore(_context);
+        _context.OnFieldChanged += (_, e) => _store.Clear(e.FieldIdentifier);
+    }
+
+    private async Task SubmitAsync()
+    {
+        _submitting = true;
+        _generalErrors.Clear();
+        _store.Clear();
+
+        ApiError? error;
+        try
+        {
+            error = await OnSubmit(Model);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            error = ApiError.Unexpected();
+        }
+
+        _submitting = false;
+
+        if (error is null)
+        {
+            MudDialog.Close(DialogResult.Ok(Model));
+            return;
+        }
+
+        MapErrors(error);
+        _context.NotifyValidationStateChanged();
+    }
+
+    private void MapErrors(ApiError error)
+    {
+        var mapped = false;
+        if (error.FieldErrors is not null)
+        {
+            var properties = typeof(T).GetProperties().ToDictionary(p => p.Name, p => p.Name, StringComparer.OrdinalIgnoreCase);
+            foreach (var (field, messages) in error.FieldErrors)
+            {
+                if (properties.TryGetValue(field, out var name))
+                {
+                    foreach (var message in messages)
+                    {
+                        _store.Add(_context.Field(name), message);
+                    }
+
+                    mapped = true;
+                }
+                else
+                {
+                    _generalErrors.AddRange(messages);
+                }
+            }
+        }
+
+        if (!mapped || _generalErrors.Count > 0 || error.FieldErrors is null)
+        {
+            var text = string.IsNullOrWhiteSpace(error.CorrelationId) ? error.Message : $"{error.Message} (ref {error.CorrelationId})";
+            _generalErrors.Insert(0, text);
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

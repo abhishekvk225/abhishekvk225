@@ -1,0 +1,25 @@
+@if (Alerts.Count == 0)
+{
+    <MudText Class="nv-muted" Typo="Typo.body2">Nothing needs your attention.</MudText>
+}
+else
+{
+    <div class="d-flex flex-column" style="gap: var(--nv-space-2);" data-testid="alert-list">
+        @foreach (var alert in Alerts)
+        {
+            <MudAlert Severity="Map(alert.Severity)" Dense="true" Variant="Variant.Outlined">@alert.Message</MudAlert>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<AlertModel> Alerts { get; set; } = [];
+
+    private static Severity Map(string severity) => severity.ToLowerInvariant() switch
+    {
+        "error" => Severity.Error,
+        "warning" => Severity.Warning,
+        "success" => Severity.Success,
+        _ => Severity.Info,
+    };
+}

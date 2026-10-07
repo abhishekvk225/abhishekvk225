@@ -1,0 +1,14 @@
+<MudGrid Spacing="3" data-testid="dashboard-skeleton">
+    @for (var i = 0; i < Cards; i++)
+    {
+        <MudItem xs="12" sm="6" md="4" lg="@(Cards > 4 ? 2 : 3)">
+            <MudPaper Class="nv-card nv-card-pad" Elevation="0"><SkeletonCard /></MudPaper>
+        </MudItem>
+    }
+    <MudItem xs="12" md="8"><MudPaper Class="nv-card nv-card-pad" Elevation="0"><SkeletonChart /></MudPaper></MudItem>
+    <MudItem xs="12" md="4"><MudPaper Class="nv-card nv-card-pad" Elevation="0"><SkeletonChart /></MudPaper></MudItem>
+</MudGrid>
+
+@code {
+    [Parameter] public int Cards { get; set; } = 4;
+}

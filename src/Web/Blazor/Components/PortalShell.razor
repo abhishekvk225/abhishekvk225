@@ -1,0 +1,76 @@
+@inject CurrentUserState User
+
+<a class="nv-skip" href="#main-content">Skip to main content</a>
+<MudLayout>
+    <MudAppBar Elevation="0" Class="nv-appbar" Style="border-bottom: 1px solid var(--mud-palette-lines-default);">
+        <MudIconButton Icon="@Icons.Material.Outlined.Menu" Color="Color.Inherit" Edge="Edge.Start" aria-label="Toggle navigation menu" OnClick="() => _drawerOpen = !_drawerOpen" Class="d-md-none" />
+        <MudSpacer />
+        <MudTooltip Text="Notifications">
+            <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" aria-label="Notifications" data-testid="notifications">
+                <ActivatorContent>
+                    <MudBadge Content="3" Color="Color.Error" Overlap="true" Class="mx-1">
+                        <MudIconButton Icon="@Icons.Material.Outlined.Notifications" Color="Color.Default" aria-label="Notifications, 3 unread" />
+                    </MudBadge>
+                </ActivatorContent>
+                <ChildContent>
+                    <div class="pa-4" style="min-width: 260px;">
+                        <MudText Typo="Typo.subtitle2">Notifications</MudText>
+                        <MudText Class="nv-muted" Typo="Typo.body2">Alerts about your account will appear here. (Preview)</MudText>
+                    </div>
+                </ChildContent>
+            </MudMenu>
+        </MudTooltip>
+        <ThemeMenu />
+        <UserMenu />
+    </MudAppBar>
+
+    <MudDrawer @bind-Open="_drawerOpen" Variant="DrawerVariant.Responsive" Breakpoint="Breakpoint.Md" Elevation="0" Class="nv-drawer" ClipMode="DrawerClipMode.Never">
+        <MudDrawerHeader Class="px-4">
+            <a class="nv-brand" href="@HomeHref" aria-label="NexaVerify home">
+                <span class="nv-brand-mark" aria-hidden="true"><MudIcon Icon="@Icons.Material.Filled.Face" Size="Size.Small" /></span>
+                <span>
+                    <span class="nv-brand-name d-block">NexaVerify</span>
+                    <span class="nv-portal-tag">@PortalLabel</span>
+                </span>
+            </a>
+        </MudDrawerHeader>
+        <nav aria-label="Main" class="nv-nav">
+            @foreach (var group in Groups)
+            {
+                <MudText Typo="Typo.overline" Class="nv-muted nv-nav-group-title" HtmlTag="h2">@group.Title</MudText>
+                <MudNavMenu Class="pa-0">
+                    @foreach (var item in group.Items)
+                    {
+                        <MudNavLink Href="@item.Href" Match="@(item.Exact ? NavLinkMatch.All : NavLinkMatch.Prefix)" Icon="@item.Icon" Disabled="@(!item.Implemented)">
+                            @item.Title
+                            @if (!item.Implemented)
+                            {
+                                <span class="nv-soon">Soon</span>
+                            }
+                        </MudNavLink>
+                    }
+                </MudNavMenu>
+            }
+        </nav>
+    </MudDrawer>
+
+    <MudMainContent>
+        <main id="main-content" class="nv-content nv-main" tabindex="-1">
+            @ChildContent
+        </main>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    private bool _drawerOpen = true;
+
+    [Parameter, EditorRequired] public IReadOnlyList<NavGroup> AllGroups { get; set; } = [];
+
+    [Parameter, EditorRequired] public string PortalLabel { get; set; } = string.Empty;
+
+    [Parameter] public string HomeHref { get; set; } = "/";
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private IReadOnlyList<NavGroup> Groups => NavigationCatalog.Trim(AllGroups, User.Has);
+}

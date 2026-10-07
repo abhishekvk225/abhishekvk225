@@ -1,0 +1,346 @@
+@page "/styleguide"
+@layout ClientLayout
+@using System.ComponentModel.DataAnnotations
+@inject IHostEnvironment Env
+@inject IDialogService Dialogs
+@inject IAppSnackbar Snack
+
+<PageTitle>Styleguide · NexaVerify</PageTitle>
+
+@if (!Env.IsDevelopment())
+{
+    <EmptyState Icon="@Icons.Material.Outlined.Lock" Title="Not available" Message="The styleguide is only served in the Development environment." />
+    return;
+}
+
+<PageHeader Title="Styleguide" Subtitle="Every shared component in every state. Development only.">
+    <Actions>
+        <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined">Dev only</MudChip>
+    </Actions>
+</PageHeader>
+
+<div class="d-flex flex-column" style="gap: var(--nv-space-6);">
+
+    <StyleguideSection Title="Theme tokens">
+        <div class="d-flex flex-wrap" style="gap: var(--nv-space-3);">
+            @foreach (var (name, cssVar) in Swatches)
+            {
+                <div style="width: 112px;">
+                    <div style="height: 48px; border-radius: var(--nv-radius); border: 1px solid var(--mud-palette-lines-default); background: var(@cssVar);"></div>
+                    <MudText Typo="Typo.caption">@name</MudText>
+                </div>
+            }
+        </div>
+        <div class="mt-4">
+            <MudText Typo="Typo.h1">Heading 1</MudText>
+            <MudText Typo="Typo.h2">Heading 2</MudText>
+            <MudText Typo="Typo.h3">Heading 3</MudText>
+            <MudText Typo="Typo.h4">Heading 4</MudText>
+            <MudText Typo="Typo.body1">Body text. The quick brown fox jumps over the lazy dog.</MudText>
+            <MudText Class="nv-muted" Typo="Typo.body2">Secondary text and captions use the same scale everywhere.</MudText>
+        </div>
+    </StyleguideSection>
+
+    <StyleguideSection Title="StatCard">
+        <MudGrid Spacing="3">
+            <MudItem xs="12" sm="6" md="3"><StatCard Title="Face checks" Value="12,480" Icon="@Icons.Material.Outlined.Face" DeltaPercent="8.6" Sparkline="_spark" /></MudItem>
+            <MudItem xs="12" sm="6" md="3"><StatCard Title="Credits left" Value="842" Icon="@Icons.Material.Outlined.Toll" DeltaPercent="-2.3" /></MudItem>
+            <MudItem xs="12" sm="6" md="3"><StatCard Title="Failed (rise is bad)" Value="310" Icon="@Icons.Material.Outlined.ErrorOutline" DeltaPercent="3.2" HigherIsBetter="false" /></MudItem>
+            <MudItem xs="12" sm="6" md="3"><StatCard Title="Loading" Value="" Loading="true" /></MudItem>
+        </MudGrid>
+    </StyleguideSection>
+
+    <StyleguideSection Title="StatusChip">
+        <div class="d-flex flex-column" style="gap: var(--nv-space-3);">
+            @foreach (var (kind, values) in StatusSamples)
+            {
+                <div class="d-flex flex-wrap align-center" style="gap: var(--nv-space-2);">
+                    <MudText Typo="Typo.overline" Style="width: 80px;">@kind</MudText>
+                    @foreach (var value in values)
+                    {
+                        <StatusChip Kind="kind" Value="@value" />
+                    }
+                </div>
+            }
+            <div class="d-flex flex-wrap align-center" style="gap: var(--nv-space-2);">
+                <MudText Typo="Typo.overline" Style="width: 80px;">Unknown</MudText>
+                <StatusChip Kind="StatusKind.License" Value="SomethingNew" />
+            </div>
+        </div>
+    </StyleguideSection>
+
+    <StyleguideSection Title="LicenseGauge">
+        <MudGrid Spacing="3">
+            <MudItem xs="12" md="6"><LicenseGauge Remaining="842" Total="1000" ExpiresAt="_now.AddDays(23).AddHours(2)" Now="_now" /></MudItem>
+            <MudItem xs="12" md="6"><LicenseGauge Remaining="250" Total="1000" ExpiresAt="_now.AddDays(90)" Now="_now" /></MudItem>
+            <MudItem xs="12" md="6"><LicenseGauge Remaining="800" Total="1000" ExpiresAt="_now.AddDays(5).AddHours(1)" Now="_now" /></MudItem>
+            <MudItem xs="12" md="6"><LicenseGauge Remaining="0" Total="1000" ExpiresAt="_now.AddDays(-2)" Now="_now" /></MudItem>
+        </MudGrid>
+    </StyleguideSection>
+
+    <StyleguideSection Title="ChartCard (normal, loading, error, empty) with accessible table toggle">
+        <MudGrid Spacing="3">
+            <MudItem xs="12" md="6">
+                <ChartCard Title="Requests" Subtitle="Last 14 days">
+                    <ChildContent><SimpleChart Kind="ChartKind.Line" Series="_series" Description="Line chart of requests per day." /></ChildContent>
+                    <TableContent><SeriesTable Series="_series" /></TableContent>
+                </ChartCard>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <ChartCard Title="Results" Subtitle="Donut">
+                    <ChildContent><SimpleChart Kind="ChartKind.Donut" Series="_donut" Description="Donut chart of results." Size="220" /></ChildContent>
+                    <TableContent><SeriesTable Series="_donut" LabelHeader="Result" /></TableContent>
+                </ChartCard>
+            </MudItem>
+            <MudItem xs="12" md="4"><ChartCard Title="Loading" Loading="true" /></MudItem>
+            <MudItem xs="12" md="4"><ChartCard Title="Error" Error="_error" OnRetry="RetryDemo" /></MudItem>
+            <MudItem xs="12" md="4"><ChartCard Title="Empty" IsEmpty="true" /></MudItem>
+        </MudGrid>
+    </StyleguideSection>
+
+    <StyleguideSection Title="Skeletons">
+        <MudGrid Spacing="3">
+            <MudItem xs="12" md="4"><SkeletonCard /></MudItem>
+            <MudItem xs="12" md="8"><SkeletonTable Rows="3" /></MudItem>
+            <MudItem xs="12"><SkeletonChart Height="120" /></MudItem>
+        </MudGrid>
+    </StyleguideSection>
+
+    <StyleguideSection Title="FilterBar + DataTable (server-side paging / sort / search; cards on xs)">
+        <FilterBar SearchLabel="Search people" OnSearch="s => _search = s" OnReset="() => _search = null" ExtraFiltersActive="false" />
+        <div class="mt-3 nv-card">
+            <DataTable T="Person" Caption="People" Columns="_personColumns" LoadData="LoadPeopleAsync" Search="@_search" PageSize="10" DefaultSort="name:asc">
+                <RowActions Context="p">
+                    <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="@($"Delete {p.Name}")" OnClick="() => Pretend(p.Name)" />
+                </RowActions>
+            </DataTable>
+        </div>
+        <MudText Typo="Typo.subtitle2" Class="mt-4 mb-1">Empty</MudText>
+        <div class="nv-card"><DataTable T="Person" Caption="Empty people" Columns="_personColumns" LoadData="@(_ => Task.FromResult(ApiResult<PagedResult<Person>>.Ok(new PagedResult<Person>([], 1, 10, 0))))" EmptyMessage="Add your first person to get started." /></div>
+        <MudText Typo="Typo.subtitle2" Class="mt-4 mb-1">Error</MudText>
+        <div class="nv-card"><DataTable T="Person" Caption="Failing people" Columns="_personColumns" LoadData="@(_ => Task.FromResult(ApiResult<PagedResult<Person>>.Fail(_error)))" /></div>
+    </StyleguideSection>
+
+    <StyleguideSection Title="PageState (loading / empty / error / success)">
+        <MudButtonGroup Variant="Variant.Outlined" aria-label="Page state demo">
+            <MudButton OnClick="@(() => _pageState = PageDemo.Loading)">Loading</MudButton>
+            <MudButton OnClick="@(() => _pageState = PageDemo.Empty)">Empty</MudButton>
+            <MudButton OnClick="@(() => _pageState = PageDemo.Error)">Error</MudButton>
+            <MudButton OnClick="@(() => _pageState = PageDemo.Success)">Success</MudButton>
+        </MudButtonGroup>
+        <div class="nv-card mt-3">
+            <PageState T="List<string>" Result="PageStateResult" IsEmpty="l => l.Count == 0" OnRetry="@(() => _pageState = PageDemo.Success)"
+                       EmptyTitle="No items yet" EmptyMessage="Items you add will appear here." EmptyActionText="Add item" OnEmptyAction="@(() => Snack.Info("Add item clicked"))">
+                <ChildContent Context="items"><ul class="pa-4">@foreach (var i in items) { <li>@i</li> }</ul></ChildContent>
+            </PageState>
+        </div>
+    </StyleguideSection>
+
+    <StyleguideSection Title="EmptyState / ErrorState">
+        <MudGrid Spacing="3">
+            <MudItem xs="12" md="6"><div class="nv-card"><EmptyState Title="No API keys yet" Message="Create a key to start calling the API." ActionText="Create API key" OnAction="@(() => Snack.Info("Create clicked"))" /></div></MudItem>
+            <MudItem xs="12" md="6"><div class="nv-card"><ErrorState Error="_error" OnRetry="RetryDemo" /></div></MudItem>
+        </MudGrid>
+    </StyleguideSection>
+
+    <StyleguideSection Title="ActivityFeed">
+        <MudGrid Spacing="3">
+            <MudItem xs="12" md="6"><div class="nv-card pa-4"><ActivityFeed Items="_activity" /></div></MudItem>
+            <MudItem xs="12" md="3"><div class="nv-card pa-4"><ActivityFeed Items="@([])" /></div></MudItem>
+            <MudItem xs="12" md="3"><div class="nv-card pa-4"><ActivityFeed Loading="true" /></div></MudItem>
+        </MudGrid>
+    </StyleguideSection>
+
+    <StyleguideSection Title="Dialogs and feedback">
+        <div class="d-flex flex-wrap" style="gap: var(--nv-space-2);">
+            <MudButton Variant="Variant.Outlined" OnClick="ConfirmSimpleAsync">Confirm</MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="ConfirmTypedAsync">Type-to-confirm (destructive)</MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="ConfirmReasonAsync">Typed + reason</MudButton>
+            <MudButton Variant="Variant.Outlined" OnClick="FormAsync">Form dialog</MudButton>
+            <MudButton Variant="Variant.Outlined" OnClick="SecretAsync">Reveal secret (once)</MudButton>
+        </div>
+        <div class="d-flex flex-wrap mt-3" style="gap: var(--nv-space-2);">
+            <MudButton Variant="Variant.Text" Color="Color.Success" OnClick="@(() => Snack.Success("Client saved"))">Success</MudButton>
+            <MudButton Variant="Variant.Text" Color="Color.Info" OnClick="@(() => Snack.Info("Export started"))">Info</MudButton>
+            <MudButton Variant="Variant.Text" Color="Color.Warning" OnClick="@(() => Snack.Warning("Licence expires soon"))">Warning</MudButton>
+            <MudButton Variant="Variant.Text" Color="Color.Error" OnClick="@(() => Snack.Error(_error))">Error with reference</MudButton>
+        </div>
+        @if (_lastDialogResult is not null)
+        {
+            <MudText Typo="Typo.body2" Class="nv-muted mt-3" data-testid="dialog-result">Last result: @_lastDialogResult</MudText>
+        }
+    </StyleguideSection>
+
+    <StyleguideSection Title="FaceCapture (camera or upload, size/type guard)">
+        <div style="max-width: 560px;"><FaceCapture OnCaptured="OnCaptured" /></div>
+        @if (_captured is not null)
+        {
+            <MudAlert Severity="Severity.Success" Dense="true" Class="mt-3">Received @_captured.FileName (@_captured.ContentType, @(_captured.Data.Length / 1024) KB). It is not stored.</MudAlert>
+        }
+    </StyleguideSection>
+</div>
+
+@code {
+    private enum PageDemo
+    {
+        Loading,
+        Empty,
+        Error,
+        Success,
+    }
+
+    private sealed record Person(int Id, string Name, string Status);
+
+    private sealed class SampleClient
+    {
+        [Required(ErrorMessage = "Enter a company name.")]
+        [StringLength(100)]
+        public string Name { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Enter a contact email.")]
+        [EmailAddress(ErrorMessage = "Enter a valid email address.")]
+        public string Email { get; set; } = string.Empty;
+    }
+
+    private static readonly (string Name, string CssVar)[] Swatches =
+    [
+        ("Primary", "--mud-palette-primary"),
+        ("Secondary", "--mud-palette-secondary"),
+        ("Success", "--mud-palette-success"),
+        ("Warning", "--mud-palette-warning"),
+        ("Error", "--mud-palette-error"),
+        ("Info", "--mud-palette-info"),
+        ("Surface", "--mud-palette-surface"),
+        ("Background", "--mud-palette-background"),
+    ];
+
+    private static readonly (StatusKind Kind, string[] Values)[] StatusSamples =
+    [
+        (StatusKind.Client, ["Active", "Pending", "Suspended", "Inactive"]),
+        (StatusKind.License, ["Draft", "Active", "ExpiringSoon", "Exhausted", "Expired", "Suspended", "Cancelled"]),
+        (StatusKind.ApiKey, ["Active", "Expired", "Revoked"]),
+        (StatusKind.Outcome, ["Enrolled", "Matched", "NoMatch", "NoFaceDetected", "MultipleFaces", "LowQuality", "ProviderError", "Rejected"]),
+    ];
+
+    private static readonly DateTimeOffset _now = new(2026, 6, 15, 9, 0, 0, TimeSpan.Zero);
+    private static readonly ApiError _error = new("INTERNAL_ERROR", "We could not load this right now.", "9c1f0d3a7b42", 500);
+    private static readonly IReadOnlyList<double> _spark = [3, 5, 4, 8, 7, 9, 12, 10, 14];
+
+    private readonly IReadOnlyList<TrendSeries> _series =
+    [
+        new("Successful", Enumerable.Range(1, 14).Select(i => new TrendPoint($"{i} Jun", 400 + (i * 37 % 90) + i * 12)).ToList()),
+        new("Failed", Enumerable.Range(1, 14).Select(i => new TrendPoint($"{i} Jun", 30 + (i * 13 % 20))).ToList()),
+    ];
+
+    private readonly IReadOnlyList<TrendSeries> _donut =
+    [
+        new("Successful", [new TrendPoint("Total", 840)]),
+        new("No match", [new TrendPoint("Total", 90)]),
+        new("Could not process", [new TrendPoint("Total", 40)]),
+    ];
+
+    private readonly IReadOnlyList<ActivityItem> _activity =
+    [
+        new("1", "License renewed", "Globex Bank · +100,000 credits", DateTimeOffset.UtcNow.AddMinutes(-12), Icons.Material.Outlined.VpnKey, Color.Success),
+        new("2", "API key revoked", "Key nv_live_8f2…", DateTimeOffset.UtcNow.AddHours(-3), Icons.Material.Outlined.Key, Color.Warning),
+        new("3", "Sign-in from new device", "Alex Morgan", DateTimeOffset.UtcNow.AddDays(-2), Icons.Material.Outlined.Login),
+    ];
+
+    private static readonly Person[] AllPeople = Enumerable.Range(1, 63)
+        .Select(i => new Person(i, $"Person {i:00}", i % 5 == 0 ? "Suspended" : "Active"))
+        .ToArray();
+
+    private IReadOnlyList<DataColumn<Person>> _personColumns = [];
+    private string? _search;
+    private PageDemo _pageState = PageDemo.Success;
+    private string? _lastDialogResult;
+    private CapturedImage? _captured;
+
+    private ApiResult<List<string>>? PageStateResult => _pageState switch
+    {
+        PageDemo.Loading => null,
+        PageDemo.Empty => ApiResult<List<string>>.Ok([]),
+        PageDemo.Error => ApiResult<List<string>>.Fail(_error),
+        _ => ApiResult<List<string>>.Ok(["First item", "Second item", "Third item"]),
+    };
+
+    protected override void OnInitialized() =>
+        _personColumns =
+        [
+            DataColumn<Person>.Text("ID", p => p.Id.ToString(System.Globalization.CultureInfo.InvariantCulture), "id", numeric: true),
+            DataColumn<Person>.Text("Name", p => p.Name, "name"),
+            DataColumn<Person>.Custom("Status", p => @<StatusChip Kind="StatusKind.Client" Value="@p.Status" />, "status"),
+        ];
+
+    private async Task<ApiResult<PagedResult<Person>>> LoadPeopleAsync(PageRequest request)
+    {
+        await Task.Delay(250);
+        IEnumerable<Person> query = AllPeople;
+        if (!string.IsNullOrWhiteSpace(request.Search))
+        {
+            query = query.Where(p => p.Name.Contains(request.Search, StringComparison.OrdinalIgnoreCase));
+        }
+
+        var sort = request.Sort?.Split(':');
+        var desc = sort is { Length: > 1 } && sort[1] == "desc";
+        query = sort?[0] switch
+        {
+            "id" => desc ? query.OrderByDescending(p => p.Id) : query.OrderBy(p => p.Id),
+            "status" => desc ? query.OrderByDescending(p => p.Status) : query.OrderBy(p => p.Status),
+            _ => desc ? query.OrderByDescending(p => p.Name) : query.OrderBy(p => p.Name),
+        };
+
+        var list = query.ToList();
+        return ApiResult<PagedResult<Person>>.Ok(new PagedResult<Person>(list.Skip(request.Skip).Take(request.PageSize).ToList(), request.Page, request.PageSize, list.Count));
+    }
+
+    private void Pretend(string name) => Snack.Info($"Pretend to delete {name}");
+
+    private void RetryDemo() => Snack.Info("Retry clicked");
+
+    private async Task ConfirmSimpleAsync()
+    {
+        var result = await Dialogs.ConfirmAsync("Resend invitation?", "We will email a new invitation link to alex@acme.example.", "Resend");
+        _lastDialogResult = result is null ? "cancelled" : "confirmed";
+    }
+
+    private async Task ConfirmTypedAsync()
+    {
+        var result = await Dialogs.ConfirmAsync("Suspend Acme Corp?", "Acme Corp and all of its users will be signed out and API calls will be refused until you reactivate the account.", "Suspend client", destructive: true, requiredPhrase: "Acme Corp");
+        _lastDialogResult = result is null ? "cancelled" : "suspend confirmed";
+    }
+
+    private async Task ConfirmReasonAsync()
+    {
+        var result = await Dialogs.ConfirmAsync("Adjust credits?", "This changes the credit balance and is recorded permanently.", "Adjust credits", destructive: true, requiredPhrase: "ADJUST", requireReason: true);
+        _lastDialogResult = result is null ? "cancelled" : $"adjust confirmed, reason: {result.Reason}";
+    }
+
+    private async Task FormAsync()
+    {
+        var saved = await Dialogs.ShowFormAsync("New client", new SampleClient(), SampleFields, SaveSampleAsync, "Create client");
+        if (saved is not null)
+        {
+            Snack.Success($"{saved.Name} created");
+            _lastDialogResult = "form saved";
+        }
+    }
+
+    private RenderFragment<SampleClient> SampleFields => model => @<div class="d-flex flex-column" style="gap: var(--nv-space-3);">
+        <MudTextField T="string" @bind-Value="model.Name" For="() => model.Name" Label="Company name" Variant="Variant.Outlined" Immediate="true" HelperText="Try &quot;taken&quot; to see a server error mapped onto the field." />
+        <MudTextField T="string" @bind-Value="model.Email" For="() => model.Email" Label="Contact email" InputType="InputType.Email" Variant="Variant.Outlined" Immediate="true" />
+    </div>;
+
+    private async Task<ApiError?> SaveSampleAsync(SampleClient model)
+    {
+        await Task.Delay(400);
+        return model.Name.Equals("taken", StringComparison.OrdinalIgnoreCase)
+            ? new ApiError("VALIDATION_FAILED", "Please fix the highlighted fields.", "c0ffee12", 400, new Dictionary<string, string[]> { ["name"] = ["A client with this name already exists."] })
+            : null;
+    }
+
+    private async Task SecretAsync() =>
+        await Dialogs.RevealSecretAsync("Your new API key", "nv_live_3f9d1a7c2b8e4a60b5d79ef01c23a4b8", "Copy this key now. For your security we cannot show it again.");
+
+    private void OnCaptured(CapturedImage image) => _captured = image;
+}

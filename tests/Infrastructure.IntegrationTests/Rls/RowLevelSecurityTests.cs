@@ -127,7 +127,7 @@ public class RowLevelSecurityTests : IAsyncLifetime
     [Fact]
     public async Task Platform_session_cannot_read_strict_tables_even_without_ef_filter()
     {
-        using var scope = _db.Tenant.BeginPlatform();
+        using var scope = _db.Tenant.BeginPlatform("test");
         await using var context = _db.NewContext();
 
         (await context.SecretWidgets.IgnoreQueryFilters().CountAsync()).ShouldBe(0);

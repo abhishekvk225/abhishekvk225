@@ -1,0 +1,10 @@
+@inherits LayoutComponentBase
+@inject CurrentUserState User
+
+<PortalShell AllGroups="NavigationCatalog.Admin" PortalLabel="Admin console" HomeHref="admin">
+    @Body
+</PortalShell>
+
+@code {
+    protected override void OnInitialized() => User.SignInDemo(Portal.Admin); // UI-1 stub: real session arrives with the BFF wiring
+}

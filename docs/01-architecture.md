@@ -181,7 +181,7 @@ The Web project talks to the API over HTTP only. That keeps business logic out o
 1. JWT user → `cid` claim (platform users have none).
 2. API key → `ClientId` on the key row after hash lookup.
 3. Background jobs → explicitly set per unit of work via `ITenantScope.Begin(clientId)`.
-4. Super Admin acting on a client → *explicit* `IPlatformAccess` scope, audited; the client is taken from the route (`/admin/clients/{id}/...`) and authorised by permission, not by the query filter.
+4. Platform users (Super Admin) → `IsPlatform` scope derived from the credential; the client they act on is taken from the route (`/admin/clients/{id}/...`) and authorised by permission. Pre-authentication lookups (login, API-key lookup) and system work use `ITenantScope.BeginPlatform(reason)` — a mandatory reason that is logged; entering any scope (`ITenantScope`, `BeginPlatform`, `BeginTenant`) is restricted to an allow-list of namespaces by an architecture test. A tenant principal can never `BeginTenant` into another tenant.
 
 **Five isolation layers (defense in depth)**
 1. **Authentication** puts `ClientId` in the principal.
@@ -254,3 +254,13 @@ See `docs/06-ui-information-architecture.md` for the sitemap and dashboard defin
 | Data growth | Request/API logs monthly-partitioned with retention purge; rollups keep dashboards O(days) not O(requests) |
 | Observability | Correlation id on every log/response, OpenTelemetry traces + metrics, audit trail, alerting on error-rate, 5xx, license-exhaustion |
 | Testability | `TimeProvider`, key provider and face engine are injected; ≥ 85 % line coverage on `Application` + `Domain`; 100 % of license state-machine transitions covered |
+
+## 11. Tenancy implementation notes (learned in M1 hardening)
+
+- **No nullable tenant column.** Rows that belong to "nobody" use the well-known `PlatformTenant.ClientId` (`…F001`), visible only to platform scope: platform staff accounts, platform audit events, login attempts for unknown emails. Genuinely global reference data (roles, permissions, plans, platform default cost rules) lives in non-tenant tables with no `ClientId`; per-client overrides are separate tenant-owned tables.
+- **One `DbContext` per tenant scope** (the default scoped lifetime). Tracked entities are not re-filtered when the scope changes; `Find`/identity resolution can return an entity loaded under another scope. Do not use `AddDbContextPool`/`AddDbContextFactory` (the interceptors are scoped) and do not generate compiled models (they do not support query filters).
+- **SESSION_CONTEXT** is applied when a connection opens *and* re-applied before any command whenever the scope changed, so switching scope inside an open transaction cannot leave the previous tenant active. Cost: one extra round trip per connection open.
+- **Write guard coverage:** `SaveChanges` is guarded; `ExecuteUpdate`/`ExecuteDelete`/`FromSql*`/`ExecuteSql*`/`IgnoreQueryFilters` are confined to approved infrastructure folders by an architecture test (RLS remains the second layer for those paths). `IgnoreQueryFilters()` without a filter name is banned everywhere.
+- **Model rules** (`TenantModelRules`, enforced when the model builds): an entity with a `ClientId` property must implement `ITenantOwned`; derived types must match their root's strictness and table; owned types in their own table are rejected for tenant data. Enum columns automatically get a `CHECK` constraint and an `nvarchar(30)` string column.
+- **Blazor Server:** the portal never uses `HttpCurrentUser`/`ITenantScope`; it calls the API with the user's token. A circuit-scoped identity provider lives in the Web project.
+- **Time:** only `TimeProvider`; entities never use `DateTimeOffset`.

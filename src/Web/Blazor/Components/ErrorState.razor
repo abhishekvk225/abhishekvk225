@@ -1,0 +1,32 @@
+@inject IClipboardService Clipboard
+
+<div class="d-flex flex-column align-center text-center pa-8" style="gap: var(--nv-space-3);" role="alert" data-testid="error-state">
+    <div class="nv-stat-icon" style="width: 56px; height: 56px; background: color-mix(in srgb, var(--mud-palette-error) 14%, transparent); color: var(--mud-palette-error);" aria-hidden="true">
+        <MudIcon Icon="@Icons.Material.Outlined.ErrorOutline" Size="Size.Large" />
+    </div>
+    <MudText Typo="Typo.h4" HtmlTag="h2">@Title</MudText>
+    <MudText Class="nv-muted" Typo="Typo.body1" Style="max-width: 48ch;">@(Error?.Message ?? Message ?? "We could not load this. Please try again.")</MudText>
+    @if (!string.IsNullOrWhiteSpace(Error?.CorrelationId))
+    {
+        <div class="d-flex align-center" style="gap: var(--nv-space-1);">
+            <MudText Class="nv-muted" Typo="Typo.caption">Reference: <span data-testid="correlation-id">@Error!.CorrelationId</span></MudText>
+            <MudIconButton Icon="@Icons.Material.Outlined.ContentCopy" Size="Size.Small" aria-label="Copy reference" OnClick="CopyAsync" />
+        </div>
+    }
+    @if (OnRetry.HasDelegate)
+    {
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Refresh" OnClick="OnRetry">Try again</MudButton>
+    }
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = "Something went wrong";
+
+    [Parameter] public string? Message { get; set; }
+
+    [Parameter] public ApiError? Error { get; set; }
+
+    [Parameter] public EventCallback OnRetry { get; set; }
+
+    private Task CopyAsync() => Error?.CorrelationId is { } id ? Clipboard.CopyAsync(id) : Task.CompletedTask;
+}

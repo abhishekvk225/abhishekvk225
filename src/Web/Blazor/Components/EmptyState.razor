@@ -1,0 +1,27 @@
+<div class="d-flex flex-column align-center text-center pa-8" style="gap: var(--nv-space-3);" data-testid="empty-state">
+    <div class="nv-stat-icon" style="width: 56px; height: 56px;" aria-hidden="true"><MudIcon Icon="@Icon" Size="Size.Large" /></div>
+    <MudText Typo="Typo.h4" HtmlTag="h2">@Title</MudText>
+    @if (!string.IsNullOrWhiteSpace(Message))
+    {
+        <MudText Class="nv-muted" Typo="Typo.body1" Style="max-width: 44ch;">@Message</MudText>
+    }
+    @if (!string.IsNullOrWhiteSpace(ActionText))
+    {
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="OnAction">@ActionText</MudButton>
+    }
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public string Icon { get; set; } = Icons.Material.Outlined.Inbox;
+
+    [Parameter, EditorRequired] public string Title { get; set; } = "Nothing here yet";
+
+    [Parameter] public string? Message { get; set; }
+
+    [Parameter] public string? ActionText { get; set; }
+
+    [Parameter] public EventCallback OnAction { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

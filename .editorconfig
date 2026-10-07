@@ -29,3 +29,8 @@ dotnet_naming_style.underscore_camel.capitalization = camel_case
 # Tests: relax
 [tests/**.cs]
 dotnet_diagnostic.CA1707.severity = none
+
+# EF Core generated migrations are not hand-formatted
+[**/Persistence/Migrations/**.cs]
+generated_code = true
+dotnet_analyzer_diagnostic.severity = none

@@ -1,0 +1,13 @@
+@inject ThemeService Theme
+
+<MudMenu Icon="@CurrentIcon" aria-label="@($"Colour theme: {Theme.Preference}")" Color="Color.Default" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" Dense="true" data-testid="theme-menu">
+    <MudMenuItem Icon="@Icons.Material.Outlined.SettingsBrightness" OnClick="() => Theme.SetPreferenceAsync(ThemePreference.System)">Match my device@(Mark(ThemePreference.System))</MudMenuItem>
+    <MudMenuItem Icon="@Icons.Material.Outlined.LightMode" OnClick="() => Theme.SetPreferenceAsync(ThemePreference.Light)">Light@(Mark(ThemePreference.Light))</MudMenuItem>
+    <MudMenuItem Icon="@Icons.Material.Outlined.DarkMode" OnClick="() => Theme.SetPreferenceAsync(ThemePreference.Dark)">Dark@(Mark(ThemePreference.Dark))</MudMenuItem>
+</MudMenu>
+
+@code {
+    private string CurrentIcon => Theme.IsDarkMode ? Icons.Material.Outlined.DarkMode : Icons.Material.Outlined.LightMode;
+
+    private string Mark(ThemePreference p) => Theme.Preference == p ? " ✓" : string.Empty;
+}

@@ -1,0 +1,12 @@
+<section class="nv-card nv-card-pad" aria-labelledby="@_id">
+    <MudText Typo="Typo.h4" HtmlTag="h2" Class="mb-4" id="@_id">@Title</MudText>
+    @ChildContent
+</section>
+
+@code {
+    private readonly string _id = "sg-" + Guid.NewGuid().ToString("N")[..8];
+
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

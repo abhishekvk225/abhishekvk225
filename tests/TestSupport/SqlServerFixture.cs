@@ -23,7 +23,7 @@ public sealed class SqlServerFixture : IAsyncLifetime
             return;
         }
 
-        _container = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest").Build();
+        _container = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-CU16-ubuntu-22.04").Build();
         await _container.StartAsync();
         _adminConnectionString = _container.GetConnectionString();
     }

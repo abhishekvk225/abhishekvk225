@@ -1,0 +1,16 @@
+@inherits LayoutComponentBase
+
+<div class="nv-auth-bg">
+    <div style="width: 100%; max-width: 440px;">
+        <div class="d-flex justify-center mb-5">
+            <span class="nv-brand">
+                <span class="nv-brand-mark" aria-hidden="true"><MudIcon Icon="@Icons.Material.Filled.Face" Size="Size.Small" /></span>
+                <span class="nv-brand-name">NexaVerify</span>
+            </span>
+        </div>
+        <MudPaper Class="nv-card nv-auth-card" Elevation="0">
+            <main id="main-content">@Body</main>
+        </MudPaper>
+        <MudText Typo="Typo.caption" Align="Align.Center" Class="nv-muted mt-4 d-block">Secure face recognition for your business.</MudText>
+    </div>
+</div>

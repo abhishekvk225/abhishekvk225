@@ -1,15 +1,19 @@
-using System.Linq.Expressions;
 using System.Reflection;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using NexaVerify.Application.Abstractions;
+using NexaVerify.Application.Common;
+using NexaVerify.Domain.Auditing;
 using NexaVerify.Domain.Common;
+using NexaVerify.Domain.Identity;
 
 namespace NexaVerify.Infrastructure.Persistence;
 
 /// <summary>
 /// The single EF Core context. Module entity configurations are discovered from this assembly; every
-/// <see cref="ITenantOwned"/> entity automatically receives the tenant query filter (named "Tenant").
-/// Subclasses (tests, future split contexts) may add DbSets and configuration.
+/// <see cref="ITenantOwned"/> entity automatically receives the tenant query filter (named "Tenant") and every
+/// enum column a CHECK constraint. Use one context per tenant scope (the default scoped lifetime) — tracked entities
+/// are not re-filtered when the scope changes. Do not use context pooling/factories: the interceptors are scoped.
 /// </summary>
 public class AppDbContext : DbContext, IUnitOfWork
 {
@@ -34,31 +38,82 @@ public class AppDbContext : DbContext, IUnitOfWork
         _tenant = tenant;
     }
 
+    public DbSet<User> Users => Set<User>();
+
+    public DbSet<Role> Roles => Set<Role>();
+
+    public DbSet<Permission> Permissions => Set<Permission>();
+
+    public DbSet<UserRole> UserRoles => Set<UserRole>();
+
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
+    public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
+
+    public DbSet<LoginHistory> LoginHistory => Set<LoginHistory>();
+
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+
     // Read by the compiled query filters at query time (EF re-evaluates them per context instance).
     private bool FilterIsPlatform => _tenant.IsPlatform;
 
     private Guid? FilterClientId => _tenant.ClientId;
 
+    /// <summary>
+    /// Runs <paramref name="action"/> in one database transaction (joins an existing one). The commit itself is never
+    /// cancelled mid-flight so billing/ledger writes are all-or-nothing. If a retrying execution strategy is ever
+    /// enabled, the delegate must be idempotent.
+    /// </summary>
     public async Task<T> ExecuteInTransactionAsync<T>(
         Func<CancellationToken, Task<T>> action,
         CancellationToken cancellationToken = default)
     {
-        // Wrap in the execution strategy so retry policies (if enabled) re-run the whole unit of work.
-        var strategy = Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () =>
+        if (Database.CurrentTransaction is not null)
         {
-            await using var transaction = await Database.BeginTransactionAsync(cancellationToken);
-            var result = await action(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-            return result;
-        });
+            return await action(cancellationToken);
+        }
+
+        var strategy = Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(
+            async token =>
+            {
+                await using var transaction = await Database.BeginTransactionAsync(token);
+                var result = await action(token);
+                await transaction.CommitAsync(CancellationToken.None);
+                return result;
+            },
+            cancellationToken);
+    }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        try
+        {
+            return base.SaveChanges(acceptAllChangesOnSuccess);
+        }
+        catch (Exception ex) when (Translate(ex) is { } translated)
+        {
+            throw translated;
+        }
+    }
+
+    public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        }
+        catch (Exception ex) when (Translate(ex) is { } translated)
+        {
+            throw translated;
+        }
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
 
-        foreach (var entityType in modelBuilder.Model.GetEntityTypes().Where(e => !e.IsOwned()).ToList())
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes().ToList())
         {
             var clrType = entityType.ClrType;
             if (typeof(Entity).IsAssignableFrom(clrType))
@@ -66,7 +121,9 @@ public class AppDbContext : DbContext, IUnitOfWork
                 entityType.FindProperty(nameof(Entity.Id))?.ValueGenerated = Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.Never;
             }
 
-            if (!typeof(ITenantOwned).IsAssignableFrom(clrType) || entityType.BaseType is not null)
+            AddEnumCheckConstraints(modelBuilder, entityType);
+
+            if (entityType.IsOwned() || entityType.BaseType is not null || !typeof(ITenantOwned).IsAssignableFrom(clrType))
             {
                 continue;
             }
@@ -76,14 +133,49 @@ public class AppDbContext : DbContext, IUnitOfWork
                 : ApplyTenantFilterMethod;
             method.MakeGenericMethod(clrType).Invoke(this, [modelBuilder]);
         }
+
+        TenantModelRules.EnsureValid(modelBuilder.Model);
     }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        // Enums are stored as readable strings (CHECK constraints are added per entity configuration).
+        // Enums are stored as readable strings; CHECK constraints are generated in OnModelCreating.
         configurationBuilder.Properties<Enum>().HaveConversion<string>().HaveMaxLength(30);
-        configurationBuilder.Properties<DateTime>().HavePrecision(3).HaveColumnType("datetime2(3)");
+
+        // All timestamps are UTC DateTime with millisecond precision (datetime2(3)). Entities must not use DateTimeOffset.
+        configurationBuilder.Properties<DateTime>().HavePrecision(3);
+
+        // Safe default; long text columns must opt out explicitly (HasColumnType("nvarchar(max)")).
         configurationBuilder.Properties<string>().HaveMaxLength(256);
+    }
+
+    private static Exception? Translate(Exception ex) => ex switch
+    {
+        DbUpdateConcurrencyException => new ConcurrencyConflictException(ex),
+        DbUpdateException { InnerException: SqlException { Number: 2601 or 2627 } } => new UniqueConstraintViolationException(ex),
+        _ => null,
+    };
+
+    private static void AddEnumCheckConstraints(ModelBuilder modelBuilder, Microsoft.EntityFrameworkCore.Metadata.IMutableEntityType entityType)
+    {
+        if (entityType.IsOwned() || entityType.BaseType is not null || entityType.GetTableName() is not { } table)
+        {
+            return;
+        }
+
+        foreach (var property in entityType.GetProperties())
+        {
+            var type = Nullable.GetUnderlyingType(property.ClrType) ?? property.ClrType;
+            if (!type.IsEnum || property.IsShadowProperty())
+            {
+                continue;
+            }
+
+            var allowed = string.Join(", ", Enum.GetNames(type).Select(n => $"'{n}'"));
+            var column = property.Name;
+            modelBuilder.Entity(entityType.ClrType).ToTable(t =>
+                t.HasCheckConstraint($"CK_{table}_{property.Name}", $"[{column}] IN ({allowed})"));
+        }
     }
 
     // Platform scope may read all tenants; a tenant sees only its own rows; no tenant => no rows (fail-closed).

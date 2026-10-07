@@ -1,0 +1,25 @@
+@implements IDisposable
+@inject DashboardRangeState State
+
+<MudButtonGroup Variant="Variant.Outlined" Color="Color.Primary" role="group" aria-label="Time range" data-testid="range-selector">
+    @foreach (var (range, label) in Options)
+    {
+        var selected = State.Range == range;
+        <MudButton Variant="@(selected ? Variant.Filled : Variant.Outlined)" aria-pressed="@(selected ? "true" : "false")" OnClick="() => State.Set(range)">@label</MudButton>
+    }
+</MudButtonGroup>
+
+@code {
+    private static readonly (DashboardRange Range, string Label)[] Options =
+    [
+        (DashboardRange.Last7Days, "7 days"),
+        (DashboardRange.Last30Days, "30 days"),
+        (DashboardRange.Last90Days, "90 days"),
+    ];
+
+    protected override void OnInitialized() => State.Changed += OnChanged;
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => State.Changed -= OnChanged;
+}

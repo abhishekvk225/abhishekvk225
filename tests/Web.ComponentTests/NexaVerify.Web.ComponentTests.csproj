@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Web\Blazor\NexaVerify.Web.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="bunit" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+    <Using Include="Bunit" />
+    <Using Include="Microsoft.Extensions.DependencyInjection" />
+    <Using Include="MudBlazor" />
+    <Using Include="MudBlazor.Services" />
+    <Using Include="NexaVerify.Web.Components" />
+    <Using Include="NexaVerify.Web.Services" />
+  </ItemGroup>
+</Project>

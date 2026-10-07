@@ -7,7 +7,6 @@ using NexaVerify.Application.Abstractions;
 using NexaVerify.Application.Common;
 using NexaVerify.Contracts.Common;
 using NexaVerify.Domain.Common;
-using NexaVerify.Infrastructure.Tenancy;
 
 namespace NexaVerify.Api.IntegrationTests.Support;
 
@@ -68,6 +67,10 @@ public sealed class TestController : ApiControllerBase
         "unavailable" => new Error(ErrorCodes.FaceProviderUnavailable, "down", ErrorType.Unavailable),
         _ => Error.Failure(ErrorCodes.InternalError, "boom"),
     });
+
+    [Authorize]
+    [HttpGet("page")]
+    public IActionResult Page([FromQuery] NexaVerify.Contracts.Common.PageRequest query) => Ok(new { query.Page, query.PageSize, query.Search, query.Skip });
 
     [Authorize]
     [HttpGet("protected")]

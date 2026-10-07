@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using NexaVerify.Application.Abstractions;
 using NexaVerify.Domain.Common;
-using NexaVerify.Infrastructure.Tenancy;
+using NexaVerify.Application.Common;
 
 namespace NexaVerify.Infrastructure.Persistence.Interceptors;
 
@@ -84,6 +84,12 @@ public sealed class AuditAndTenantSaveChangesInterceptor : SaveChangesIntercepto
     private void GuardTenant(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry entry, ITenantOwned owned)
     {
         var entityName = entry.Metadata.ClrType.Name;
+
+        // Strict (e.g. biometric) rows: platform scope may never write them, mirroring the database policy.
+        if (owned is IStrictTenantOwned && _tenant.IsPlatform)
+        {
+            throw new TenantViolationException($"Platform scope cannot write {entityName}.");
+        }
 
         if (entry.State == EntityState.Added)
         {

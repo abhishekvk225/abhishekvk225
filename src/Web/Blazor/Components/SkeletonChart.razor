@@ -1,0 +1,8 @@
+<div data-testid="skeleton-chart">
+    <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="@($"{Height}px")" aria-hidden="true" />
+    <span class="nv-sr" role="status">Loading chart</span>
+</div>
+
+@code {
+    [Parameter] public int Height { get; set; } = 240;
+}

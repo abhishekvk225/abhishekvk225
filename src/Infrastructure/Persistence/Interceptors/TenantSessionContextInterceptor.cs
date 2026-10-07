@@ -1,59 +1,24 @@
 using System.Data.Common;
 using Microsoft.EntityFrameworkCore.Diagnostics;
-using NexaVerify.Application.Abstractions;
 
 namespace NexaVerify.Infrastructure.Persistence.Interceptors;
 
-/// <summary>
-/// Pushes the current tenant into SQL Server <c>SESSION_CONTEXT</c> every time a connection is opened
-/// (pool-safe — a pooled connection never keeps a previous request's tenant). The row-level-security
-/// policy reads these keys, so even raw SQL or a forgotten EF filter cannot cross tenants.
-/// </summary>
+/// <summary>Applies the tenant to the session whenever a connection is opened (including from the pool).</summary>
 public sealed class TenantSessionContextInterceptor : DbConnectionInterceptor
 {
-    public const string ClientIdKey = "ClientId";
-    public const string IsPlatformKey = "IsPlatform";
+    private readonly TenantSessionContextApplier _applier;
 
-    private readonly ITenantContext _tenant;
-
-    public TenantSessionContextInterceptor(ITenantContext tenant)
+    public TenantSessionContextInterceptor(TenantSessionContextApplier applier)
     {
-        _tenant = tenant;
+        _applier = applier;
     }
 
-    public override void ConnectionOpened(DbConnection connection, ConnectionEndEventData eventData)
-    {
-        using var command = CreateCommand(connection);
-        command.ExecuteNonQuery();
-    }
+    public override void ConnectionOpened(DbConnection connection, ConnectionEndEventData eventData) =>
+        _applier.ForceApply(connection);
 
-    public override async Task ConnectionOpenedAsync(
+    public override Task ConnectionOpenedAsync(
         DbConnection connection,
         ConnectionEndEventData eventData,
-        CancellationToken cancellationToken = default)
-    {
-        await using var command = CreateCommand(connection);
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
-
-    private DbCommand CreateCommand(DbConnection connection)
-    {
-        var command = connection.CreateCommand();
-        command.CommandText =
-            $"EXEC sp_set_session_context @key = N'{ClientIdKey}', @value = @clientId, @read_only = 0; " +
-            $"EXEC sp_set_session_context @key = N'{IsPlatformKey}', @value = @isPlatform, @read_only = 0;";
-
-        var clientId = command.CreateParameter();
-        clientId.ParameterName = "@clientId";
-        clientId.DbType = System.Data.DbType.Guid;
-        clientId.Value = _tenant.ClientId is { } id ? id : DBNull.Value;
-        command.Parameters.Add(clientId);
-
-        var isPlatform = command.CreateParameter();
-        isPlatform.ParameterName = "@isPlatform";
-        isPlatform.Value = _tenant.IsPlatform ? 1 : 0;
-        command.Parameters.Add(isPlatform);
-
-        return command;
-    }
+        CancellationToken cancellationToken = default) =>
+        _applier.ForceApplyAsync(connection, null, cancellationToken);
 }

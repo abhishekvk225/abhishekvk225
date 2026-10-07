@@ -1,0 +1,40 @@
+@using Microsoft.AspNetCore.Components.Web
+@using NexaVerify.Web.Security
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#4338CA" />
+    <base href="/" />
+    <title>NexaVerify</title>
+    <link rel="stylesheet" href="_content/MudBlazor/MudBlazor.min.css" />
+    <link rel="stylesheet" href="app.css" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <HeadOutlet @rendermode="InteractiveMode" />
+</head>
+<body>
+    <Routes @rendermode="InteractiveMode" />
+
+    <div id="blazor-error-ui" role="alert">
+        An unexpected error occurred.
+        <a href="." class="reload">Reload</a>
+        <span class="dismiss" aria-label="Dismiss">✕</span>
+    </div>
+
+    <script nonce="@Nonce" src="js/nexa.js"></script>
+    <script nonce="@Nonce" src="_content/MudBlazor/MudBlazor.min.js"></script>
+    <script nonce="@Nonce" src="_framework/blazor.web.js"></script>
+</body>
+</html>
+
+@code {
+    // Interactive Server without prerendering: the shell needs browser APIs (theme, storage) before it can render correctly.
+    private static readonly IComponentRenderMode InteractiveMode = new InteractiveServerRenderMode(prerender: false);
+
+    [CascadingParameter] private HttpContext? HttpContext { get; set; }
+
+    private string Nonce => HttpContext.GetCspNonce();
+}

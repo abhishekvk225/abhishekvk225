@@ -15,6 +15,13 @@
   <Folder Name="/src/Infrastructure/">
     <Project Path="src/Infrastructure/NexaVerify.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/src/Migrator/">
+    <Project Path="src/Migrator/NexaVerify.Migrator.csproj" />
+  </Folder>
+  <Folder Name="/src/Web/" />
+  <Folder Name="/src/Web/Blazor/">
+    <Project Path="src/Web/Blazor/NexaVerify.Web.csproj" />
+  </Folder>
   <Folder Name="/tests/" />
   <Folder Name="/tests/Api.IntegrationTests/">
     <Project Path="tests/Api.IntegrationTests/NexaVerify.Api.IntegrationTests.csproj" />
@@ -31,7 +38,13 @@
   <Folder Name="/tests/Infrastructure.IntegrationTests/">
     <Project Path="tests/Infrastructure.IntegrationTests/NexaVerify.Infrastructure.IntegrationTests.csproj" />
   </Folder>
+  <Folder Name="/tests/Infrastructure.UnitTests/">
+    <Project Path="tests/Infrastructure.UnitTests/NexaVerify.Infrastructure.UnitTests.csproj" />
+  </Folder>
   <Folder Name="/tests/TestSupport/">
     <Project Path="tests/TestSupport/NexaVerify.TestSupport.csproj" />
+  </Folder>
+  <Folder Name="/tests/Web.ComponentTests/">
+    <Project Path="tests/Web.ComponentTests/NexaVerify.Web.ComponentTests.csproj" />
   </Folder>
 </Solution>

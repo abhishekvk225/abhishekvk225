@@ -1,9 +1,9 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using NexaVerify.Api.Http;
+using NexaVerify.Application.Common;
 using NexaVerify.Contracts.Common;
 using NexaVerify.Domain.Common;
-using NexaVerify.Infrastructure.Tenancy;
 
 namespace NexaVerify.Api.Middleware;
 
@@ -13,6 +13,9 @@ namespace NexaVerify.Api.Middleware;
 /// </summary>
 public sealed class GlobalExceptionHandler : IExceptionHandler
 {
+    /// <summary>Non-standard "client closed request" status; nothing is written, it only makes access logs accurate.</summary>
+    private const int ClientClosedRequest = 499;
+
     private readonly ILogger<GlobalExceptionHandler> _logger;
 
     public GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger)
@@ -24,6 +27,7 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
     {
         if (exception is OperationCanceledException && httpContext.RequestAborted.IsCancellationRequested)
         {
+            httpContext.Response.StatusCode = ClientClosedRequest;
             return true; // client went away; nothing to write
         }
 
@@ -37,19 +41,30 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
                     "The requested resource was not found.");
                 break;
 
+            case ConcurrencyConflictException:
+                problem = ApiProblem.Create(httpContext, StatusCodes.Status409Conflict, ErrorCodes.ConcurrencyConflict, exception.Message);
+                break;
+
+            case UniqueConstraintViolationException:
+                problem = ApiProblem.Create(httpContext, StatusCodes.Status409Conflict, ErrorCodes.Conflict, exception.Message);
+                break;
+
             case DomainException domain:
+                // Domain messages are authored for clients and must not embed identifiers or other tenants' values.
                 _logger.LogWarning(exception, "Domain rule violated: {Code}", domain.Code);
                 problem = ApiProblem.Create(httpContext, StatusCodes.Status409Conflict, domain.Code, domain.Message);
                 break;
 
-            case BadHttpRequestException { StatusCode: StatusCodes.Status413PayloadTooLarge }:
-                problem = ApiProblem.Create(httpContext, StatusCodes.Status413PayloadTooLarge, ErrorCodes.PayloadTooLarge,
-                    "The request body is too large.");
+            case BadHttpRequestException bad:
+                var status = bad.StatusCode is >= 400 and < 500 ? bad.StatusCode : StatusCodes.Status400BadRequest;
+                problem = ApiProblem.Create(httpContext, status, ApiProblem.CodeForStatus(status),
+                    status == StatusCodes.Status413PayloadTooLarge ? "The request body is too large." : "The request could not be understood.");
                 break;
 
-            case BadHttpRequestException bad:
-                problem = ApiProblem.Create(httpContext, bad.StatusCode, ErrorCodes.ValidationFailed,
-                    "The request could not be understood.");
+            case TimeoutException or OperationCanceledException:
+                _logger.LogWarning(exception, "Request timed out");
+                problem = ApiProblem.Create(httpContext, StatusCodes.Status503ServiceUnavailable, ErrorCodes.RequestTimeout,
+                    "The request took too long to complete. Please retry.");
                 break;
 
             default:

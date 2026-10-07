@@ -14,4 +14,6 @@ public sealed class AnonymousCurrentUser : ICurrentUser
     public Guid? ClientId => null;
 
     public bool IsPlatformUser => false;
+
+    public IReadOnlyCollection<string> Roles => [];
 }

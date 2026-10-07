@@ -59,7 +59,7 @@ Super Admin has **no** implicit access to biometric content of clients: face ope
 Mandatory automated tests (release gate): for each tenant-owned entity and each endpoint, a user/API key of client A must receive 404/empty when addressing client B's ids; mass-assignment of `ClientId` in bodies is ignored; RLS blocks raw SQL cross-reads; background jobs cannot run without a tenant scope; query-filter bypass (`IgnoreQueryFilters`) only in whitelisted platform classes (architecture test).
 
 ## 5. Transport, headers, CORS, CSRF, XSS
-- HTTPS only; HSTS (1 year, preload-ready) in non-dev; TLS 1.2+; HTTP→HTTPS redirect; Kestrel server header removed.
+- HTTPS only; HSTS (1 year) from the security-headers middleware; plain HTTP is redirected (health probes exempt) by an own middleware that honours **trusted** forwarded headers (`ForwardedHeaders:KnownProxies/KnownNetworks`; enabling it without a trust list aborts startup); TLS 1.2+; Kestrel server header removed; production refuses `AllowedHosts: *`.
 - Headers (middleware, config-driven): `Content-Security-Policy` (default-src 'self'; no inline script except nonce'd Blazor bootstrap; `frame-ancestors 'none'`; `img-src 'self' data: blob:`; `connect-src 'self' wss:`), `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Permissions-Policy: camera=(self), microphone=(), geolocation=()`, `Cross-Origin-Opener-Policy: same-origin`, `Cache-Control: no-store` on authenticated/API responses.
 - **CORS**: the portal is BFF (same-origin to its own server) so the API's CORS policy is an **explicit allow-list per environment from configuration** — never `*` with credentials; integrators calling the API server-to-server don't need CORS. Browser-based integrators must be listed per client (`integration.allowedOrigins`).
 - **CSRF**: portal uses antiforgery tokens on every state-changing form/endpoint; bearer-token and API-key API calls are not cookie-authenticated, hence CSRF-immune. Cookie: `HttpOnly; Secure; SameSite=Lax` (Strict for admin).
@@ -85,7 +85,7 @@ Mandatory automated tests (release gate): for each tenant-owned entity and each 
 - Secrets are excluded from logs/audit/ProblemDetails via a Serilog destructuring policy + `[Sensitive]`/`[AuditIgnore]` attributes + unit tests asserting redaction.
 
 ## 8. Rate limiting, abuse, availability
-See `docs/03` §7. Additional: concurrency limiter around the face engine (bounded queue → 503 with `Retry-After` rather than unbounded memory), request body limits (≤ 6 MB on face endpoints), slow-request timeouts.
+See `docs/03` §7. Implemented in M1/M2: global per-IP limiter, a much stricter per-IP policy on credential endpoints, request-body/header/time limits, JSON depth limit, request timeouts. Additional: concurrency limiter around the face engine (bounded queue → 503 with `Retry-After` rather than unbounded memory), request body limits (≤ 6 MB on face endpoints), slow-request timeouts.
 
 ## 9. Biometric privacy & compliance (design obligations)
 - Consent reference **required** on enrollment; stored with timestamp. The client is the controller, the platform is the processor — Terms/DPA must say so (non-code task for the business).
@@ -113,9 +113,14 @@ See `docs/03` §7. Additional: concurrency limiter around the face engine (bound
 | A02 Cryptographic Failures | §7, TLS, TDE, no custom crypto primitives |
 | A03 Injection | §6 |
 | A04 Insecure Design | threat model §1, ADRs, abuse-case tests (license races, replay) |
-| A05 Security Misconfiguration | §5 headers, config validation, no dev features in prod, Swagger off in prod, hardened containers (non-root, read-only FS) |
+| A05 Security Misconfiguration | §5 headers, config validation, no dev features in prod, Swagger/OpenAPI served only in Development, hardened containers (non-root, read-only FS) |
 | A06 Vulnerable Components | §11 |
 | A07 Identification & Auth Failures | §2 |
 | A08 Software & Data Integrity | CI signing/SBOM, immutable ledger/audit, signed webhooks, no deserialization of untrusted types |
 | A09 Logging & Monitoring Failures | §10 |
 | A10 SSRF | webhook guard (`docs/03` §8), no user-controlled outbound URLs elsewhere |
+
+## 13. Review log
+| Date | Scope | Verdict | Notes |
+|---|---|---|---|
+| M1 | Foundation security review | PASS-WITH-CONDITIONS | 8 conditions (strict principal parsing, scope restriction, session-context refresh, forwarded headers, nullable tenant decision, model coverage rules, least-privilege DB login, atomic RLS install) — all addressed in the M1 hardening pass; re-verification pending in the M2 security gate |

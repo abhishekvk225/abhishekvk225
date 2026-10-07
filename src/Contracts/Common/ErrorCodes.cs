@@ -39,6 +39,10 @@ public static class ErrorCodes
     public const string RateLimited = "RATE_LIMITED";
     public const string DailyQuotaExceeded = "DAILY_QUOTA_EXCEEDED";
 
+    public const string MethodNotAllowed = "METHOD_NOT_ALLOWED";
+    public const string UnsupportedMediaType = "UNSUPPORTED_MEDIA_TYPE";
+    public const string RequestTimeout = "REQUEST_TIMEOUT";
+
     public const string InternalError = "INTERNAL_ERROR";
     public const string FaceProviderUnavailable = "FACE_PROVIDER_UNAVAILABLE";
 }

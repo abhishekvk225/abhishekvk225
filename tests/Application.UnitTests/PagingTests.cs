@@ -24,6 +24,15 @@ public class PagingTests
         new PageRequest { Page = -4, PageSize = 10 }.Skip.ShouldBe(0);
     }
 
+    [Fact]
+    public void Extreme_page_values_cannot_overflow_skip()
+    {
+        var request = new PageRequest { Page = int.MaxValue, PageSize = int.MaxValue };
+
+        request.Skip.ShouldBe((PageRequest.MaxPage - 1) * PageRequest.MaxPageSize);
+        request.Skip.ShouldBeGreaterThanOrEqualTo(0);
+    }
+
     [Theory]
     [InlineData(0, 25, 0)]
     [InlineData(1, 25, 1)]

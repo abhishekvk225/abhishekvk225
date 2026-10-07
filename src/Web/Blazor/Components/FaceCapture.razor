@@ -1,0 +1,291 @@
+@implements IAsyncDisposable
+@inject IJSRuntime Js
+
+<div data-testid="face-capture">
+    <MudTabs Elevation="0" Rounded="true" ActivePanelIndexChanged="OnTabChangedAsync" TabPanelsClass="pt-4" KeepPanelsAlive="true">
+        <MudTabPanel Text="Use camera" Icon="@Icons.Material.Outlined.PhotoCamera">
+            @if (_preview is not null)
+            {
+                <img class="nv-preview" src="@_preview" alt="Preview of the captured photo" data-testid="capture-preview" />
+                <div class="d-flex flex-wrap mt-3" style="gap: var(--nv-space-2);">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="UseAsync" data-testid="capture-use">Use this photo</MudButton>
+                    <MudButton Variant="Variant.Outlined" OnClick="RetakeAsync" data-testid="capture-retake">Retake</MudButton>
+                </div>
+            }
+            else
+            {
+                <video @ref="_video" class="nv-video" playsinline muted aria-label="Camera preview" style="@(_cameraOn ? null : "display:none")"></video>
+                @if (!_cameraOn)
+                {
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Videocam" OnClick="StartCameraAsync" data-testid="camera-start">Turn on camera</MudButton>
+                }
+                else
+                {
+                    <div class="d-flex flex-wrap mt-3" style="gap: var(--nv-space-2);">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.PhotoCamera" OnClick="CaptureAsync" data-testid="camera-capture">Take photo</MudButton>
+                        <MudButton Variant="Variant.Text" OnClick="StopCameraAsync">Turn off camera</MudButton>
+                    </div>
+                }
+            }
+            @if (_cameraProblem is not null)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3" data-testid="camera-problem">@_cameraProblem</MudAlert>
+            }
+        </MudTabPanel>
+        <MudTabPanel Text="Upload a photo" Icon="@Icons.Material.Outlined.UploadFile">
+            <MudText Typo="Typo.body2" Class="nv-muted mb-2">JPEG, PNG or WebP, up to @(MaxBytes / (1024 * 1024)) MB.</MudText>
+            <label class="mud-button-root mud-button mud-button-outlined mud-button-outlined-primary mud-button-outlined-size-medium mud-ripple" style="cursor:pointer; padding: 6px 16px;">
+                Choose a photo
+                <InputFile OnChange="OnFileAsync" accept="image/jpeg,image/png,image/webp" class="nv-sr" data-testid="capture-file" />
+            </label>
+            @if (_uploadProblem is not null)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3" data-testid="upload-problem">@_uploadProblem</MudAlert>
+            }
+            @if (_preview is not null && _source == Source.Upload)
+            {
+                <img class="nv-preview mt-3" src="@_preview" alt="Preview of the chosen photo" />
+                <div class="d-flex flex-wrap mt-3" style="gap: var(--nv-space-2);">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="UseAsync">Use this photo</MudButton>
+                    <MudButton Variant="Variant.Outlined" OnClick="RetakeAsync">Choose another</MudButton>
+                </div>
+            }
+        </MudTabPanel>
+    </MudTabs>
+</div>
+
+@code {
+    private static readonly string[] AllowedTypes = ["image/jpeg", "image/png", "image/webp"];
+
+    private enum Source
+    {
+        Camera,
+        Upload,
+    }
+
+    private ElementReference _video;
+    private IJSObjectReference? _module;
+    private bool _cameraOn;
+    private string? _cameraProblem;
+    private string? _uploadProblem;
+    private string? _preview;
+    private byte[]? _bytes;
+    private string _contentType = "image/jpeg";
+    private string _fileName = "capture.jpg";
+    private Source _source;
+
+    /// <summary>Largest accepted photo (matches the API default, docs/03 §5).</summary>
+    [Parameter] public long MaxBytes { get; set; } = 5 * 1024 * 1024;
+
+    /// <summary>Raised when the user confirms a photo. The component forgets its copy straight afterwards.</summary>
+    [Parameter] public EventCallback<CapturedImage> OnCaptured { get; set; }
+
+    private async Task<IJSObjectReference?> ModuleAsync()
+    {
+        if (_module is not null)
+        {
+            return _module;
+        }
+
+        try
+        {
+            _module = await Js.InvokeAsync<IJSObjectReference>("import", "./js/face-capture.js");
+        }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException or JSDisconnectedException)
+        {
+            _cameraProblem = "The camera is not available in this browser. Upload a photo instead.";
+        }
+
+        return _module;
+    }
+
+    private async Task StartCameraAsync()
+    {
+        _cameraProblem = null;
+        var module = await ModuleAsync();
+        if (module is null)
+        {
+            return;
+        }
+
+        _cameraOn = true;
+        StateHasChanged();
+        await Task.Yield();
+
+        string code;
+        try
+        {
+            code = await module.InvokeAsync<string>("start", _video);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+        {
+            code = "error";
+        }
+
+        if (code.Length > 0)
+        {
+            _cameraOn = false;
+            _cameraProblem = code switch
+            {
+                "denied" => "Camera access was blocked. Allow the camera in your browser, or upload a photo instead.",
+                "nodevice" => "No camera was found. Upload a photo instead.",
+                "busy" => "The camera is being used by another app. Close it and try again, or upload a photo.",
+                "unsupported" => "This browser cannot use the camera here. Upload a photo instead.",
+                _ => "We could not start the camera. Upload a photo instead.",
+            };
+        }
+    }
+
+    private async Task StopCameraAsync()
+    {
+        _cameraOn = false;
+        if (_module is not null)
+        {
+            try
+            {
+                await _module.InvokeVoidAsync("stop", _video);
+            }
+            catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+            {
+                // The page is going away or the element is gone: nothing left to release.
+            }
+        }
+    }
+
+    private async Task CaptureAsync()
+    {
+        _cameraProblem = null;
+        string base64;
+        try
+        {
+            base64 = await _module!.InvokeAsync<string>("capture", _video, 0.92);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+        {
+            base64 = string.Empty;
+        }
+
+        if (base64.Length == 0)
+        {
+            _cameraProblem = "We could not take the photo. Please try again.";
+            return;
+        }
+
+        var bytes = Convert.FromBase64String(base64);
+        if (bytes.Length > MaxBytes)
+        {
+            _cameraProblem = $"The photo is too large (max {MaxBytes / (1024 * 1024)} MB). Please try again.";
+            return;
+        }
+
+        await StopCameraAsync();
+        Accept(bytes, "image/jpeg", "capture.jpg", Source.Camera);
+    }
+
+    private async Task OnFileAsync(InputFileChangeEventArgs e)
+    {
+        _uploadProblem = null;
+        var file = e.File;
+
+        if (file.Size > MaxBytes)
+        {
+            _uploadProblem = $"That photo is too large. The limit is {MaxBytes / (1024 * 1024)} MB.";
+            return;
+        }
+
+        if (!AllowedTypes.Contains(file.ContentType, StringComparer.OrdinalIgnoreCase))
+        {
+            _uploadProblem = "Please choose a JPEG, PNG or WebP photo.";
+            return;
+        }
+
+        try
+        {
+            await using var stream = file.OpenReadStream(MaxBytes);
+            using var buffer = new MemoryStream();
+            await stream.CopyToAsync(buffer);
+            var bytes = buffer.ToArray();
+
+            var detected = ImageSniffer.Detect(bytes);
+            if (detected is null)
+            {
+                _uploadProblem = "That file does not look like a valid photo. Please choose a JPEG, PNG or WebP photo.";
+                return;
+            }
+
+            Accept(bytes, detected, SafeName(file.Name, detected), Source.Upload);
+        }
+        catch (IOException)
+        {
+            _uploadProblem = $"That photo is too large. The limit is {MaxBytes / (1024 * 1024)} MB.";
+        }
+    }
+
+    private void Accept(byte[] bytes, string contentType, string fileName, Source source)
+    {
+        _bytes = bytes;
+        _contentType = contentType;
+        _fileName = fileName;
+        _source = source;
+        _preview = $"data:{contentType};base64,{Convert.ToBase64String(bytes)}";
+    }
+
+    private async Task UseAsync()
+    {
+        if (_bytes is null)
+        {
+            return;
+        }
+
+        var image = new CapturedImage(_bytes, _contentType, _fileName);
+        Forget();
+        await OnCaptured.InvokeAsync(image);
+    }
+
+    private async Task RetakeAsync()
+    {
+        Forget();
+        if (_source == Source.Camera)
+        {
+            await StartCameraAsync();
+        }
+    }
+
+    private async Task OnTabChangedAsync(int index)
+    {
+        if (index != 0 && _cameraOn)
+        {
+            await StopCameraAsync();
+        }
+    }
+
+    private void Forget()
+    {
+        _bytes = null;
+        _preview = null;
+    }
+
+    private static string SafeName(string name, string contentType)
+    {
+        var ext = contentType switch { "image/png" => ".png", "image/webp" => ".webp", _ => ".jpg" };
+        var stem = new string(Path.GetFileNameWithoutExtension(name).Where(c => char.IsLetterOrDigit(c) || c is '-' or '_').Take(40).ToArray());
+        return (stem.Length == 0 ? "upload" : stem) + ext;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Forget();
+        if (_module is not null)
+        {
+            try
+            {
+                await _module.InvokeVoidAsync("stop", _video);
+                await _module.DisposeAsync();
+            }
+            catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+            {
+                // Circuit already gone; the browser releases the camera with the page.
+            }
+        }
+    }
+}

@@ -28,6 +28,6 @@ public sealed class CorsAllowListOptions
     public const string SectionName = "Cors";
     public const string PolicyName = "NexaVerifyAllowList";
 
-    /// <summary>Explicit origins allowed to call the API from a browser. Empty = no cross-origin access. Never "*".</summary>
+    /// <summary>Explicit https origins allowed to call the API from a browser. Empty = no cross-origin access. Never "*".</summary>
     public string[] AllowedOrigins { get; set; } = [];
 }

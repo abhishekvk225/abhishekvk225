@@ -38,4 +38,12 @@ public sealed record Error(
     public static Error PaymentRequired(string code, string message) => new(code, message, ErrorType.PaymentRequired);
 
     public static Error Failure(string code, string message) => new(code, message, ErrorType.Failure);
+
+    public static Error TooManyRequests(string code, string message) => new(code, message, ErrorType.TooManyRequests);
+
+    public static Error PayloadTooLarge(string message) => new(Contracts.Common.ErrorCodes.PayloadTooLarge, message, ErrorType.PayloadTooLarge);
+
+    public static Error Unprocessable(string code, string message) => new(code, message, ErrorType.UnprocessableEntity);
+
+    public static Error Unavailable(string code, string message) => new(code, message, ErrorType.Unavailable);
 }

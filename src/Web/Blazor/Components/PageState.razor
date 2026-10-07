@@ -1,0 +1,66 @@
+@typeparam T
+
+@* Loading / Empty / Error / Success in one place so every page handles all four identically (docs/06 §5.1). Result == null means loading. *@
+@if (Result is null)
+{
+    @if (Loading is not null)
+    {
+        @Loading
+    }
+    else
+    {
+        <SkeletonCard Lines="3" />
+    }
+}
+else if (!Result.IsSuccess)
+{
+    @if (ErrorContent is not null)
+    {
+        @ErrorContent(Result.Error!)
+    }
+    else
+    {
+        <ErrorState Error="Result.Error" OnRetry="OnRetry" />
+    }
+}
+else if (IsEmpty?.Invoke(Result.Value) == true)
+{
+    @if (EmptyContent is not null)
+    {
+        @EmptyContent
+    }
+    else
+    {
+        <EmptyState Title="@EmptyTitle" Message="@EmptyMessage" ActionText="@EmptyActionText" OnAction="OnEmptyAction" />
+    }
+}
+else if (ChildContent is not null)
+{
+    @ChildContent(Result.Value)
+}
+
+@code {
+    /// <summary>Null while loading.</summary>
+    [Parameter] public ApiResult<T>? Result { get; set; }
+
+    /// <summary>Decides whether a successful value counts as "empty".</summary>
+    [Parameter] public Func<T, bool>? IsEmpty { get; set; }
+
+    [Parameter] public RenderFragment? Loading { get; set; }
+
+    [Parameter] public RenderFragment? EmptyContent { get; set; }
+
+    [Parameter] public RenderFragment<ApiError>? ErrorContent { get; set; }
+
+    [Parameter] public RenderFragment<T>? ChildContent { get; set; }
+
+    [Parameter] public EventCallback OnRetry { get; set; }
+
+    [Parameter] public string EmptyTitle { get; set; } = "Nothing here yet";
+
+    [Parameter] public string? EmptyMessage { get; set; }
+
+    [Parameter] public string? EmptyActionText { get; set; }
+
+    [Parameter] public EventCallback OnEmptyAction { get; set; }
+}

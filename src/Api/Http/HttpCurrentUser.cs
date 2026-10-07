@@ -4,10 +4,16 @@ using NexaVerify.Contracts.Common;
 
 namespace NexaVerify.Api.Http;
 
-/// <summary>Maps the authenticated <see cref="ClaimsPrincipal"/> to <see cref="ICurrentUser"/>. The only place that reads tenant claims.</summary>
+/// <summary>
+/// Maps the authenticated <see cref="ClaimsPrincipal"/> to <see cref="ICurrentUser"/>. The only place that reads tenant claims.
+/// Fail-closed: a principal with ambiguous or contradictory identity claims (several actor claims, or a platform actor
+/// that also carries a client id) is treated as unauthenticated so it can never be promoted to platform scope.
+/// </summary>
 public sealed class HttpCurrentUser : ICurrentUser
 {
     private readonly IHttpContextAccessor _accessor;
+    private ClaimsPrincipal? _resolvedFor;
+    private Identity? _resolved;
 
     public HttpCurrentUser(IHttpContextAccessor accessor)
     {
@@ -16,31 +22,65 @@ public sealed class HttpCurrentUser : ICurrentUser
 
     private ClaimsPrincipal? Principal => _accessor.HttpContext?.User;
 
-    public bool IsAuthenticated => Principal?.Identity?.IsAuthenticated == true;
+    public bool IsAuthenticated => Resolve() is not null;
 
-    public ActorType ActorType
+    public ActorType ActorType => Resolve() is { } identity ? identity.Actor : ActorType.Anonymous;
+
+    public Guid? ActorId => Resolve()?.ActorId;
+
+    public Guid? ClientId => Resolve()?.ClientId;
+
+    public bool IsPlatformUser => Resolve()?.IsPlatform == true;
+
+    public IReadOnlyCollection<string> Roles => Resolve()?.Roles ?? [];
+
+    private Identity? Resolve()
     {
-        get
+        var principal = Principal;
+        if (!ReferenceEquals(principal, _resolvedFor))
         {
-            if (!IsAuthenticated)
-            {
-                return ActorType.Anonymous;
-            }
-
-            return Principal!.FindFirstValue(NexaClaims.ActorType) switch
-            {
-                "apikey" => ActorType.ApiKey,
-                _ => ActorType.User,
-            };
+            _resolved = Parse(principal);
+            _resolvedFor = principal;
         }
+
+        return _resolved;
     }
 
-    public Guid? ActorId => IsAuthenticated ? ParseGuid(Principal!.FindFirstValue(NexaClaims.Subject)) : null;
+    private static Identity? Parse(ClaimsPrincipal? principal)
+    {
+        if (principal?.Identity?.IsAuthenticated != true)
+        {
+            return null;
+        }
 
-    public Guid? ClientId => IsAuthenticated ? ParseGuid(Principal!.FindFirstValue(NexaClaims.ClientId)) : null;
+        var actors = principal.FindAll(NexaClaims.ActorType).Select(c => c.Value).ToList();
+        var clients = principal.FindAll(NexaClaims.ClientId).Select(c => c.Value).ToList();
+        var subjects = principal.FindAll(NexaClaims.Subject).Select(c => c.Value).ToList();
 
-    // A platform user is authenticated and carries no client binding; an unbound principal is never promoted by default.
-    public bool IsPlatformUser => IsAuthenticated && Principal!.HasClaim(NexaClaims.ActorType, NexaClaims.PlatformActor);
+        if (actors.Count > 1 || clients.Count > 1 || subjects.Count > 1)
+        {
+            return null; // ambiguous identity
+        }
 
-    private static Guid? ParseGuid(string? value) => Guid.TryParse(value, out var id) ? id : null;
+        var isPlatform = actors is [NexaClaims.PlatformActor];
+        if (isPlatform && clients.Count > 0)
+        {
+            return null; // platform principals are never bound to a client
+        }
+
+        if (!isPlatform && clients.Count == 1 && !Guid.TryParse(clients[0], out _))
+        {
+            return null;
+        }
+
+        var actor = actors is [NexaClaims.ApiKeyActor] ? ActorType.ApiKey : ActorType.User;
+        Guid? clientId = clients.Count == 1 ? Guid.Parse(clients[0]) : null;
+        Guid? actorId = subjects.Count == 1 && Guid.TryParse(subjects[0], out var id) ? id : null;
+
+        // A non-platform principal must be bound to a client; otherwise it has no tenant and sees nothing anyway.
+        var roles = principal.FindAll(NexaClaims.Role).Select(c => c.Value).Distinct(StringComparer.Ordinal).ToList();
+        return new Identity(actor, actorId, clientId, isPlatform, roles);
+    }
+
+    private sealed record Identity(ActorType Actor, Guid? ActorId, Guid? ClientId, bool IsPlatform, IReadOnlyCollection<string> Roles);
 }

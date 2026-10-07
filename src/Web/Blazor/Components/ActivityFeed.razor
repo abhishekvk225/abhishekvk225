@@ -1,0 +1,49 @@
+@inject TimeProvider Clock
+
+<div data-testid="activity-feed">
+    @if (Loading)
+    {
+        <SkeletonTable Rows="4" />
+    }
+    else if (Error is not null)
+    {
+        <ErrorState Error="Error" OnRetry="OnRetry" />
+    }
+    else if (Items is null || Items.Count == 0)
+    {
+        <EmptyState Icon="@Icons.Material.Outlined.Timeline" Title="No recent activity" Message="Things that happen in your account will show up here." />
+    }
+    else
+    {
+        <ul class="nv-feed" aria-label="@Label">
+            @foreach (var item in Items)
+            {
+                <li>
+                    <MudIcon Icon="@item.Icon" Color="@item.Color" Size="Size.Small" Class="mt-1" />
+                    <div style="min-width: 0; flex: 1;">
+                        <MudText Typo="Typo.body2" Style="font-weight: 600;">@item.Title</MudText>
+                        @if (!string.IsNullOrWhiteSpace(item.Detail))
+                        {
+                            <MudText Class="nv-muted" Typo="Typo.body2" Style="overflow-wrap: anywhere;">@item.Detail</MudText>
+                        }
+                    </div>
+                    <time class="mud-typography mud-typography-caption" style="color: var(--mud-palette-text-secondary); white-space: nowrap;" datetime="@item.At.ToString("o")" title="@item.At.ToString("f")">
+                        @UiText.Relative(item.At, Clock.GetUtcNow())
+                    </time>
+                </li>
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<ActivityItem>? Items { get; set; }
+
+    [Parameter] public bool Loading { get; set; }
+
+    [Parameter] public ApiError? Error { get; set; }
+
+    [Parameter] public EventCallback OnRetry { get; set; }
+
+    [Parameter] public string Label { get; set; } = "Recent activity";
+}

@@ -21,6 +21,24 @@ public sealed class SecretWidget : AuditableEntity, IStrictTenantOwned
     public string Name { get; set; } = string.Empty;
 }
 
+public enum GadgetState
+{
+    New = 0,
+    Ready,
+}
+
+/// <summary>Has a unique code per table, a rowversion and an enum column (conventions, exception translation).</summary>
+public sealed class Gadget : AuditableEntity, ITenantOwned
+{
+    public Guid ClientId { get; set; }
+
+    public string Code { get; set; } = string.Empty;
+
+    public GadgetState State { get; set; }
+
+    public byte[] RowVersion { get; set; } = [];
+}
+
 /// <summary>Not tenant-owned: must be unaffected by tenant machinery.</summary>
 public sealed class GlobalThing : AuditableEntity
 {
@@ -40,11 +58,19 @@ public sealed class TestDbContext : AppDbContext
 
     public DbSet<GlobalThing> GlobalThings => Set<GlobalThing>();
 
+    public DbSet<Gadget> Gadgets => Set<Gadget>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Widget>().ToTable("Widgets", "test");
         modelBuilder.Entity<SecretWidget>().ToTable("SecretWidgets", "test");
         modelBuilder.Entity<GlobalThing>().ToTable("GlobalThings", "test");
+        modelBuilder.Entity<Gadget>(b =>
+        {
+            b.ToTable("Gadgets", "test");
+            b.HasIndex(x => x.Code).IsUnique();
+            b.Property(x => x.RowVersion).IsRowVersion();
+        });
         base.OnModelCreating(modelBuilder);
     }
 }

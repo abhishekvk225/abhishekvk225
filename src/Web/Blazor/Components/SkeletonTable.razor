@@ -1,0 +1,14 @@
+<div data-testid="skeleton-table">
+    <div aria-hidden="true">
+        <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="36px" Class="mb-2" />
+        @for (var i = 0; i < Rows; i++)
+        {
+            <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="44px" Class="mb-1" />
+        }
+    </div>
+    <span class="nv-sr" role="status">Loading table</span>
+</div>
+
+@code {
+    [Parameter] public int Rows { get; set; } = 6;
+}

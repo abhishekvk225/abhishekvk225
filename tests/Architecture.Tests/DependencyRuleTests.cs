@@ -97,21 +97,105 @@ public class DependencyRuleTests
         offenders.ShouldBeEmpty("Controllers must carry [Authorize]/[AllowAnonymous]: " + string.Join(", ", offenders));
     }
 
-    [Fact]
-    public void Tenant_query_filters_are_only_bypassed_in_the_platform_namespace()
+    private static IEnumerable<(string Relative, string Text)> SourceFiles()
     {
-        var src = Path.Combine(RepoRoot(), "src");
-        var allowed = Path.Combine(src, "Infrastructure", "Platform") + Path.DirectorySeparatorChar;
+        var root = RepoRoot();
+        var sep = Path.DirectorySeparatorChar;
+        return Directory.EnumerateFiles(Path.Combine(root, "src"), "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{sep}obj{sep}") && !f.Contains($"{sep}bin{sep}") && !f.Contains($"{sep}Migrations{sep}"))
+            .Select(f => (Path.GetRelativePath(root, f).Replace('\\', '/'), File.ReadAllText(f)));
+    }
 
-        var offenders = Directory.EnumerateFiles(src, "*.cs", SearchOption.AllDirectories)
-            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
-                        && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
-            .Where(f => !f.StartsWith(allowed, StringComparison.Ordinal))
-            .Where(f => File.ReadAllText(f).Contains("IgnoreQueryFilters", StringComparison.Ordinal))
-            .Select(f => Path.GetRelativePath(RepoRoot(), f))
+    private static IReadOnlyList<string> FilesUsing(string[] tokens, string[] allowedPrefixes) =>
+        SourceFiles()
+            .Where(f => !allowedPrefixes.Any(p => f.Relative.StartsWith(p, StringComparison.Ordinal)))
+            .Where(f => tokens.Any(t => f.Text.Contains(t, StringComparison.Ordinal)))
+            .Select(f => f.Relative)
             .ToList();
 
-        offenders.ShouldBeEmpty("IgnoreQueryFilters is only allowed under src/Infrastructure/Platform/: " + string.Join(", ", offenders));
+    [Fact]
+    public void Tenant_filter_bypass_and_raw_sql_are_confined_to_approved_infrastructure()
+    {
+        // These APIs skip the SaveChanges write guard and/or the EF tenant filter; RLS would be the only layer left.
+        string[] tokens = ["IgnoreQueryFilters", "ExecuteUpdate", "ExecuteDelete", "FromSql", "ExecuteSql", "SqlQuery"];
+        string[] allowed =
+        [
+            "src/Infrastructure/Platform/",
+            "src/Infrastructure/Persistence/Rls/",
+            "src/Infrastructure/Persistence/Guards/",
+            "src/Infrastructure/Persistence/Maintenance/",
+            "src/Infrastructure/Background/",
+        ];
+
+        var offenders = FilesUsing(tokens, allowed);
+
+        offenders.ShouldBeEmpty("Use of filter-bypassing/raw SQL APIs is restricted to " + string.Join(", ", allowed) + ": " + string.Join(", ", offenders));
+    }
+
+    [Fact]
+    public void Query_filters_are_never_bypassed_without_naming_the_filter()
+    {
+        var offenders = SourceFiles()
+            .Where(f => f.Text.Contains("IgnoreQueryFilters()", StringComparison.Ordinal))
+            .Select(f => f.Relative)
+            .ToList();
+
+        offenders.ShouldBeEmpty("IgnoreQueryFilters() with no arguments disables every named filter (soft-delete too); name the filter: " + string.Join(", ", offenders));
+    }
+
+    [Fact]
+    public void Entering_tenant_or_platform_scope_is_restricted_to_approved_code()
+    {
+        // Anything that can call BeginPlatform/BeginTenant can read or write across tenants.
+        string[] tokens = ["ITenantScope", "BeginPlatform(", "BeginTenant("];
+        string[] allowed =
+        [
+            "src/Application/Abstractions/ITenantScope.cs",
+            "src/Application/Identity/",
+            "src/Infrastructure/Tenancy/",
+            "src/Infrastructure/Platform/",
+            "src/Infrastructure/Persistence/",
+            "src/Infrastructure/Background/",
+            "src/Infrastructure/Identity/",
+            "src/Infrastructure/DependencyInjection.cs",
+            "src/Migrator/",
+        ];
+
+        var offenders = FilesUsing(tokens, allowed);
+
+        offenders.ShouldBeEmpty("Tenant/platform scope may only be entered from: " + string.Join(", ", allowed) + ". Offenders: " + string.Join(", ", offenders));
+    }
+
+    [Fact]
+    public void Every_request_dto_has_a_fluent_validator()
+    {
+        var requests = ContractsAssembly.GetTypes()
+            .Where(t => t is { IsClass: true, IsAbstract: false } && t.Name.EndsWith("Request", StringComparison.Ordinal))
+            .ToList();
+        var validated = ApplicationAssembly.GetTypes()
+            .SelectMany(t => t.GetInterfaces())
+            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(FluentValidation.IValidator<>))
+            .Select(i => i.GetGenericArguments()[0])
+            .ToHashSet();
+
+        var missing = requests.Where(r => !validated.Contains(r)).Select(r => r.Name).ToList();
+
+        missing.ShouldBeEmpty("Request DTOs without a validator (FluentValidation is the single validation system): " + string.Join(", ", missing));
+    }
+
+    [Fact]
+    public void Enum_names_fit_the_string_column_convention()
+    {
+        // Enums are stored as nvarchar(30) (AppDbContext conventions).
+        var tooLong = new[] { ContractsAssembly, DomainAssembly, ApplicationAssembly }
+            .SelectMany(a => a.GetTypes())
+            .Where(t => t.IsEnum)
+            .SelectMany(t => Enum.GetNames(t).Select(n => (Type: t.Name, Name: n)))
+            .Where(x => x.Name.Length > 30)
+            .Select(x => $"{x.Type}.{x.Name}")
+            .ToList();
+
+        tooLong.ShouldBeEmpty("Enum member names longer than 30 characters: " + string.Join(", ", tooLong));
     }
 
     [Fact]
@@ -124,6 +208,7 @@ public class DependencyRuleTests
             ["Application"] = ["Domain", "Contracts"],
             ["Infrastructure"] = ["Application", "Domain", "Contracts"],
             ["Api"] = ["Application", "Infrastructure", "Contracts", "Domain"],
+            ["Migrator"] = ["Application", "Infrastructure", "Contracts", "Domain"],
             ["Web"] = ["Contracts"],
         };
 

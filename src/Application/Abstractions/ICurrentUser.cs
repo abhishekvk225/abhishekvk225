@@ -22,4 +22,7 @@ public interface ICurrentUser
     Guid? ClientId { get; }
 
     bool IsPlatformUser { get; }
+
+    /// <summary>Role names carried by the credential (empty for anonymous callers).</summary>
+    IReadOnlyCollection<string> Roles { get; }
 }
