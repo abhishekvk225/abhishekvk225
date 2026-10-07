@@ -55,6 +55,11 @@ public sealed class User : AuditableEntity, ITenantOwned
             throw new DomainException("USER_EMAIL_INVALID", "Email is required and must be at most 256 characters.");
         }
 
+        if (!isPlatformUser && (clientId == Guid.Empty || clientId == PlatformTenant.ClientId))
+        {
+            throw new DomainException("USER_CLIENT_INVALID", "A client user must belong to a real client.");
+        }
+
         return new User
         {
             ClientId = isPlatformUser ? PlatformTenant.ClientId : clientId,
@@ -69,35 +74,17 @@ public sealed class User : AuditableEntity, ITenantOwned
 
     public bool IsLockedOut(DateTime now) => LockoutEnd is { } end && end > now;
 
-    public bool CanSignIn(DateTime now) => Status == UserStatus.Active && IsActive && !IsLockedOut(now);
+    /// <summary>
+    /// Whether the account may hold sessions at all. A lockout deliberately does NOT affect this: it only blocks password
+    /// sign-in, so an attacker who locks a victim out cannot also kill the victim's live sessions or block their password reset.
+    /// </summary>
+    public bool CanSignIn() => Status == UserStatus.Active && IsActive;
 
-    /// <summary>Counts a failed attempt; returns true when this attempt locked the account.</summary>
-    public bool RegisterFailedLogin(DateTime now, int maxFailures, TimeSpan lockoutDuration)
-    {
-        // an elapsed lockout resets the counter so the next window starts clean
-        if (LockoutEnd is { } end && end <= now)
-        {
-            AccessFailedCount = 0;
-            LockoutEnd = null;
-        }
+    /// <summary>Failed-attempt counters are maintained atomically in the database (ILoginThrottle), never in memory.</summary>
+    public void RegisterSuccessfulLogin(DateTime now) => LastLoginAt = now;
 
-        AccessFailedCount++;
-        if (AccessFailedCount >= maxFailures)
-        {
-            LockoutEnd = now.Add(lockoutDuration);
-            AccessFailedCount = 0;
-            return true;
-        }
-
-        return false;
-    }
-
-    public void RegisterSuccessfulLogin(DateTime now)
-    {
-        AccessFailedCount = 0;
-        LockoutEnd = null;
-        LastLoginAt = now;
-    }
+    /// <summary>Replaces the stored hash with a stronger one for the same password. Does not end other sessions.</summary>
+    public void UpgradeHash(string passwordHash) => PasswordHash = passwordHash;
 
     public void SetPassword(string passwordHash, DateTime now, bool mustChangePassword)
     {

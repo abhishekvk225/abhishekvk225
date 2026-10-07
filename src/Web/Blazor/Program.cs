@@ -36,9 +36,23 @@ builder.Services.AddScoped<DashboardRangeState>();
 builder.Services.AddScoped<IClipboardService, ClipboardService>();
 builder.Services.AddScoped<IAppSnackbar, AppSnackbar>();
 
-// UI-1 stubs: replaced by BFF-backed typed clients when the API is wired in.
-builder.Services.AddScoped<IAuthApiClient, StubAuthApiClient>();
-builder.Services.AddScoped<IDashboardApiClient, StubDashboardApiClient>();
+// UI-1 stubs: they accept any password, so they exist ONLY for local development / the UI demo environment.
+// Anywhere else the app refuses to start until the BFF-backed API clients replace them.
+if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("UiDemo"))
+{
+    builder.Services.AddScoped<IAuthApiClient, StubAuthApiClient>();
+    builder.Services.AddScoped<IDashboardApiClient, StubDashboardApiClient>();
+}
+else
+{
+    throw new InvalidOperationException(
+        "The portal's API clients are not wired yet. Run in Development/UiDemo, or provide the real IAuthApiClient/IDashboardApiClient implementations.");
+}
+
+if (builder.Environment.IsProduction() && builder.Configuration["AllowedHosts"] is null or "" or "*")
+{
+    throw new InvalidOperationException("AllowedHosts must list the real host names in Production ('*' disables host-header validation).");
+}
 
 var app = builder.Build();
 

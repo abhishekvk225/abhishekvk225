@@ -60,6 +60,20 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
+// Fail fast: key material and production-unsafe switches are validated at startup, not on the first request.
+_ = app.Services.GetRequiredService<NexaVerify.Infrastructure.Identity.JwtKeyProvider>();
+_ = app.Services.GetRequiredService<NexaVerify.Infrastructure.Security.MasterKeyProvider>();
+if (app.Environment.IsProduction())
+{
+    var unsafeSwitches = new[] { "Jwt:AllowEphemeralKey", "Encryption:AllowEphemeralKey", "Email:LogBodies" }
+        .Where(key => app.Configuration.GetValue<bool>(key))
+        .ToList();
+    if (unsafeSwitches.Count > 0)
+    {
+        throw new InvalidOperationException("These settings are development-only and must be off in Production: " + string.Join(", ", unsafeSwitches));
+    }
+}
+
 var forwarded = app.Services.GetRequiredService<IOptions<ForwardedHeadersSettings>>().Value;
 if (forwarded.Enabled)
 {

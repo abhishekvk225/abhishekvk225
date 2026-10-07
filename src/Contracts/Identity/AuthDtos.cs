@@ -26,4 +26,4 @@ public sealed record LoginResponse(
     bool MustChangePassword,
     UserSummary User);
 
-public sealed record MeResponse(UserSummary User, IReadOnlyList<string> Permissions, bool MustChangePassword);
+public sealed record MeResponse(UserSummary User, IReadOnlyList<string> Permissions, bool MustChangePassword, NexaVerify.Contracts.Tenancy.ClientSummary? Client);

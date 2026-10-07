@@ -5,13 +5,16 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NexaVerify.Application.Abstractions;
 using NexaVerify.Contracts.Identity;
+using NexaVerify.Contracts.Tenancy;
+using NexaVerify.Domain.Common;
 using NexaVerify.Domain.Identity;
+using NexaVerify.Domain.Tenancy;
 using NexaVerify.Infrastructure.Persistence;
 using NexaVerify.TestSupport;
 
 namespace NexaVerify.Api.IntegrationTests.Support;
 
-public sealed class CapturingEmailSender : IEmailSender
+public sealed class CapturingEmailSender : IEmailOutbox
 {
     private readonly List<EmailMessage> _sent = [];
 
@@ -26,14 +29,12 @@ public sealed class CapturingEmailSender : IEmailSender
         }
     }
 
-    public Task SendAsync(EmailMessage message, CancellationToken cancellationToken)
+    public void Enqueue(EmailMessage message)
     {
         lock (_sent)
         {
             _sent.Add(message);
         }
-
-        return Task.CompletedTask;
     }
 }
 
@@ -69,7 +70,7 @@ public sealed class AuthApp : IAsyncDisposable
             ConnectionString = connectionString,
             UseTestAuth = false,
             Settings = settings ?? new Dictionary<string, string>(),
-            ConfigureServices = services => services.AddSingleton<IEmailSender>(emails),
+            ConfigureServices = services => services.AddSingleton<IEmailOutbox>(emails),
         };
         return new AuthApp(factory, connectionString, emails);
     }
@@ -127,6 +128,14 @@ public sealed class AuthApp : IAsyncDisposable
         var hasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
         using var platform = tenant.BeginPlatform("test: create client user");
 
+        if (!await db.Clients.AnyAsync(c => c.Id == clientId))
+        {
+            var client = NexaVerify.Domain.Tenancy.Client.Create("T" + clientId.ToString("N")[..12], "Test client " + clientId.ToString("N")[..6], "ops@client.test", "UTC", DateTime.UtcNow);
+            typeof(Entity).GetProperty(nameof(Entity.Id))!.SetValue(client, clientId);
+            db.Clients.Add(client);
+            await db.SaveChangesAsync();
+        }
+
         var user = User.Create(email, "Test " + role, hasher.Hash(password), clientId, isPlatformUser: false, mustChangePassword: mustChange);
         var roleEntity = await db.Roles.SingleAsync(r => r.Name == role);
         db.Users.Add(user);
@@ -141,6 +150,45 @@ public sealed class AuthApp : IAsyncDisposable
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var tenant = scope.ServiceProvider.GetRequiredService<ITenantScope>();
         using var platform = tenant.BeginPlatform("test: db access");
+        return await action(db);
+    }
+
+    public Task<HttpResponseMessage> DeleteAsync(string path, string? token = null) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Delete, path), token);
+
+    /// <summary>Extracts (email, token) from the https link inside a captured invitation / reset email.</summary>
+    public static (string Email, string Token) LinkFrom(EmailMessage mail)
+    {
+        var link = new Uri(mail.Body.Split('\n').Single(l => l.StartsWith("https://", StringComparison.Ordinal)));
+        var query = System.Web.HttpUtility.ParseQueryString(link.Query);
+        return (query["email"]!, query["token"]!);
+    }
+
+    /// <summary>Creates a client through the admin API, completes the invitation like the real admin would, and returns a signed-in ClientAdmin.</summary>
+    public async Task<(ClientDto Client, LoginResponse Admin)> OnboardClientAsync(
+        string platformToken, string code, string adminEmail, string password = StrongPassword)
+    {
+        var before = Emails.Sent.Count;
+        var created = await PostAsync("/api/v1/admin/clients", NewClientRequest(code, adminEmail), platformToken);
+        created.EnsureSuccessStatusCode();
+        var client = (await created.Content.ReadFromJsonAsync<ClientDto>(Json))!;
+        var (email, token) = LinkFrom(Emails.Sent[before]);
+        (await PostAsync("/api/v1/auth/reset-password", new ResetPasswordRequest(email, token, password))).EnsureSuccessStatusCode();
+        return (client, await LoginAsync(adminEmail, password));
+    }
+
+    public static CreateClientRequest NewClientRequest(string code, string adminEmail) => new(
+        code, "Acme " + code, "Acme Corporation Ltd", "contact@" + code.ToLowerInvariant() + ".test", "+44 20 7946 0000",
+        "1 High Street", null, "London", null, "EC1A 1BB", "GB", "https://" + code.ToLowerInvariant() + ".test", "Retail", "Europe/London", null,
+        adminEmail, "Ada Admin");
+
+    /// <summary>Runs <paramref name="action"/> exactly as a request of that tenant would (tenant scope, not platform).</summary>
+    public async Task<T> WithTenantDbAsync<T>(Guid clientId, Func<AppDbContext, Task<T>> action)
+    {
+        await using var scope = Factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var tenant = scope.ServiceProvider.GetRequiredService<ITenantScope>();
+        using var tenantScope = tenant.BeginTenant(clientId);
         return await action(db);
     }
 

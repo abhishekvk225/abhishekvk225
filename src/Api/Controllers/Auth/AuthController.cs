@@ -53,6 +53,7 @@ public sealed class AuthController : ApiControllerBase
 
     // [Authorize] only (no permission): reachable while a forced password change is pending.
     [Authorize]
+    [EnableRateLimiting(RateLimitSettings.AuthPolicy)]
     [HttpPost("change-password")]
     [ProducesResponseType<LoginResponse>(StatusCodes.Status200OK)]
     public async Task<IActionResult> ChangePassword(ChangePasswordRequest request, CancellationToken cancellationToken) =>

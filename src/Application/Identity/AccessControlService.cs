@@ -24,14 +24,18 @@ public interface IRoleService
 public sealed class RoleService : IRoleService
 {
     private readonly IRoleRepository _roles;
+    private readonly IUserRepository _users;
+    private readonly ISessionValidator _sessions;
     private readonly IPermissionResolver _permissions;
     private readonly ICurrentUser _currentUser;
     private readonly IAuditService _audit;
     private readonly IUnitOfWork _unitOfWork;
 
-    public RoleService(IRoleRepository roles, IPermissionResolver permissions, ICurrentUser currentUser, IAuditService audit, IUnitOfWork unitOfWork)
+    public RoleService(IRoleRepository roles, IUserRepository users, ISessionValidator sessions, IPermissionResolver permissions, ICurrentUser currentUser, IAuditService audit, IUnitOfWork unitOfWork)
     {
         _roles = roles;
+        _users = users;
+        _sessions = sessions;
         _permissions = permissions;
         _currentUser = currentUser;
         _audit = audit;
@@ -50,13 +54,17 @@ public sealed class RoleService : IRoleService
         var permissions = await _roles.ListPermissionsAsync(cancellationToken);
         return Result<IReadOnlyList<PermissionDto>>.Success(permissions
             .OrderBy(p => p.Group, StringComparer.Ordinal).ThenBy(p => p.Key, StringComparer.Ordinal)
-            .Select(p => new PermissionDto(p.Id, p.Key, p.Group, (PermissionScopeKind)(int)p.Scope, p.Description))
+            .Select(p => new PermissionDto(p.Id, p.Key, p.Group, p.Scope.ToKind(), p.Description))
             .ToList());
     }
 
     public async Task<Result<RoleDto>> CreateRoleAsync(CreateRoleRequest request, CancellationToken cancellationToken)
     {
-        var scope = Enum.Parse<RoleScope>(request.Scope);
+        if (!Enum.TryParse<RoleScope>(request.Scope, ignoreCase: false, out var scope))
+        {
+            return Error.Validation("Scope must be Platform or Client.");
+        }
+
         var normalized = request.Name.Trim().ToUpperInvariant();
         if (await _roles.NameExistsAsync(normalized, cancellationToken))
         {
@@ -97,23 +105,64 @@ public sealed class RoleService : IRoleService
 
         var catalogue = (await _roles.ListPermissionsAsync(cancellationToken)).ToDictionary(p => p.Id, p => p.Key);
         var before = role.Permissions.Select(p => catalogue[p.PermissionId]).OrderBy(k => k, StringComparer.Ordinal).ToList();
+        var mine = await _permissions.GetPermissionsAsync(_currentUser.Roles, cancellationToken);
 
-        role.Description = request.Description;
-        foreach (var existing in role.Permissions.ToList())
+        // You may not edit (and so cannot empty out or repurpose) a role that carries permissions you do not hold yourself.
+        var beyondMe = before.Where(k => !mine.Contains(k)).ToList();
+        if (beyondMe.Count > 0)
         {
-            role.RevokePermission(existing.PermissionId);
+            return Error.Forbidden(ErrorCodes.Forbidden, "You cannot change a role that includes permissions you do not hold: " + string.Join(", ", beyondMe));
         }
 
-        var granted = await ApplyPermissionsAsync(role, request.Permissions, cancellationToken);
-        if (granted.IsFailure)
+        var wanted = request.Permissions.Distinct(StringComparer.Ordinal).ToList();
+        var found = await _roles.GetPermissionsByKeysAsync(wanted, cancellationToken);
+        var unknown = wanted.Except(found.Select(p => p.Key), StringComparer.Ordinal).ToList();
+        if (unknown.Count > 0)
         {
-            return granted.Error!;
+            return Error.Validation("Unknown permissions: " + string.Join(", ", unknown));
+        }
+
+        var escalation = wanted.Where(k => !mine.Contains(k)).ToList();
+        if (escalation.Count > 0)
+        {
+            return Error.Forbidden(ErrorCodes.Forbidden, "You cannot grant permissions you do not hold: " + string.Join(", ", escalation));
+        }
+
+        role.Description = request.Description;
+        var removed = before.Except(wanted, StringComparer.Ordinal).ToList();
+        try
+        {
+            foreach (var permission in found)
+            {
+                role.GrantPermission(permission); // no-op for ones it already has
+            }
+        }
+        catch (DomainException ex)
+        {
+            return Error.Validation(ex.Message);
+        }
+
+        foreach (var key in removed)
+        {
+            role.RevokePermission(catalogue.First(c => c.Value == key).Key);
+        }
+
+        // Holders lose removed permissions immediately: their current tokens are invalidated, they simply sign in again.
+        var holders = removed.Count > 0 ? await _users.GetUsersWithRoleAsync(role.Id, cancellationToken) : [];
+        foreach (var holder in holders)
+        {
+            holder.RevokeSessions();
         }
 
         _audit.Record(new AuditEntry(AuditActions.RoleUpdated, nameof(Role), role.Id.ToString(), PlatformTenant.ClientId,
-            OldValues: new { Permissions = before }, NewValues: new { Permissions = request.Permissions.OrderBy(k => k, StringComparer.Ordinal).ToList() }));
+            OldValues: new { Permissions = before }, NewValues: new { Permissions = wanted.OrderBy(k => k, StringComparer.Ordinal).ToList() }));
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         _permissions.Invalidate();
+        foreach (var holder in holders)
+        {
+            _sessions.Invalidate(holder.Id);
+        }
+
         return await ReloadAsync(role.Id, cancellationToken);
     }
 
@@ -214,7 +263,7 @@ public sealed class PlatformUserService : IPlatformUserService
     {
         var request = page.Normalize();
         var (items, total) = await _users.ListAsync(platformUsers: true, request.Search, request.Skip, request.PageSize, cancellationToken);
-        var roles = await _users.GetRoleNamesAsync(items.Select(u => u.Id).ToList(), cancellationToken);
+        var roles = await _users.GetRoleNamesByUserAsync(items.Select(u => u.Id).ToList(), cancellationToken);
         return new PagedResult<PlatformUserDto>(
             items.Select(u => ToDto(u, roles.GetValueOrDefault(u.Id, []))).ToList(), request.Page, request.PageSize, total);
     }
@@ -262,7 +311,25 @@ public sealed class PlatformUserService : IPlatformUserService
             return roles.Error!;
         }
 
-        var before = new { user.FullName, Status = user.Status.ToString(), Roles = await _users.GetRoleNamesAsync(user.Id, cancellationToken) };
+        var currentRoles = await _users.GetRoleNamesAsync(user.Id, cancellationToken);
+        var mine = await _permissions.GetPermissionsAsync(_currentUser.Roles, cancellationToken);
+
+        // You cannot manage someone more privileged than yourself (otherwise a delegated admin could demote the Super Admin).
+        var targetPermissions = await _permissions.GetPermissionsAsync(currentRoles, cancellationToken);
+        if (!targetPermissions.IsSubsetOf(mine))
+        {
+            return Error.Forbidden(ErrorCodes.Forbidden, "You cannot modify a user who has more privileges than you.");
+        }
+
+        // The platform must always keep at least one active Super Admin.
+        var staysSuperAdmin = request.IsActive && request.Roles.Contains(SystemRoles.SuperAdmin, StringComparer.OrdinalIgnoreCase);
+        if (currentRoles.Contains(SystemRoles.SuperAdmin) && user.Status == UserStatus.Active && !staysSuperAdmin
+            && await _users.CountActivePlatformUsersInRoleAsync(SystemRoles.SuperAdmin, cancellationToken) <= 1)
+        {
+            return Error.Conflict("LAST_SUPER_ADMIN", "The platform must keep at least one active Super Admin.");
+        }
+
+        var before = new { user.FullName, Status = user.Status.ToString(), Roles = currentRoles };
         user.FullName = request.FullName.Trim();
         var wasActive = user.Status == UserStatus.Active;
         if (request.IsActive)

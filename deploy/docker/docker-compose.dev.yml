@@ -1,7 +1,8 @@
-# Local development stack. Secrets come from deploy/docker/.env (copy .env.example; never commit .env).
+# Local development stack: SQL Server -> migrator (schema, guards, seed, least-privilege app login) -> API.
+# Secrets come from deploy/docker/.env (copy .env.example; never commit .env).
 services:
   sqlserver:
-    image: mcr.microsoft.com/mssql/server:2022-latest
+    image: mcr.microsoft.com/mssql/server:2022-CU16-ubuntu-22.04
     environment:
       ACCEPT_EULA: "Y"
       MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?set MSSQL_SA_PASSWORD in deploy/docker/.env}
@@ -9,22 +10,45 @@ services:
       - "127.0.0.1:1433:1433"
     volumes:
       - sqldata:/var/opt/mssql
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, SETGID, SETUID]
+    security_opt: ["no-new-privileges:true"]
     healthcheck:
       test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
 
+  # Runs as the DATABASE ADMIN (sa here; a dedicated deployment login in real environments). It is the only
+  # component that changes the schema, installs RLS / append-only guards, seeds identity data and creates the app login.
+  migrator:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.migrator
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__Default: "Server=sqlserver;Database=NexaVerify;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True"
+      Seed__SuperAdminEmail: ${SEED_ADMIN_EMAIL:?set SEED_ADMIN_EMAIL in deploy/docker/.env}
+      Seed__SuperAdminPassword: ${SEED_ADMIN_PASSWORD:?set SEED_ADMIN_PASSWORD in deploy/docker/.env}
+      Migrator__AppLogin: nexaverify_app
+      Migrator__AppPassword: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in deploy/docker/.env}
+    entrypoint: ["/bin/sh", "-c", "dotnet NexaVerify.Migrator.dll migrate && dotnet NexaVerify.Migrator.dll app-principal"]
+    restart: "no"
+
   api:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.api
     depends_on:
-      sqlserver:
-        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
     environment:
+      # Development only: ephemeral signing/master keys and logged email bodies. Production supplies real keys via a secret store.
       ASPNETCORE_ENVIRONMENT: Development
-      ConnectionStrings__Default: "Server=sqlserver;Database=NexaVerify;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True"
+      # The API connects as the least-privilege login created by the migrator (no DDL, cannot alter the RLS policy).
+      ConnectionStrings__Default: "Server=sqlserver;Database=NexaVerify;User Id=nexaverify_app;Password=${APP_DB_PASSWORD};TrustServerCertificate=True"
     ports:
       - "127.0.0.1:8080:8080"
     read_only: true

@@ -10,6 +10,7 @@ using Serilog;
 // NexaVerify.Migrator — the only component that changes the database schema.
 //   migrate (default)  drop RLS policy → apply migrations → install guards → seed identity data
 //   script             print the idempotent SQL equivalent (for DBA-run deployments)
+//   recover-superadmin break-glass: (re)create the Seed:SuperAdminEmail account as an active Super Admin with Seed:SuperAdminPassword
 //   app-principal      create the least-privilege login the API connects as (Migrator:AppLogin / Migrator:AppPassword)
 // Connection string: ConnectionStrings__Default (an administrative principal). Seed: Seed__SuperAdminEmail / Seed__SuperAdminPassword.
 
@@ -21,12 +22,12 @@ builder.Services.AddInfrastructure(builder.Configuration);
 
 using var host = builder.Build();
 using var scope = host.Services.CreateScope();
-var initializer = scope.ServiceProvider.GetRequiredService<DatabaseInitializer>();
 var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Migrator");
 var command = args.FirstOrDefault(a => !a.StartsWith('-')) ?? "migrate";
 
 try
 {
+    var initializer = scope.ServiceProvider.GetRequiredService<DatabaseInitializer>();
     switch (command)
     {
         case "migrate":
@@ -36,6 +37,18 @@ try
 
         case "script":
             Console.WriteLine(initializer.GenerateScript());
+            return 0;
+
+        case "recover-superadmin":
+            var email = builder.Configuration["Seed:SuperAdminEmail"];
+            var recoveryPassword = builder.Configuration["Seed:SuperAdminPassword"];
+            if (string.IsNullOrWhiteSpace(email) || string.IsNullOrEmpty(recoveryPassword))
+            {
+                logger.LogError("Seed:SuperAdminEmail and Seed:SuperAdminPassword are required.");
+                return 2;
+            }
+
+            await initializer.RecoverSuperAdminAsync(email, recoveryPassword, CancellationToken.None);
             return 0;
 
         case "app-principal":
@@ -52,7 +65,7 @@ try
             return 0;
 
         default:
-            logger.LogError("Unknown command '{Command}'. Use: migrate | script | app-principal", command);
+            logger.LogError("Unknown command '{Command}'. Use: migrate | script | app-principal | recover-superadmin", command);
             return 2;
     }
 }

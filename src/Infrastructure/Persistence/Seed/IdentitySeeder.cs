@@ -6,6 +6,7 @@ using NexaVerify.Application.Identity;
 using NexaVerify.Contracts.Identity;
 using NexaVerify.Domain.Common;
 using NexaVerify.Domain.Identity;
+using NexaVerify.Domain.Tenancy;
 
 namespace NexaVerify.Infrastructure.Persistence.Seed;
 
@@ -48,10 +49,75 @@ public sealed class IdentitySeeder
     {
         using var platform = _scope.BeginPlatform("identity seed");
 
+        await EnsureSystemClientAsync(cancellationToken);
         var permissions = await SyncPermissionsAsync(cancellationToken);
         await SyncSystemRolesAsync(permissions, cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
         await SeedSuperAdminAsync(cancellationToken);
+    }
+
+    /// <summary>The pseudo-client that owns platform-level rows (staff accounts, platform audit events). Saved first so foreign keys resolve.</summary>
+    /// <summary>
+    /// Break-glass recovery: (re)creates the given account as an active Super Admin with a new password that must be changed at
+    /// first sign-in. Run deliberately by an operator through the migrator; the action is audited.
+    /// </summary>
+    public async Task RecoverSuperAdminAsync(string email, string password, CancellationToken cancellationToken)
+    {
+        using var platform = _scope.BeginPlatform("super admin recovery");
+        await EnsureSystemClientAsync(cancellationToken);
+        var permissions = await SyncPermissionsAsync(cancellationToken);
+        await SyncSystemRolesAsync(permissions, cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
+
+        var problems = _policy.Validate(password, email);
+        if (problems.Count > 0)
+        {
+            throw new InvalidOperationException("The recovery password does not meet the password policy: " + string.Join(" ", problems));
+        }
+
+        var role = await _db.Roles.SingleAsync(r => r.Name == SystemRoles.SuperAdmin, cancellationToken);
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.NormalizedEmail == User.Normalize(email), cancellationToken);
+        if (user is { IsPlatformUser: false })
+        {
+            throw new InvalidOperationException("That email belongs to a client user and cannot be promoted.");
+        }
+
+        if (user is null)
+        {
+            user = User.Create(email, _options.SuperAdminName, _hasher.Hash(password), PlatformTenant.ClientId, isPlatformUser: true, mustChangePassword: true);
+            _db.Users.Add(user);
+        }
+        else
+        {
+            user.SetPassword(_hasher.Hash(password), DateTime.UtcNow, mustChangePassword: true);
+            user.Activate();
+        }
+
+        if (!await _db.UserRoles.AnyAsync(ur => ur.UserId == user.Id && ur.RoleId == role.Id, cancellationToken))
+        {
+            _db.UserRoles.Add(new UserRole { ClientId = user.ClientId, UserId = user.Id, RoleId = role.Id });
+        }
+
+        _db.AuditLogs.Add(new NexaVerify.Domain.Auditing.AuditLog
+        {
+            ClientId = PlatformTenant.ClientId,
+            ActorType = NexaVerify.Domain.Auditing.AuditActorType.System,
+            Action = "user.superadmin_recovered",
+            EntityType = nameof(User),
+            EntityId = user.Id.ToString(),
+            OccurredAt = DateTime.UtcNow,
+        });
+        await _db.SaveChangesAsync(cancellationToken);
+        _logger.LogWarning("Super Admin {Email} was recovered; the password must be changed at first sign-in.", email);
+    }
+
+    private async Task EnsureSystemClientAsync(CancellationToken cancellationToken)
+    {
+        if (!await _db.Clients.AnyAsync(c => c.Id == PlatformTenant.ClientId, cancellationToken))
+        {
+            _db.Clients.Add(Client.CreateSystem(DateTime.UtcNow));
+            await _db.SaveChangesAsync(cancellationToken);
+        }
     }
 
     private async Task<Dictionary<string, Permission>> SyncPermissionsAsync(CancellationToken cancellationToken)
@@ -59,7 +125,7 @@ public sealed class IdentitySeeder
         var existing = await _db.Permissions.ToDictionaryAsync(p => p.Key, cancellationToken);
         foreach (var definition in Permissions.All)
         {
-            var scope = (PermissionScope)(int)definition.Scope;
+            var scope = definition.Scope switch { PermissionScopeKind.Platform => PermissionScope.Platform, PermissionScopeKind.Client => PermissionScope.Client, _ => PermissionScope.Both };
             if (existing.TryGetValue(definition.Key, out var permission))
             {
                 permission.Update(definition.Group, scope, definition.Description);

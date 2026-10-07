@@ -58,6 +58,9 @@ public sealed class RefreshToken : Entity, ITenantOwned
 
     public bool IsUsable(DateTime now) => !IsRevoked && !IsExpired(now);
 
+    /// <summary>Records the token that replaced this one (the revocation itself is claimed atomically in the database).</summary>
+    public void LinkSuccessor(Guid successorId) => ReplacedByTokenId = successorId;
+
     public void Revoke(DateTime now, string reason, Guid? replacedBy = null)
     {
         if (IsRevoked)

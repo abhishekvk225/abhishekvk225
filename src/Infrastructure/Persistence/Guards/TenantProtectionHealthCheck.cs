@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using NexaVerify.Infrastructure.Persistence.Rls;
 
 namespace NexaVerify.Infrastructure.Persistence.Guards;
@@ -16,11 +17,13 @@ public sealed class TenantProtectionHealthCheck : IHealthCheck
 {
     private readonly AppDbContext _db;
     private readonly ILogger<TenantProtectionHealthCheck> _logger;
+    private readonly bool _requireLeastPrivilege;
 
-    public TenantProtectionHealthCheck(AppDbContext db, ILogger<TenantProtectionHealthCheck> logger)
+    public TenantProtectionHealthCheck(AppDbContext db, ILogger<TenantProtectionHealthCheck> logger, Microsoft.Extensions.Options.IOptions<DatabaseOptions> options)
     {
         _db = db;
         _logger = logger;
+        _requireLeastPrivilege = options.Value.RequireLeastPrivilege;
     }
 
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
@@ -47,6 +50,20 @@ public sealed class TenantProtectionHealthCheck : IHealthCheck
                 JOIN sys.schemas s ON s.schema_id = t.schema_id
                 WHERE tr.is_disabled = 0
                 """).ToListAsync(cancellationToken)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (_requireLeastPrivilege)
+        {
+            var privileged = await _db.Database.SqlQueryRaw<int>(
+                """
+                SELECT CASE WHEN IS_SRVROLEMEMBER(N'sysadmin') = 1 OR IS_MEMBER(N'db_owner') = 1
+                              OR HAS_PERMS_BY_NAME(DB_NAME(), N'DATABASE', N'ALTER ANY SECURITY POLICY') = 1 THEN 1 ELSE 0 END AS [Value]
+                """).SingleAsync(cancellationToken);
+            if (privileged == 1)
+            {
+                _logger.LogCritical("The application database login is over-privileged (sysadmin/db_owner/ALTER ANY SECURITY POLICY): it could disable row-level security. Use the least-privilege principal created by the migrator.");
+                return HealthCheckResult.Unhealthy("The database login is over-privileged.");
+            }
+        }
 
         var missingRls = expectedRls.Except(protectedTables).ToList();
         var missingTriggers = expectedTriggers.Except(triggers).ToList();

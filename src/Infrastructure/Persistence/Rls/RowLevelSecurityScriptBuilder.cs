@@ -22,13 +22,16 @@ public static class RowLevelSecurityScriptBuilder
         TenantModelRules.EnsureValid(model);
 
         return model.GetEntityTypes()
-            .Where(e => e.BaseType is null && !e.IsOwned() && typeof(ITenantOwned).IsAssignableFrom(e.ClrType))
+            .Where(e => e.BaseType is null && !e.IsOwned()
+                && (typeof(ITenantOwned).IsAssignableFrom(e.ClrType) || typeof(ITenantRoot).IsAssignableFrom(e.ClrType)))
             .Select(e =>
             {
                 var table = e.GetTableName()!;
                 var schema = e.GetSchema() ?? "dbo";
-                var column = e.FindProperty(TenantModelRules.ClientIdProperty)!
-                    .GetColumnName(StoreObjectIdentifier.Table(table, schema)) ?? TenantModelRules.ClientIdProperty;
+                // Tenant-owned rows are keyed by ClientId; the client record itself by its own Id.
+                var propertyName = typeof(ITenantRoot).IsAssignableFrom(e.ClrType) ? nameof(ITenantRoot.Id) : TenantModelRules.ClientIdProperty;
+                var column = e.FindProperty(propertyName)!
+                    .GetColumnName(StoreObjectIdentifier.Table(table, schema)) ?? propertyName;
                 return new TenantTable(schema, table, column, typeof(IStrictTenantOwned).IsAssignableFrom(e.ClrType));
             })
             .DistinctBy(t => (t.Schema, t.Table)) // table splitting: several entities, one table
@@ -105,7 +108,7 @@ public static class RowLevelSecurityScriptBuilder
         }
 
         sb.AppendLine();
-        sb.Append("WITH (STATE = ON, SCHEMABINDING = ON);");
+        sb.Append("WITH (STATE = ON, SCHEMABINDING = OFF);");
         return sb.ToString();
     }
 

@@ -24,6 +24,23 @@ public sealed class AuthOptions
     [Range(5, 1440)]
     public int PasswordResetMinutes { get; set; } = 30;
 
+    /// <summary>A rotated refresh token replayed within this window is treated as a benign double-submit (two tabs), not theft.</summary>
+    [Range(0, 120)]
+    public int RefreshReuseGraceSeconds { get; set; } = 10;
+
+    /// <summary>
+    /// Minimum duration of forgot/reset-password responses, so response time does not reveal whether the account exists.
+    /// </summary>
+    [Range(0, 5000)]
+    public int SensitiveResponseMinimumMilliseconds { get; set; } = 300;
+
+    /// <summary>No new reset email is issued for an account within this many seconds of the previous one (anti email-bombing).</summary>
+    [Range(0, 3600)]
+    public int PasswordResetCooldownSeconds { get; set; } = 60;
+
+    [Range(1, 336)]
+    public int InvitationHours { get; set; } = 72;
+
     /// <summary>Link sent in reset emails. Must contain {email} and {token}; never built from the request's Host header.</summary>
     [Required]
     public string PasswordResetUrlTemplate { get; set; } = "https://localhost:7200/reset-password?email={email}&token={token}";

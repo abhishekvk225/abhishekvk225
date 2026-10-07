@@ -75,4 +75,27 @@ public class TenantScopeTests
     {
         Should.Throw<ArgumentException>(() => Create().BeginPlatform(" "));
     }
+
+    [Fact]
+    public void An_authenticated_client_principal_cannot_enter_platform_scope()
+    {
+        _user.IsAuthenticated = true;
+        _user.ClientId = Guid.NewGuid();
+
+        Should.Throw<TenantViolationException>(() => Create().BeginPlatform("escalate"));
+    }
+
+    [Fact]
+    public void Anonymous_work_and_platform_principals_may_enter_platform_scope()
+    {
+        using (Create().BeginPlatform("pre-auth lookup"))
+        {
+        }
+
+        _user.IsAuthenticated = true;
+        _user.IsPlatformUser = true;
+        using (Create().BeginPlatform("platform job"))
+        {
+        }
+    }
 }

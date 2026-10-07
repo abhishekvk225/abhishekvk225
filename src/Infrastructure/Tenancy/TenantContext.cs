@@ -54,6 +54,13 @@ public sealed class TenantContext : ITenantContext, ITenantScope
             throw new ArgumentException("A reason is required to enter platform scope.", nameof(reason));
         }
 
+        // Pre-authentication work (login, token validation, jobs, migrator) is anonymous; an authenticated client principal
+        // reaching for platform scope is a bug or an attack, never legitimate.
+        if (Current() is null && FromUser() is { ClientId: not null, IsPlatform: false })
+        {
+            throw new TenantViolationException("A tenant principal cannot enter platform scope.");
+        }
+
         _logger?.LogDebug("Entering platform scope: {Reason}", reason);
         return Push(null, true);
     }

@@ -68,7 +68,9 @@ public sealed class HttpCurrentUser : ICurrentUser
             return null; // platform principals are never bound to a client
         }
 
-        if (!isPlatform && clients.Count == 1 && !Guid.TryParse(clients[0], out _))
+        // A client principal must carry exactly one valid, real client id; anything else is not a usable identity.
+        if (!isPlatform && (clients.Count != 1 || !Guid.TryParse(clients[0], out var parsedClient)
+            || parsedClient == Guid.Empty || parsedClient == NexaVerify.Domain.Common.PlatformTenant.ClientId))
         {
             return null;
         }
@@ -77,7 +79,6 @@ public sealed class HttpCurrentUser : ICurrentUser
         Guid? clientId = clients.Count == 1 ? Guid.Parse(clients[0]) : null;
         Guid? actorId = subjects.Count == 1 && Guid.TryParse(subjects[0], out var id) ? id : null;
 
-        // A non-platform principal must be bound to a client; otherwise it has no tenant and sees nothing anyway.
         var roles = principal.FindAll(NexaClaims.Role).Select(c => c.Value).Distinct(StringComparer.Ordinal).ToList();
         return new Identity(actor, actorId, clientId, isPlatform, roles);
     }

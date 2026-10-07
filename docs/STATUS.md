@@ -6,8 +6,8 @@ Gate legend: ✅ passed · 🔄 in progress · ⬜ not started · ❌ failed. A 
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | M0 Design docs | 🔄 (awaiting your sign-off) | – | – | – | 🔄 | – | 🔄 | – | – | ⬜ |
 | M1 Foundation | ✅ | ✅ | ✅ | – | ✅ conditions fixed (re-verify in M2 gate) | ✅ | ✅ changes applied | 🔄 | ⬜ | ⬜ |
-| M2 Identity & Access | ✅ | ✅ | ✅ | 🔄 UI shell+components done; screens wire to real API in M8 | 🔄 | 🔄 | 🔄 | ⬜ | ⬜ | ⬜ |
-| M3 Client Management | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
+| M2 Identity & Access | ✅ | ✅ | ✅ | 🔄 shell done; screens wire to API in M8 | ❌→fixed, re-verify | ✅ 136 API tests | changes applied, re-review | 🔄 | ⬜ | ⬜ |
+| M3 Client Management | ✅ | ✅ | ✅ | ⬜ (M8) | ⬜ | ✅ | ⬜ | 🔄 | ⬜ | ⬜ |
 | M4 Licensing & Metering | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M5 Face Recognition | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M6 API Management | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |

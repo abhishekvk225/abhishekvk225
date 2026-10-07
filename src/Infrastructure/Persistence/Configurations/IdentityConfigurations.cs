@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using NexaVerify.Domain.Identity;
+using NexaVerify.Domain.Tenancy;
 
 namespace NexaVerify.Infrastructure.Persistence.Configurations;
 
@@ -14,6 +15,7 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
         b.Property(x => x.PasswordHash).HasMaxLength(512).IsRequired();
         b.Property(x => x.FullName).HasMaxLength(150).IsRequired();
         b.Property(x => x.PhoneNumber).HasMaxLength(40);
+        b.HasOne<Client>().WithMany().HasForeignKey(x => x.ClientId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => x.NormalizedEmail).IsUnique();
         b.HasIndex(x => new { x.ClientId, x.Status });
     }
@@ -63,6 +65,7 @@ internal sealed class UserRoleConfiguration : IEntityTypeConfiguration<UserRole>
         b.HasKey(x => new { x.UserId, x.RoleId });
         b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<Role>().WithMany().HasForeignKey(x => x.RoleId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Client>().WithMany().HasForeignKey(x => x.ClientId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => new { x.ClientId, x.UserId });
     }
 }
@@ -77,6 +80,7 @@ internal sealed class RefreshTokenConfiguration : IEntityTypeConfiguration<Refre
         b.Property(x => x.CreatedByIp).HasMaxLength(45).IsUnicode(false);
         b.Property(x => x.UserAgent).HasMaxLength(300);
         b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<Client>().WithMany().HasForeignKey(x => x.ClientId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => x.TokenHash).IsUnique();
         b.HasIndex(x => new { x.UserId, x.RevokedAt });
         b.HasIndex(x => x.FamilyId);
@@ -91,6 +95,7 @@ internal sealed class PasswordResetTokenConfiguration : IEntityTypeConfiguration
         b.ToTable("PasswordResetTokens", "iam");
         b.Property(x => x.TokenHash).HasColumnType("varbinary(32)").IsRequired();
         b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<Client>().WithMany().HasForeignKey(x => x.ClientId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => x.TokenHash).IsUnique();
         b.HasIndex(x => new { x.UserId, x.UsedAt });
         b.HasIndex(x => x.ExpiresAt);
@@ -107,6 +112,7 @@ internal sealed class LoginHistoryConfiguration : IEntityTypeConfiguration<Login
         b.Property(x => x.IpAddress).HasMaxLength(45).IsUnicode(false);
         b.Property(x => x.UserAgent).HasMaxLength(300);
         b.Property(x => x.CorrelationId).HasMaxLength(64).IsUnicode(false);
+        b.HasOne<Client>().WithMany().HasForeignKey(x => x.ClientId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => new { x.ClientId, x.OccurredAt }).IsDescending(false, true);
         b.HasIndex(x => new { x.UserId, x.OccurredAt }).IsDescending(false, true);
         b.HasIndex(x => new { x.IpAddress, x.OccurredAt });

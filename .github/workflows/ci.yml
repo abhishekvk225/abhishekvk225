@@ -25,6 +25,10 @@ jobs:
         run: dotnet restore NexaVerify.slnx
       - name: Build (warnings are errors)
         run: dotnet build NexaVerify.slnx --no-restore -c Release
+      - name: EF model matches the checked-in migrations
+        run: |
+          dotnet tool restore
+          dotnet ef migrations has-pending-model-changes -p src/Infrastructure -s src/Infrastructure
       - name: Test (Testcontainers starts SQL Server via Docker)
         run: dotnet test NexaVerify.slnx --no-build -c Release --logger "trx" --collect:"XPlat Code Coverage" --results-directory ./TestResults
       - name: Vulnerable packages

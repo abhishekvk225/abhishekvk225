@@ -115,7 +115,7 @@ public static class ServiceCollectionExtensions
 
             // Credential endpoints are far stricter (brute force / enumeration).
             options.AddPolicy(RateLimitSettings.AuthPolicy, http =>
-                RateLimitPartition.GetFixedWindowLimiter("auth:" + ClientKey(http), _ => new FixedWindowRateLimiterOptions
+                RateLimitPartition.GetFixedWindowLimiter("auth:" + http.Request.Path.Value + ":" + ClientKey(http), _ => new FixedWindowRateLimiterOptions
                 {
                     PermitLimit = settings.AuthPerIpPerMinute,
                     Window = TimeSpan.FromMinutes(1),
@@ -152,14 +152,42 @@ public static class ServiceCollectionExtensions
 
             foreach (var network in settings.KnownNetworks)
             {
-                options.KnownIPNetworks.Add(System.Net.IPNetwork.Parse(network));
+                var parsed = System.Net.IPNetwork.Parse(network);
+                if (parsed.PrefixLength == 0)
+                {
+                    throw new InvalidOperationException("ForwardedHeaders:KnownNetworks must not trust the whole internet (/0).");
+                }
+
+                options.KnownIPNetworks.Add(parsed);
             }
         });
         return services;
     }
 
     /// <summary>The partition key for per-client throttling: the (forwarded-header-corrected) remote IP.</summary>
-    public static string ClientKey(HttpContext http) => http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    public static string ClientKey(HttpContext http)
+    {
+        var address = http.Connection.RemoteIpAddress;
+        if (address is null)
+        {
+            return "unknown";
+        }
+
+        if (address.IsIPv4MappedToIPv6)
+        {
+            address = address.MapToIPv4();
+        }
+
+        if (address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6)
+        {
+            return address.ToString();
+        }
+
+        // IPv6: one client can rotate through a whole /64, so partition on the /64 network.
+        var bytes = address.GetAddressBytes();
+        Array.Clear(bytes, 8, 8);
+        return new IPAddress(bytes).ToString() + "/64";
+    }
 
     private static void ValidateOrigin(string origin, IHostEnvironment environment)
     {

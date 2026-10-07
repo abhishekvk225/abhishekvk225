@@ -41,7 +41,7 @@ public class RbacTests : IAsyncLifetime
         (await _app.PostAsync("/api/v1/admin/users", new CreatePlatformUserRequest(email, "Staff " + role, temp, [role]), _admin.AccessToken))
             .StatusCode.ShouldBe(HttpStatusCode.Created);
         var first = await _app.LoginAsync(email, temp);
-        var changed = await _app.PostAsync("/api/v1/auth/change-password", new ChangePasswordRequest(temp, "Staff-Own-Passphrase-77"), first.AccessToken);
+        var changed = await _app.PostAsync("/api/v1/auth/change-password", new ChangePasswordRequest(temp, "Granite-Lantern-Voyage-77"), first.AccessToken);
         return (await changed.Content.ReadFromJsonAsync<LoginResponse>(AuthApp.Json))!;
     }
 
@@ -89,7 +89,10 @@ public class RbacTests : IAsyncLifetime
         var update = await _app.PutAsync($"/api/v1/admin/roles/{role.Id}", new UpdateRoleRequest("now powerless", [Permissions.Licenses.Read]), _admin.AccessToken);
         update.StatusCode.ShouldBe(HttpStatusCode.OK);
 
-        (await _app.GetAsync("/api/v1/admin/permissions", staff.AccessToken)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        // removed permissions apply at once: the holder's token is ended, and after signing in again the permission is gone
+        (await _app.GetAsync("/api/v1/admin/permissions", staff.AccessToken)).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        var again = await _app.LoginAsync("rolemgr@nexaverify.test", "Granite-Lantern-Voyage-77");
+        (await _app.GetAsync("/api/v1/admin/permissions", again.AccessToken)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
     }
 
     [Fact]

@@ -1,0 +1,14 @@
+# syntax=docker/dockerfile:1
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+COPY global.json Directory.Build.props Directory.Packages.props .editorconfig ./
+COPY src/ src/
+RUN dotnet restore src/Migrator/NexaVerify.Migrator.csproj
+RUN dotnet publish src/Migrator/NexaVerify.Migrator.csproj -c Release -o /app/publish --no-restore /p:UseAppHost=false
+
+# The migrator links the ASP.NET Core shared framework through Infrastructure, so it needs the aspnet runtime image.
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+WORKDIR /app
+USER app
+COPY --from=build --chown=app:app /app/publish .
+ENTRYPOINT ["dotnet", "NexaVerify.Migrator.dll"]

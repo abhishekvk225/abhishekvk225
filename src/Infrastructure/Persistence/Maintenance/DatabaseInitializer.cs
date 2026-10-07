@@ -11,7 +11,7 @@ using NexaVerify.Infrastructure.Persistence.Rls;
 namespace NexaVerify.Infrastructure.Persistence.Maintenance;
 
 /// <summary>
-/// The deployment-time database procedure: drop the (schema-bound) RLS policy → apply migrations → install the model-derived
+/// The deployment-time database procedure: apply migrations (the RLS policy is created with SCHEMABINDING OFF, so it never has to be dropped and tables are never unprotected during a deploy) → install the model-derived
 /// guards (RLS + append-only triggers) → seed identity data. Run by <c>NexaVerify.Migrator</c> under an administrative
 /// principal; never by the request-serving application in production.
 /// </summary>
@@ -36,11 +36,6 @@ public sealed class DatabaseInitializer
     {
         using var platform = _scope.BeginPlatform("database initialization");
 
-        if (await _db.Database.CanConnectAsync(cancellationToken) && (await _db.Database.GetAppliedMigrationsAsync(cancellationToken)).Any())
-        {
-            await _guards.DropPolicyAsync(_db, cancellationToken);
-        }
-
         _logger.LogInformation("Applying migrations");
         await _db.Database.MigrateAsync(cancellationToken);
 
@@ -51,6 +46,9 @@ public sealed class DatabaseInitializer
         await _seeder.SeedAsync(cancellationToken);
     }
 
+    public Task RecoverSuperAdminAsync(string email, string password, CancellationToken cancellationToken) =>
+        _seeder.RecoverSuperAdminAsync(email, password, cancellationToken);
+
     /// <summary>The idempotent SQL equivalent for DBA-run deployments: migrations script + guards.</summary>
     public string GenerateScript()
     {
@@ -58,7 +56,7 @@ public sealed class DatabaseInitializer
         var guards = DatabaseGuardsInstaller.BuildBatches(_db.GetService<IDesignTimeModel>().Model);
         return string.Join(
             Environment.NewLine + "GO" + Environment.NewLine,
-            [RowLevelSecurityScriptBuilder.DropPolicy(), migrator.GenerateScript(options: Microsoft.EntityFrameworkCore.Migrations.MigrationsSqlGenerationOptions.Idempotent), .. guards]);
+            [migrator.GenerateScript(options: Microsoft.EntityFrameworkCore.Migrations.MigrationsSqlGenerationOptions.Idempotent), .. guards]);
     }
 
     /// <summary>
@@ -70,12 +68,23 @@ public sealed class DatabaseInitializer
         using var platform = _scope.BeginPlatform("create application principal");
         var q = RowLevelSecurityScriptBuilder.Quote;
 
+        if (login.Length is 0 or > 100 || password.Length is < 16 or > 120)
+        {
+            // QUOTENAME returns NULL for names over 128 chars, which would make the dynamic SQL silently do nothing.
+            throw new ArgumentException("The application login must be 1-100 characters and its password 16-120 characters.");
+        }
+
         await _db.Database.ExecuteSqlRawAsync(
             """
             DECLARE @sql nvarchar(max);
             IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = @login)
             BEGIN
                 SET @sql = N'CREATE LOGIN ' + QUOTENAME(@login) + N' WITH PASSWORD = N''' + REPLACE(@password, '''', '''''') + N''', CHECK_POLICY = ON, DEFAULT_DATABASE = ' + QUOTENAME(DB_NAME());
+                EXEC (@sql);
+            END
+            ELSE
+            BEGIN
+                SET @sql = N'ALTER LOGIN ' + QUOTENAME(@login) + N' WITH PASSWORD = N''' + REPLACE(@password, '''', '''''') + N'''';
                 EXEC (@sql);
             END
             IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = @login)

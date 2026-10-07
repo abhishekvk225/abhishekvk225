@@ -8,7 +8,7 @@
 | # | Threat | Asset | Primary controls |
 |---|---|---|---|
 | T1 | Cross-tenant data access (IDOR, missing filter, forged tenant id) | All tenant data, biometrics | Tenant from credential only; EF filters + write guard + SQL RLS; 404-not-403; isolation test-suite as a release gate |
-| T2 | Credential theft / stuffing / brute force | Accounts | Identity hashing (PBKDF2-SHA512 ≥ 600k, upgradeable), lockout, per-IP+account rate limits, generic errors, breached-password check (optional), MFA-ready |
+| T2 | Credential theft / stuffing / brute force | Accounts | Identity hashing (PBKDF2-HMAC-SHA512 ≥ 210k, upgradeable), lockout, per-IP+account rate limits, generic errors, breached-password check (optional), MFA-ready |
 | T3 | API key leakage or guessing | Client API access, license credits | 256-bit random keys, SHA-256 at rest, show-once, prefix lookup + constant-time compare, scopes, optional IP allow-list, expiry, instant revoke, `last used` visibility, secret-scanning guidance |
 | T4 | License abuse (double spend, race, replay, negative balance) | Revenue | Conditional atomic UPDATE, DB CHECK constraints, idempotency keys, immutable hash-chained ledger, reconciliation job |
 | T5 | Token theft (XSS → token) | Sessions | BFF: tokens never in browser; HttpOnly+Secure+SameSite cookie; strict CSP; 15-min access tokens; refresh rotation with reuse detection |
@@ -79,7 +79,7 @@ Mandatory automated tests (release gate): for each tenant-owned entity and each 
 | Data keys | per-client DEK (AES-256), wrapped by master key (KEK) via `IKeyProvider`; KEK rotation re-wraps DEKs only |
 | Face templates, webhook secrets | AES-256-GCM, random 96-bit nonce, `ClientId` + `KeyVersion` as AAD (prevents ciphertext transplant between tenants) |
 | API keys / refresh tokens | random 256-bit (CSPRNG), stored as SHA-256; raw value shown once |
-| Passwords | Identity hasher (PBKDF2-SHA512) |
+| Passwords | Identity hasher (PBKDF2-HMAC-SHA512, 210,000 iterations — the OWASP figure for SHA-512; configurable and auto-upgraded) |
 | Randomness | `RandomNumberGenerator` only |
 | Backups | encrypted at rest (TDE on SQL Server) + key separation from the DB |
 - Secrets are excluded from logs/audit/ProblemDetails via a Serilog destructuring policy + `[Sensitive]`/`[AuditIgnore]` attributes + unit tests asserting redaction.
@@ -124,3 +124,9 @@ See `docs/03` §7. Implemented in M1/M2: global per-IP limiter, a much stricter 
 | Date | Scope | Verdict | Notes |
 |---|---|---|---|
 | M1 | Foundation security review | PASS-WITH-CONDITIONS | 8 conditions (strict principal parsing, scope restriction, session-context refresh, forwarded headers, nullable tenant decision, model coverage rules, least-privilege DB login, atomic RLS install) — all addressed in the M1 hardening pass; re-verification pending in the M2 security gate |
+| M2 | Identity & Access security review | FAIL → fixed | H-1 concurrent lockout bypass (atomic reserve-before-verify counter), H-2 delegated admin could demote Super Admin (target-privilege + last-Super-Admin guard + break-glass), plus refresh-rotation race (atomic claim + grace window), lockout-as-DoS (lockout blocks password sign-in only), change-password lockout, forgot-password timing/bombing (constant-time padding + cooldown + background email), role-edit and RBAC propagation, RLS deploy window (`SCHEMABINDING OFF`), least-privilege DB principal enforced by readiness. Re-verification pending. |
+
+### Known limits (documented, accepted)
+- Session/permission/client-status caches are per instance: revocation reaches other instances within ≤ 30 s (sessions) / 60 s (role→permission map).
+- Access tokens (15 min) cannot be revoked individually; password change, deactivation, suspension and role/permission removal invalidate them through the security version.
+- The in-process email queue is lost on a crash; the notifications module replaces it with a durable outbox.

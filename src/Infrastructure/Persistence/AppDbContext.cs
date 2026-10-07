@@ -6,6 +6,7 @@ using NexaVerify.Application.Common;
 using NexaVerify.Domain.Auditing;
 using NexaVerify.Domain.Common;
 using NexaVerify.Domain.Identity;
+using NexaVerify.Domain.Tenancy;
 
 namespace NexaVerify.Infrastructure.Persistence;
 
@@ -22,6 +23,9 @@ public class AppDbContext : DbContext, IUnitOfWork
     private static readonly MethodInfo ApplyTenantFilterMethod =
         typeof(AppDbContext).GetMethod(nameof(ApplyTenantFilter), BindingFlags.Instance | BindingFlags.NonPublic)!;
 
+    private static readonly MethodInfo ApplyTenantRootFilterMethod =
+        typeof(AppDbContext).GetMethod(nameof(ApplyTenantRootFilter), BindingFlags.Instance | BindingFlags.NonPublic)!;
+
     private static readonly MethodInfo ApplyStrictTenantFilterMethod =
         typeof(AppDbContext).GetMethod(nameof(ApplyStrictTenantFilter), BindingFlags.Instance | BindingFlags.NonPublic)!;
 
@@ -37,6 +41,14 @@ public class AppDbContext : DbContext, IUnitOfWork
     {
         _tenant = tenant;
     }
+
+    public DbSet<Client> Clients => Set<Client>();
+
+    public DbSet<ClientSetting> ClientSettings => Set<ClientSetting>();
+
+    public DbSet<ClientKey> ClientKeys => Set<ClientKey>();
+
+    public DbSet<ClientUser> ClientUsers => Set<ClientUser>();
 
     public DbSet<User> Users => Set<User>();
 
@@ -123,7 +135,18 @@ public class AppDbContext : DbContext, IUnitOfWork
 
             AddEnumCheckConstraints(modelBuilder, entityType);
 
-            if (entityType.IsOwned() || entityType.BaseType is not null || !typeof(ITenantOwned).IsAssignableFrom(clrType))
+            if (entityType.IsOwned() || entityType.BaseType is not null)
+            {
+                continue;
+            }
+
+            if (typeof(ITenantRoot).IsAssignableFrom(clrType))
+            {
+                ApplyTenantRootFilterMethod.MakeGenericMethod(clrType).Invoke(this, [modelBuilder]);
+                continue;
+            }
+
+            if (!typeof(ITenantOwned).IsAssignableFrom(clrType))
             {
                 continue;
             }
@@ -185,6 +208,15 @@ public class AppDbContext : DbContext, IUnitOfWork
         modelBuilder.Entity<TEntity>().HasQueryFilter(
             TenantFilterName,
             e => FilterIsPlatform || e.ClientId == FilterClientId);
+    }
+
+    // The client record itself: a tenant sees only its own record (Id), platform scope sees all.
+    private void ApplyTenantRootFilter<TEntity>(ModelBuilder modelBuilder)
+        where TEntity : class, ITenantRoot
+    {
+        modelBuilder.Entity<TEntity>().HasQueryFilter(
+            TenantFilterName,
+            e => FilterIsPlatform || e.Id == FilterClientId);
     }
 
     // Strict entities (biometrics): platform scope gets no cross-tenant access either.

@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using NexaVerify.Application.Identity;
+using NexaVerify.Application.Tenancy;
 
 namespace NexaVerify.Application;
 
@@ -18,6 +19,10 @@ public static class DependencyInjection
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IRoleService, RoleService>();
         services.AddScoped<IPlatformUserService, PlatformUserService>();
+        services.AddScoped<IPasswordResetService, PasswordResetService>();
+        services.AddScoped<IClientService, ClientService>();
+        services.AddScoped<IClientPortalService, ClientPortalService>();
+        services.AddScoped<IClientSettingsService, ClientSettingsService>();
         return services;
     }
 }

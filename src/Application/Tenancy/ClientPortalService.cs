@@ -1,0 +1,308 @@
+using NexaVerify.Application.Abstractions;
+using NexaVerify.Application.Auditing;
+using NexaVerify.Application.Common;
+using NexaVerify.Application.Identity;
+using NexaVerify.Application.Persistence;
+using NexaVerify.Contracts.Common;
+using NexaVerify.Contracts.Identity;
+using NexaVerify.Contracts.Tenancy;
+using NexaVerify.Domain.Common;
+using NexaVerify.Domain.Identity;
+using NexaVerify.Domain.Tenancy;
+
+namespace NexaVerify.Application.Tenancy;
+
+public interface IClientPortalService
+{
+    Task<Result<ClientDto>> GetProfileAsync(CancellationToken cancellationToken);
+
+    Task<Result<ClientDto>> UpdateProfileAsync(UpdateClientProfileRequest request, CancellationToken cancellationToken);
+
+    Task<Result<PagedResult<ClientUserDto>>> ListUsersAsync(PageRequest page, CancellationToken cancellationToken);
+
+    Task<Result<ClientUserDto>> CreateUserAsync(CreateClientUserRequest request, CancellationToken cancellationToken);
+
+    Task<Result<ClientUserDto>> UpdateUserAsync(Guid userId, UpdateClientUserRequest request, CancellationToken cancellationToken);
+
+    Task<Result> ResetUserPasswordAsync(Guid userId, CancellationToken cancellationToken);
+
+    Task<Result<PagedResult<AuditLogDto>>> GetActivityAsync(ActivityQuery query, CancellationToken cancellationToken);
+
+    Task<Result<PagedResult<LoginHistoryDto>>> GetLoginsAsync(ActivityQuery query, CancellationToken cancellationToken);
+
+    Task<Result<IReadOnlyList<SettingDto>>> GetSettingsAsync(IReadOnlyCollection<string>? groups, CancellationToken cancellationToken);
+
+    Task<Result<IReadOnlyList<SettingDto>>> UpdateSettingsAsync(UpdateSettingsRequest request, IReadOnlyCollection<string>? groups, CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// Everything a client administrator does to their own account. The client is always the caller's own (taken from the
+/// credential, never a parameter), enforced again by the tenant filter and row-level security.
+/// </summary>
+public sealed class ClientPortalService : IClientPortalService
+{
+    private readonly IClientRepository _clients;
+    private readonly IClientQueries _queries;
+    private readonly IClientService _clientService;
+    private readonly IUserRepository _users;
+    private readonly IRoleRepository _roles;
+    private readonly IClientMembershipRepository _memberships;
+    private readonly IRefreshTokenRepository _refreshTokens;
+    private readonly IClientSettingsService _settings;
+    private readonly IPasswordHasher _hasher;
+    private readonly ISecureTokenService _secure;
+    private readonly IPasswordResetService _resetService;
+    private readonly ISessionValidator _sessions;
+    private readonly IPermissionResolver _permissions;
+    private readonly IAuditService _audit;
+    private readonly ICurrentUser _currentUser;
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly TimeProvider _time;
+
+    public ClientPortalService(
+        IClientRepository clients,
+        IClientQueries queries,
+        IClientService clientService,
+        IUserRepository users,
+        IRoleRepository roles,
+        IClientMembershipRepository memberships,
+        IRefreshTokenRepository refreshTokens,
+        IClientSettingsService settings,
+        IPasswordHasher hasher,
+        ISecureTokenService secure,
+        IPasswordResetService resetService,
+        ISessionValidator sessions,
+        IPermissionResolver permissions,
+        IAuditService audit,
+        ICurrentUser currentUser,
+        IUnitOfWork unitOfWork,
+        TimeProvider time)
+    {
+        _clients = clients;
+        _queries = queries;
+        _clientService = clientService;
+        _users = users;
+        _roles = roles;
+        _memberships = memberships;
+        _refreshTokens = refreshTokens;
+        _settings = settings;
+        _hasher = hasher;
+        _secure = secure;
+        _resetService = resetService;
+        _sessions = sessions;
+        _permissions = permissions;
+        _audit = audit;
+        _currentUser = currentUser;
+        _unitOfWork = unitOfWork;
+        _time = time;
+    }
+
+    private Guid? OwnClientId => _currentUser.ClientId;
+
+    public async Task<Result<ClientDto>> GetProfileAsync(CancellationToken cancellationToken)
+    {
+        if (OwnClientId is not { } id)
+        {
+            return Error.Forbidden(ErrorCodes.Forbidden, "Only client users have a client profile.");
+        }
+
+        var client = await _clients.GetByIdAsync(id, cancellationToken);
+        return client is null ? Error.NotFound() : client.ToDto();
+    }
+
+    public async Task<Result<ClientDto>> UpdateProfileAsync(UpdateClientProfileRequest request, CancellationToken cancellationToken)
+    {
+        if (OwnClientId is not { } id)
+        {
+            return Error.Forbidden(ErrorCodes.Forbidden, "Only client users have a client profile.");
+        }
+
+        var client = await _clients.GetByIdAsync(id, cancellationToken);
+        if (client is null)
+        {
+            return Error.NotFound();
+        }
+
+        byte[] version;
+        try
+        {
+            version = Convert.FromBase64String(request.RowVersion);
+        }
+        catch (FormatException)
+        {
+            return Error.Validation("rowVersion is not valid.", new Dictionary<string, string[]> { ["rowVersion"] = ["Invalid concurrency token."] });
+        }
+
+        var before = new { client.Name, client.ContactEmail, client.TimeZone };
+        _clients.SetExpectedVersion(client, version);
+        client.Apply(request.Name, request.LegalName, request.ContactEmail, request.ContactPhone, request.AddressLine1, request.AddressLine2,
+            request.City, request.State, request.PostalCode, request.Country, request.Website, request.Industry, request.TimeZone);
+        _audit.Record(new AuditEntry("client.profile_updated", nameof(Client), client.Id.ToString(), client.Id,
+            OldValues: before, NewValues: new { client.Name, client.ContactEmail, client.TimeZone }));
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return client.ToDto();
+    }
+
+    public async Task<Result<PagedResult<ClientUserDto>>> ListUsersAsync(PageRequest page, CancellationToken cancellationToken)
+    {
+        if (OwnClientId is not { } id)
+        {
+            return Error.Forbidden(ErrorCodes.Forbidden, "Only client users can list users.");
+        }
+
+        var paging = page.Normalize();
+        var (items, total) = await _queries.ListUsersAsync(id, paging.Search?.Trim(), paging.Skip, paging.PageSize, cancellationToken);
+        return new PagedResult<ClientUserDto>(items.Select(i => i.ToDto()).ToList(), paging.Page, paging.PageSize, total);
+    }
+
+    public async Task<Result<ClientUserDto>> CreateUserAsync(CreateClientUserRequest request, CancellationToken cancellationToken)
+    {
+        if (OwnClientId is not { } clientId)
+        {
+            return Error.Forbidden(ErrorCodes.Forbidden, "Only client users can create users.");
+        }
+
+        var settings = await _settings.GetEffectiveAsync(clientId, cancellationToken);
+        if (await _queries.CountActiveUsersAsync(clientId, cancellationToken) >= settings.Int(SettingKeys.Limits.MaxUsers))
+        {
+            return Error.Conflict("USER_LIMIT_REACHED", "The maximum number of users for this account has been reached.");
+        }
+
+        var normalized = User.Normalize(request.Email);
+        if (await _users.EmailExistsAsync(normalized, cancellationToken))
+        {
+            return Error.Conflict(ErrorCodes.Conflict, "A user with this email already exists.");
+        }
+
+        var role = await ResolveRoleAsync(request.Role, cancellationToken);
+        if (role.IsFailure)
+        {
+            return role.Error!;
+        }
+
+        var now = _time.GetUtcNow().UtcDateTime;
+        var user = User.Create(request.Email, request.FullName, _hasher.Hash(_secure.CreateToken()), clientId, isPlatformUser: false, mustChangePassword: false);
+        _users.Add(user);
+        await _users.SetRolesAsync(user, [role.Value], cancellationToken);
+        _memberships.Add(ClientUser.Create(clientId, user.Id, Clean(request.JobTitle), isOwner: false, now));
+        var invitation = await _resetService.IssueAsync(user, ResetEmailKind.Invitation, cancellationToken);
+        _audit.Record(new AuditEntry(AuditActions.UserCreated, nameof(User), user.Id.ToString(), clientId,
+            NewValues: new { user.Email, user.FullName, Role = role.Value.Name }));
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _resetService.SendAsync(user, invitation, ResetEmailKind.Invitation, cancellationToken);
+
+        var row = await _queries.GetUserAsync(clientId, user.Id, cancellationToken);
+        return row!.ToDto();
+    }
+
+    public async Task<Result<ClientUserDto>> UpdateUserAsync(Guid userId, UpdateClientUserRequest request, CancellationToken cancellationToken)
+    {
+        if (OwnClientId is not { } clientId)
+        {
+            return Error.Forbidden(ErrorCodes.Forbidden, "Only client users can update users.");
+        }
+
+        var row = await _queries.GetUserAsync(clientId, userId, cancellationToken);
+        if (row is null)
+        {
+            return Error.NotFound();
+        }
+
+        var role = await ResolveRoleAsync(request.Role, cancellationToken);
+        if (role.IsFailure)
+        {
+            return role.Error!;
+        }
+
+        var user = row.User;
+        var losesAdmin = row.Role == SystemRoles.ClientAdmin && (role.Value.Name != SystemRoles.ClientAdmin || !request.IsActive);
+        if (losesAdmin && await _queries.CountActiveUsersWithRoleAsync(clientId, SystemRoles.ClientAdmin, cancellationToken) <= 1)
+        {
+            return Error.Conflict("LAST_ADMIN", "The account must keep at least one active administrator.");
+        }
+
+        if (user.Id == _currentUser.ActorId && !request.IsActive)
+        {
+            return Error.Conflict(ErrorCodes.Conflict, "You cannot deactivate your own account.");
+        }
+
+        var before = new { user.FullName, Status = user.Status.ToString(), Role = row.Role };
+        user.FullName = request.FullName.Trim();
+        if (request.IsActive)
+        {
+            user.Activate();
+        }
+        else
+        {
+            user.Deactivate();
+        }
+
+        await _users.SetRolesAsync(user, [role.Value], cancellationToken);
+        user.RevokeSessions(); // a changed role or status applies to already-issued tokens right away
+        if (!request.IsActive)
+        {
+            var now = _time.GetUtcNow().UtcDateTime;
+            foreach (var token in await _refreshTokens.GetActiveForUserAsync(user.Id, cancellationToken))
+            {
+                token.Revoke(now, "user-deactivated");
+            }
+        }
+
+        if (row.Membership is not null)
+        {
+            row.Membership.JobTitle = Clean(request.JobTitle);
+        }
+
+        _audit.Record(new AuditEntry(request.IsActive ? AuditActions.UserUpdated : AuditActions.UserDeactivated, nameof(User), user.Id.ToString(), clientId,
+            OldValues: before, NewValues: new { user.FullName, Status = user.Status.ToString(), Role = role.Value.Name }));
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        _sessions.Invalidate(user.Id);
+
+        var updated = await _queries.GetUserAsync(clientId, userId, cancellationToken);
+        return updated!.ToDto();
+    }
+
+    public async Task<Result> ResetUserPasswordAsync(Guid userId, CancellationToken cancellationToken) =>
+        OwnClientId is { } clientId
+            ? await _clientService.ResetUserPasswordAsync(clientId, userId, cancellationToken)
+            : Error.Forbidden(ErrorCodes.Forbidden, "Only client users can reset passwords.");
+
+    public async Task<Result<PagedResult<AuditLogDto>>> GetActivityAsync(ActivityQuery query, CancellationToken cancellationToken) =>
+        OwnClientId is { } clientId
+            ? await _clientService.GetActivityAsync(clientId, query, cancellationToken)
+            : Error.Forbidden(ErrorCodes.Forbidden, "Only client users have an activity history.");
+
+    public async Task<Result<PagedResult<LoginHistoryDto>>> GetLoginsAsync(ActivityQuery query, CancellationToken cancellationToken) =>
+        OwnClientId is { } clientId
+            ? await _clientService.GetLoginsAsync(clientId, query, cancellationToken)
+            : Error.Forbidden(ErrorCodes.Forbidden, "Only client users have a login history.");
+
+    public async Task<Result<IReadOnlyList<SettingDto>>> GetSettingsAsync(IReadOnlyCollection<string>? groups, CancellationToken cancellationToken) =>
+        OwnClientId is { } clientId
+            ? await _settings.GetAsync(clientId, groups, cancellationToken)
+            : Error.Forbidden(ErrorCodes.Forbidden, "Only client users have settings.");
+
+    public async Task<Result<IReadOnlyList<SettingDto>>> UpdateSettingsAsync(UpdateSettingsRequest request, IReadOnlyCollection<string>? groups, CancellationToken cancellationToken) =>
+        OwnClientId is { } clientId
+            ? await _settings.UpdateAsync(clientId, request, groups, cancellationToken)
+            : Error.Forbidden(ErrorCodes.Forbidden, "Only client users have settings.");
+
+    private async Task<Result<Role>> ResolveRoleAsync(string name, CancellationToken cancellationToken)
+    {
+        var role = (await _roles.GetByNamesAsync([name], cancellationToken)).SingleOrDefault();
+        if (role is null || role.Scope != RoleScope.Client)
+        {
+            return Error.Validation("Unknown role.", new Dictionary<string, string[]> { ["role"] = ["Choose one of the available client roles."] });
+        }
+
+        // You cannot hand out more than you hold.
+        var mine = await _permissions.GetPermissionsAsync(_currentUser.Roles, CancellationToken.None);
+        var catalogue = (await _roles.ListPermissionsAsync(cancellationToken)).ToDictionary(p => p.Id, p => p.Key);
+        var escalation = role.Permissions.Select(p => catalogue[p.PermissionId]).Where(k => !mine.Contains(k)).ToList();
+        return escalation.Count > 0
+            ? Error.Forbidden(ErrorCodes.Forbidden, "You cannot assign a role with permissions you do not hold.")
+            : role;
+    }
+
+    private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+}

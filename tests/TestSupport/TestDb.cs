@@ -55,6 +55,22 @@ public sealed class TestDb
         return db;
     }
 
+    /// <summary>Inserts a client row with the given id (tables with foreign keys to Clients need a real tenant).</summary>
+    public async Task EnsureClientAsync(Guid clientId)
+    {
+        using var scope = Tenant.BeginPlatform("test: ensure client");
+        await using var context = NewContext();
+        if (await context.Clients.AnyAsync(c => c.Id == clientId))
+        {
+            return;
+        }
+
+        var client = NexaVerify.Domain.Tenancy.Client.Create("T" + clientId.ToString("N")[..12], "Test " + clientId.ToString("N")[..6], "ops@test.invalid", "UTC", Time.GetUtcNow().UtcDateTime);
+        typeof(NexaVerify.Domain.Common.Entity).GetProperty(nameof(NexaVerify.Domain.Common.Entity.Id))!.SetValue(client, clientId);
+        context.Clients.Add(client);
+        await context.SaveChangesAsync();
+    }
+
     public TestDbContext NewContext()
     {
         var applier = new TenantSessionContextApplier(Tenant);

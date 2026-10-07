@@ -53,7 +53,11 @@ public sealed class AuditAndTenantSaveChangesInterceptor : SaveChangesIntercepto
         {
             if (entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
             {
-                if (entry.Entity is ITenantOwned owned)
+                if (entry.Entity is ITenantRoot root)
+                {
+                    GuardTenantRoot(entry, root);
+                }
+                else if (entry.Entity is ITenantOwned owned)
                 {
                     GuardTenant(entry, owned);
                 }
@@ -78,6 +82,26 @@ public sealed class AuditAndTenantSaveChangesInterceptor : SaveChangesIntercepto
                     auditable.UpdatedBy = actor;
                     break;
             }
+        }
+    }
+
+    /// <summary>The client record: only platform scope may create or delete it; a tenant may edit just its own.</summary>
+    private void GuardTenantRoot(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry entry, ITenantRoot root)
+    {
+        if (_tenant.IsPlatform)
+        {
+            return;
+        }
+
+        var name = entry.Metadata.ClrType.Name;
+        if (entry.State != EntityState.Modified)
+        {
+            throw new TenantViolationException($"Only platform scope can add or delete {name}.");
+        }
+
+        if (_tenant.ClientId != root.Id)
+        {
+            throw new TenantViolationException($"Cannot modify {name} of a different tenant.");
         }
     }
 

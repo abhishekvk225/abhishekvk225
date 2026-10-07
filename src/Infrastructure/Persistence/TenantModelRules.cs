@@ -22,6 +22,21 @@ public static class TenantModelRules
             var isTenant = typeof(ITenantOwned).IsAssignableFrom(clr);
             var isStrict = typeof(IStrictTenantOwned).IsAssignableFrom(clr);
 
+            if (typeof(ITenantRoot).IsAssignableFrom(clr))
+            {
+                if (isTenant)
+                {
+                    violations.Add($"{clr.Name} cannot be both ITenantRoot and ITenantOwned.");
+                }
+
+                if (entityType.BaseType is not null || entityType.GetTableName() is null)
+                {
+                    violations.Add($"{clr.Name} (tenant root) must be a root entity mapped to its own table.");
+                }
+
+                continue;
+            }
+
             if (entityType.IsOwned() && entityType.FindOwnership() is { } ownership
                 && typeof(ITenantOwned).IsAssignableFrom(ownership.PrincipalEntityType.GetRootType().ClrType))
             {

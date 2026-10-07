@@ -35,4 +35,18 @@ public static class DatabaseBootstrap
         await using var scope = provider.CreateAsyncScope();
         await scope.ServiceProvider.GetRequiredService<DatabaseInitializer>().InitializeAsync(CancellationToken.None);
     }
+
+    public static async Task CreateApplicationPrincipalAsync(string connectionString, string login, string password)
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(BaseSettings(connectionString)).Build();
+        var services = new ServiceCollection();
+        services.AddLogging(b => b.SetMinimumLevel(LogLevel.Warning));
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddApplication();
+        services.AddInfrastructure(configuration);
+
+        await using var provider = services.BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<DatabaseInitializer>().EnsureApplicationPrincipalAsync(login, password, CancellationToken.None);
+    }
 }

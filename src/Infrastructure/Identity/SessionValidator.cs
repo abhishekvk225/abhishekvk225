@@ -39,28 +39,28 @@ public sealed class SessionValidator : ISessionValidator
             var user = await _db.Users.AsNoTracking()
                 .Where(u => u.Id == userId)
                 .Select(u => new { u.SecurityVersion, u.Status, u.IsActive, u.LockoutEnd, u.ClientId, u.IsPlatformUser })
-                .FirstOrDefaultAsync(cancellationToken);
+                .FirstOrDefaultAsync(CancellationToken.None);
             if (user is null)
             {
-                return new SessionState(false, 0);
+                return new SessionState(false, 0, Guid.Empty, false);
             }
 
-            var now = _time.GetUtcNow().UtcDateTime;
-            var usable = user.Status == Domain.Identity.UserStatus.Active && user.IsActive && !(user.LockoutEnd > now);
-            if (usable && !user.IsPlatformUser && await _clientGuard.CheckAsync(user.ClientId, cancellationToken) is not null)
-            {
-                usable = false;
-            }
-
-            return new SessionState(usable, user.SecurityVersion);
+            var usable = user.Status == Domain.Identity.UserStatus.Active && user.IsActive; // a lockout only blocks password sign-in, never live sessions
+            return new SessionState(usable, user.SecurityVersion, user.ClientId, user.IsPlatformUser);
         });
 
-        return state is { Usable: true } && state.SecurityVersion == securityVersion;
+        if (state is not { Usable: true } || state.SecurityVersion != securityVersion)
+        {
+            return false;
+        }
+
+        // The client's status is checked on every request (cheap: the guard caches it and is invalidated explicitly on change).
+        return state.IsPlatformUser || await _clientGuard.CheckAsync(state.ClientId, cancellationToken) is null;
     }
 
     public void Invalidate(Guid userId) => _cache.Remove(Key(userId));
 
     private static string Key(Guid userId) => "session:" + userId.ToString("N");
 
-    private sealed record SessionState(bool Usable, int SecurityVersion);
+    private sealed record SessionState(bool Usable, int SecurityVersion, Guid ClientId, bool IsPlatformUser);
 }

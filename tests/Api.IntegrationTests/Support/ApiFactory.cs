@@ -25,8 +25,23 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
     {
         builder.UseEnvironment(Environment);
         builder.UseSetting("ConnectionStrings:Default", ConnectionString);
-        builder.UseSetting("Jwt:AllowEphemeralKey", "true");
+        if (Environment == "Production")
+        {
+            // Production refuses ephemeral keys: give the test host real ones.
+            using var signing = System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
+            builder.UseSetting("Jwt:SigningKeyPem", signing.ExportPkcs8PrivateKeyPem());
+            builder.UseSetting("Encryption:MasterKeyBase64", Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)));
+        }
+        else
+        {
+            builder.UseSetting("Jwt:AllowEphemeralKey", "true");
+            builder.UseSetting("Encryption:AllowEphemeralKey", "true");
+        }
+
         builder.UseSetting("PasswordHashing:IterationCount", "10000");
+        builder.UseSetting("Auth:SensitiveResponseMinimumMilliseconds", "0");
+        builder.UseSetting("Auth:PasswordResetCooldownSeconds", "0");
+        builder.UseSetting("Auth:RefreshReuseGraceSeconds", "0");
         builder.UseSetting("RateLimiting:PerIpPerMinute", "100000");
         builder.UseSetting("RateLimiting:AuthPerIpPerMinute", "100000");
         foreach (var (key, value) in Settings)

@@ -77,10 +77,11 @@ public sealed class CreateRoleRequestValidator : AbstractValidator<CreateRoleReq
 {
     public CreateRoleRequestValidator()
     {
-        RuleFor(x => x.Name).NotEmpty().MaximumLength(60).Matches("^[A-Za-z][A-Za-z0-9 _-]*$").WithMessage("Role names use letters, digits, spaces, - and _.");
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(60).Matches(@"^[A-Za-z][A-Za-z0-9 _-]*\z").WithMessage("Role names use letters, digits, spaces, - and _.");
         RuleFor(x => x.Scope).Must(s => s is "Platform" or "Client").WithMessage("Scope must be Platform or Client.");
         RuleFor(x => x.Description).MaximumLength(500);
         RuleFor(x => x.Permissions).NotNull().Must(p => p is { Count: <= 200 }).WithMessage("Too many permissions.");
+        RuleForEach(x => x.Permissions).NotEmpty().MaximumLength(80);
     }
 }
 
@@ -90,6 +91,7 @@ public sealed class UpdateRoleRequestValidator : AbstractValidator<UpdateRoleReq
     {
         RuleFor(x => x.Description).MaximumLength(500);
         RuleFor(x => x.Permissions).NotNull().Must(p => p is { Count: <= 200 }).WithMessage("Too many permissions.");
+        RuleForEach(x => x.Permissions).NotEmpty().MaximumLength(80);
     }
 }
 
@@ -101,6 +103,7 @@ public sealed class CreatePlatformUserRequestValidator : AbstractValidator<Creat
         RuleFor(x => x.FullName).NotEmpty().MaximumLength(150);
         RuleFor(x => x.TemporaryPassword).StrongPassword(policy, x => x.Email);
         RuleFor(x => x.Roles).NotNull().Must(r => r is { Count: > 0 and <= 20 }).WithMessage("Assign between 1 and 20 roles.");
+        RuleForEach(x => x.Roles).NotEmpty().MaximumLength(60);
     }
 }
 
@@ -110,6 +113,7 @@ public sealed class UpdatePlatformUserRequestValidator : AbstractValidator<Updat
     {
         RuleFor(x => x.FullName).NotEmpty().MaximumLength(150);
         RuleFor(x => x.Roles).NotNull().Must(r => r is { Count: > 0 and <= 20 }).WithMessage("Assign between 1 and 20 roles.");
+        RuleForEach(x => x.Roles).NotEmpty().MaximumLength(60);
     }
 }
 

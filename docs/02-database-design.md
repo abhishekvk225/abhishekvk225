@@ -60,7 +60,7 @@ erDiagram
 ### 3.1 `iam` schema
 
 **iam.Users** (our own entity; ASP.NET Core Identity's `PasswordHasher` hashes passwords, the user/role/permission model stays in the Domain) — `Id PK`, `ClientId` (tenant-owned: platform staff belong to the platform tenant; a user belongs to one client in v1), `Email`, `NormalizedEmail`, `UserName`, `NormalizedUserName`, `PasswordHash`, `SecurityVersion int` (bumped to invalidate sessions), `FullName nvarchar(150)`, `PhoneNumber`, `Status` (`Active|Inactive|Locked|PendingActivation`), `IsPlatformUser bit`, `MustChangePassword bit`, `LockoutEnd`, `LockoutEnabled`, `AccessFailedCount`, `TwoFactorEnabled`, `LastLoginAt`, `LastPasswordChangedAt`, `(A)`, `IsActive`.
-Indexes: `UQ(NormalizedEmail)` (global uniqueness), `IX(ClientId, Status)`. Login looks users up by email in a narrowly scoped, reasoned platform scope (the only way to find a user before the tenant is known).
+Indexes: `UQ(NormalizedEmail)` (global uniqueness), `IX(ClientId, Status)`. Lockout state (`AccessFailedCount`, `LockoutEnd`) is maintained only by single atomic `UPDATE … OUTPUT` statements; `Status` is `Active|Inactive|PendingActivation` (no `Locked`: lockout is time-based). Login looks users up by email in a narrowly scoped, reasoned platform scope (the only way to find a user before the tenant is known).
 
 **iam.Roles** — global (no `ClientId`): `Id PK`, `Name varchar(60)`, `NormalizedName UQ`, `Scope` (`Platform|Client`), `IsSystem bit` (system roles cannot be edited/deleted), `Description`, `(A)`. Client-defined custom roles are a later feature and will use a separate tenant-owned table.
 
@@ -163,7 +163,7 @@ CREATE SECURITY POLICY security.TenantPolicy
   -- … strict tables use fn_StrictTenantFilter …
 WITH (STATE = ON, SCHEMABINDING = ON);
 ```
-The tenant is written to `SESSION_CONTEXT` by EF interceptors on every connection open and before any command whose scope changed. With neither key set the predicates return no rows (fail-closed). Because the policy is `SCHEMABINDING`, the migrator drops it before running migrations and re-creates it afterwards (a readiness check compares `sys.security_predicates` with the model and fails if a tenant table is unprotected).
+The tenant is written to `SESSION_CONTEXT` by EF interceptors on every connection open and before any command whose scope changed. With neither key set the predicates return no rows (fail-closed). The policy is created with `SCHEMABINDING = OFF`, so migrations can alter protected tables without ever dropping the policy (no unprotected window during a deploy); tables added by a migration are covered when the migrator re-installs the guards, atomically, right after. A readiness check compares `sys.security_predicates` and the append-only triggers with the model and fails if anything is unprotected.
 
 **Database principals:** the application connects as a least-privilege login (data read/write + execute only; **no** `ALTER ANY SECURITY POLICY`, no DDL), so a compromised app cannot disable RLS. Migrations and the RLS installer run as a separate administrative principal supplied only to the migrator job. `TrustServerCertificate=True` is for local development only; production connection strings must use `Encrypt=True` with a trusted certificate.
 

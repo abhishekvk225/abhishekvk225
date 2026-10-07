@@ -43,7 +43,7 @@ internal sealed class UserRepository : IUserRepository
                orderby r.Name
                select r.Name).ToListAsync(cancellationToken);
 
-    public async Task<IReadOnlyDictionary<Guid, IReadOnlyList<string>>> GetRoleNamesAsync(IReadOnlyCollection<Guid> userIds, CancellationToken cancellationToken)
+    public async Task<IReadOnlyDictionary<Guid, IReadOnlyList<string>>> GetRoleNamesByUserAsync(IReadOnlyCollection<Guid> userIds, CancellationToken cancellationToken)
     {
         if (userIds.Count == 0)
         {
@@ -56,6 +56,20 @@ internal sealed class UserRepository : IUserRepository
                           select new { ur.UserId, r.Name }).ToListAsync(cancellationToken);
         return rows.GroupBy(x => x.UserId).ToDictionary(g => g.Key, g => (IReadOnlyList<string>)g.Select(x => x.Name).OrderBy(n => n, StringComparer.Ordinal).ToList());
     }
+
+    public Task<int> CountActivePlatformUsersInRoleAsync(string roleName, CancellationToken cancellationToken) =>
+        (from u in _db.Users
+         where u.IsPlatformUser && u.Status == UserStatus.Active && u.IsActive
+         join ur in _db.UserRoles on u.Id equals ur.UserId
+         join r in _db.Roles on ur.RoleId equals r.Id
+         where r.Name == roleName
+         select u.Id).Distinct().CountAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<User>> GetUsersWithRoleAsync(Guid roleId, CancellationToken cancellationToken) =>
+        await (from ur in _db.UserRoles
+               where ur.RoleId == roleId
+               join u in _db.Users on ur.UserId equals u.Id
+               select u).ToListAsync(cancellationToken);
 
     public async Task SetRolesAsync(User user, IReadOnlyCollection<Role> roles, CancellationToken cancellationToken)
     {

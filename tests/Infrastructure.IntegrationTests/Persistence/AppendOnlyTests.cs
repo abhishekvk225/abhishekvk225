@@ -22,6 +22,7 @@ public class AppendOnlyTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         _db = await TestDb.CreateAsync(_fixture);
+        await _db.EnsureClientAsync(_client);
         using var scope = _db.Tenant.BeginTenant(_client);
         await using var context = _db.NewContext();
         context.AuditLogs.Add(new AuditLog { Action = "test.event", EntityType = "Thing", EntityId = "1", OccurredAt = DateTime.UtcNow, ActorType = AuditActorType.System });
@@ -65,7 +66,7 @@ public class AppendOnlyTests : IAsyncLifetime
         {
             await using var admin = _db.NewContext();
             await admin.Database.ExecuteSqlRawAsync("DROP SECURITY POLICY [security].[TenantPolicy]");
-            var check = new TenantProtectionHealthCheck(admin, Microsoft.Extensions.Logging.Abstractions.NullLogger<TenantProtectionHealthCheck>.Instance);
+            var check = new TenantProtectionHealthCheck(admin, Microsoft.Extensions.Logging.Abstractions.NullLogger<TenantProtectionHealthCheck>.Instance, Microsoft.Extensions.Options.Options.Create(new NexaVerify.Infrastructure.Persistence.DatabaseOptions()));
 
             var result = await check.CheckHealthAsync(new Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext());
 
@@ -78,7 +79,7 @@ public class AppendOnlyTests : IAsyncLifetime
     {
         using var scope = _db.Tenant.BeginPlatform("test");
         await using var admin = _db.NewContext();
-        var check = new TenantProtectionHealthCheck(admin, Microsoft.Extensions.Logging.Abstractions.NullLogger<TenantProtectionHealthCheck>.Instance);
+        var check = new TenantProtectionHealthCheck(admin, Microsoft.Extensions.Logging.Abstractions.NullLogger<TenantProtectionHealthCheck>.Instance, Microsoft.Extensions.Options.Options.Create(new NexaVerify.Infrastructure.Persistence.DatabaseOptions()));
 
         (await check.CheckHealthAsync(new Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext())).Status
             .ShouldBe(Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy);

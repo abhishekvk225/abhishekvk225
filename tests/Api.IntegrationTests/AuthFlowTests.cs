@@ -322,7 +322,7 @@ public class AuthFlowTests : IAsyncLifetime
         // the new staff member changes the temporary password and gets to work
         var first = await _app.LoginAsync("support@nexaverify.test", "Temporary-Passphrase-55");
         var changed = await _app.PostAsync("/api/v1/auth/change-password",
-            new ChangePasswordRequest("Temporary-Passphrase-55", "Support-Own-Passphrase-66"), first.AccessToken);
+            new ChangePasswordRequest("Temporary-Passphrase-55", "Granite-Lantern-Voyage-66"), first.AccessToken);
         var support = (await changed.Content.ReadFromJsonAsync<LoginResponse>(AuthApp.Json))!;
         (await _app.GetAsync("/api/v1/admin/roles", support.AccessToken)).StatusCode.ShouldBe(HttpStatusCode.OK);
 
@@ -332,7 +332,7 @@ public class AuthFlowTests : IAsyncLifetime
 
         (await _app.GetAsync("/api/v1/admin/roles", support.AccessToken)).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         (await _app.PostAsync("/api/v1/auth/refresh", new RefreshRequest(support.RefreshToken))).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
-        (await _app.PostAsync("/api/v1/auth/login", new LoginRequest("support@nexaverify.test", "Support-Own-Passphrase-66"))).StatusCode
+        (await _app.PostAsync("/api/v1/auth/login", new LoginRequest("support@nexaverify.test", "Granite-Lantern-Voyage-66"))).StatusCode
             .ShouldBe(HttpStatusCode.Forbidden);
     }
 
