@@ -1,4 +1,4 @@
-# 01 — Solution Architecture & Module Breakdown
+# 01 — NexaVerify: Solution Architecture & Module Breakdown
 
 > Owner: Solution Architect Agent · Status: **Draft v1 — awaiting sign-off** · Target runtime: **.NET 10 (LTS)**
 
@@ -82,14 +82,14 @@ The Web project talks to the API over HTTP only. That keeps business logic out o
 
 ```
 /
-├── FaceSaaS.slnx
+├── NexaVerify.slnx
 ├── Directory.Build.props         # nullable, analyzers, warnings-as-errors, deterministic
 ├── Directory.Packages.props      # central package management (all versions pinned here)
 ├── global.json                   # SDK pin
 ├── .editorconfig
 ├── docs/                         # this documentation
 ├── src/
-│   ├── Domain/                   # FaceSaaS.Domain
+│   ├── Domain/                   # NexaVerify.Domain
 │   │   ├── Common/               # Entity, AuditableEntity, ITenantOwned, ValueObjects, DomainException
 │   │   ├── Identity/             # User, Role, Permission, RefreshToken, LoginAttempt
 │   │   ├── Tenancy/              # Client, ClientUser, ClientSetting, ClientKey
@@ -98,8 +98,8 @@ The Web project talks to the API over HTTP only. That keeps business logic out o
 │   │   ├── ApiAccess/            # ApiKey, WebhookEndpoint, WebhookDelivery, ApiRequestLog
 │   │   ├── Auditing/             # AuditLog
 │   │   └── Notifications/
-│   ├── Contracts/                # FaceSaaS.Contracts — request/response DTOs, enums, ErrorCodes, Permissions
-│   ├── Application/              # FaceSaaS.Application
+│   ├── Contracts/                # NexaVerify.Contracts — request/response DTOs, enums, ErrorCodes, Permissions
+│   ├── Application/              # NexaVerify.Application
 │   │   ├── Common/               # Result<T>, Error, PagedResult, ICurrentUser, ITenantContext, IClock, behaviors
 │   │   ├── Abstractions/         # IUnitOfWork, IFaceEngine, IBlobStore, IKeyProvider, IEmailSender, ...
 │   │   ├── Identity/             # AuthService, UserService, TokenService
@@ -110,7 +110,7 @@ The Web project talks to the API over HTTP only. That keeps business logic out o
 │   │   ├── Dashboards/           # AdminDashboardService, ClientDashboardService
 │   │   ├── Auditing/             # AuditService
 │   │   └── Notifications/
-│   ├── Infrastructure/           # FaceSaaS.Infrastructure
+│   ├── Infrastructure/           # NexaVerify.Infrastructure
 │   │   ├── Persistence/          # AppDbContext, Configurations/, Interceptors/, Migrations/, Rls/, Seed/
 │   │   ├── Identity/             # Identity setup, JwtTokenIssuer, PermissionStore
 │   │   ├── Security/             # AesGcmEnvelopeEncryptor, ApiKeyHasher, KeyProviders/
@@ -119,14 +119,14 @@ The Web project talks to the API over HTTP only. That keeps business logic out o
 │   │   ├── Background/           # LicenseExpirySweeper, UsageRollupJob, OutboxDispatcher, RetentionPurge
 │   │   ├── Messaging/            # Email, Webhook HTTP sender
 │   │   └── DependencyInjection.cs
-│   ├── Api/                      # FaceSaaS.Api (composition root)
+│   ├── Api/                      # NexaVerify.Api (composition root)
 │   │   ├── Controllers/{Auth,Admin,Client,Faces}/
 │   │   ├── Middleware/           # CorrelationId, ExceptionHandler (ProblemDetails), SecurityHeaders, RequestLogging
 │   │   ├── Auth/                 # ApiKeyAuthHandler, PermissionPolicyProvider, ClientStatusGuard
 │   │   ├── RateLimiting/
 │   │   └── Program.cs
 │   └── Web/
-│       └── Blazor/               # FaceSaaS.Web
+│       └── Blazor/               # NexaVerify.Web
 │           ├── Layouts/          # AdminLayout, ClientLayout, AuthLayout
 │           ├── Pages/{Admin,Client,Auth}/
 │           ├── Components/       # StatCard, DataTable<T>, ConfirmDialog, EmptyState, ErrorState, SkeletonCard, ChartCard, StatusChip, SecretRevealDialog, FaceCapture

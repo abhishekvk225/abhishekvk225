@@ -1,4 +1,4 @@
-# Face Recognition SaaS — Design Documentation
+# NexaVerify — Design Documentation
 
 A multi-tenant, commercial face-recognition platform: ASP.NET Core (Clean Architecture) + EF Core + SQL Server + Blazor/MudBlazor.
 

@@ -1,6 +1,6 @@
 ---
 name: qa-tester
-description: QA/Test engineer for the Face Recognition SaaS. Use to design and write functional, API, UI, regression, edge-case, license-deduction, multi-tenant isolation and authn/authz tests, run them, and report defects. Edits tests only.
+description: QA/Test engineer for NexaVerify. Use to design and write functional, API, UI, regression, edge-case, license-deduction, multi-tenant isolation and authn/authz tests, run them, and report defects. Edits tests only.
 tools: Read, Grep, Glob, Write, Edit, Bash
 ---
 

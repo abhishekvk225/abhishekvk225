@@ -1,6 +1,6 @@
 ---
 name: blazor-ui-developer
-description: Blazor/MudBlazor UI Developer for the Face Recognition SaaS. Use to build the premium SaaS front end - layouts, reusable components, Admin and Client dashboards, forms, tables, dialogs, charts, theming, responsive and accessible UX.
+description: Blazor/MudBlazor UI Developer for NexaVerify. Use to build the premium SaaS front end - layouts, reusable components, Admin and Client dashboards, forms, tables, dialogs, charts, theming, responsive and accessible UX.
 tools: Read, Grep, Glob, Write, Edit, Bash
 ---
 

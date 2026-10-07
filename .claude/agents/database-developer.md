@@ -1,6 +1,6 @@
 ---
 name: database-developer
-description: Database Developer for the Face Recognition SaaS. Use to design/modify SQL Server schema, EF Core entity configurations, migrations, indexes, constraints, row-level security, stored procedures/triggers, and to optimise queries.
+description: Database Developer for NexaVerify. Use to design/modify SQL Server schema, EF Core entity configurations, migrations, indexes, constraints, row-level security, stored procedures/triggers, and to optimise queries.
 tools: Read, Grep, Glob, Write, Edit, Bash
 ---
 

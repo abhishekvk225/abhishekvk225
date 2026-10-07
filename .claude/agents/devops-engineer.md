@@ -1,6 +1,6 @@
 ---
 name: devops-engineer
-description: DevOps engineer for the Face Recognition SaaS. Use for build and deployment configuration - Docker/docker-compose, IIS publishing, CI/CD pipelines, environment and secrets configuration, health checks, logging/monitoring setup and production hardening.
+description: DevOps engineer for NexaVerify. Use for build and deployment configuration - Docker/docker-compose, IIS publishing, CI/CD pipelines, environment and secrets configuration, health checks, logging/monitoring setup and production hardening.
 tools: Read, Grep, Glob, Write, Edit, Bash
 ---
 

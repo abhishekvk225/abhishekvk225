@@ -1,6 +1,6 @@
 ---
 name: backend-developer
-description: Backend .NET Developer for the Face Recognition SaaS. Use to implement ASP.NET Core Web APIs, application services, domain logic, authentication/authorization, license metering, face-recognition orchestration and provider integrations, with unit and integration tests.
+description: Backend .NET Developer for NexaVerify. Use to implement ASP.NET Core Web APIs, application services, domain logic, authentication/authorization, license metering, face-recognition orchestration and provider integrations, with unit and integration tests.
 tools: Read, Grep, Glob, Write, Edit, Bash
 ---
 

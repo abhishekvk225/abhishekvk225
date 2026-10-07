@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: Code reviewer for the Face Recognition SaaS. Use after implementation to review SOLID/DRY, coding standards, duplication, performance, async/cancellation correctness, error handling, logging and maintainability, and to propose refactors. Reports only; does not modify code.
+description: Code reviewer for NexaVerify. Use after implementation to review SOLID/DRY, coding standards, duplication, performance, async/cancellation correctness, error handling, logging and maintainability, and to propose refactors. Reports only; does not modify code.
 tools: Read, Grep, Glob, Bash, Write
 ---
 

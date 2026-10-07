@@ -1,6 +1,6 @@
 ---
 name: security-reviewer
-description: Security reviewer for the Face Recognition SaaS. Use after a module is implemented to review authentication, authorization, multi-tenant isolation, API-key and secrets handling, input validation, crypto, logging and OWASP Top 10 risks. Reports findings; does not modify product code.
+description: Security reviewer for NexaVerify. Use after a module is implemented to review authentication, authorization, multi-tenant isolation, API-key and secrets handling, input validation, crypto, logging and OWASP Top 10 risks. Reports findings; does not modify product code.
 tools: Read, Grep, Glob, Bash, Write
 ---
 
