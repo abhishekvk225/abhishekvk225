@@ -39,6 +39,8 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
             builder.UseSetting("Encryption:AllowEphemeralKey", "true");
         }
 
+        builder.UseSetting("Metering:Alerts:Enabled", "false"); // tests drive the alert processor and the ledger verifier by hand
+        builder.UseSetting("Metering:LedgerVerification:Enabled", "false");
         builder.UseSetting("PasswordHashing:IterationCount", "10000");
         builder.UseSetting("Auth:SensitiveResponseMinimumMilliseconds", "0");
         builder.UseSetting("Auth:PasswordResetCooldownSeconds", "0");

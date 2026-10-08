@@ -34,6 +34,7 @@ public static class Permissions
         public const string Renew = "licenses.renew";
         public const string Adjust = "licenses.adjust";
         public const string CostRules = "licenses.cost-rules";
+        public const string VerifyLedger = "licenses.verify-ledger";
     }
 
     public static class Plans
@@ -146,6 +147,7 @@ public static class Permissions
         new(Licenses.Renew, "Licenses", PermissionScopeKind.Platform, "Renew licenses"),
         new(Licenses.Adjust, "Licenses", PermissionScopeKind.Platform, "Adjust license credits"),
         new(Licenses.CostRules, "Licenses", PermissionScopeKind.Platform, "Configure credit costs per operation"),
+        new(Licenses.VerifyLedger, "Licenses", PermissionScopeKind.Platform, "Run a tamper check over the credit ledgers"),
         new(Plans.Manage, "Licenses", PermissionScopeKind.Platform, "Manage subscription plans"),
 
         new(Dashboard.Admin, "Dashboard", PermissionScopeKind.Platform, "View the admin dashboard"),

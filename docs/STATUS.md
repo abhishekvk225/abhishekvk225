@@ -11,7 +11,7 @@ Gate legend: ✅ passed · 🔄 in progress · ⬜ not started · ❌ failed. A 
 | M4 Licensing & Metering | ✅ | ✅ | ✅ | ⬜ (M8) | 🔄 pass-with-conditions (see below) | ✅ 25 API + 17 domain tests | 🔄 Majors M-1..M-4 fixed | 🔄 | ⬜ | ⬜ |
 | M5 Face Recognition | ✅ | ✅ | ✅ (mock engine; real provider pending) | ⬜ (M8) | 🔄 High fixed; re-verify + conditions below | ✅ 22 API + 8 unit tests | 🔄 Blocker + Majors fixed; rest below | 🔄 | ⬜ | ⬜ |
 | M6 API Management | ✅ | ✅ | ✅ keys, auth, limits, logs, webhooks | ⬜ (M8) | 🔄 pass-with-conditions; Mediums M-1(clamp)/M-3/M-4 fixed | ✅ 30 API + 40 unit tests | 🔄 approve-with-changes; Majors M1–M4, M7 fixed | 🔄 | ⬜ | ⬜ |
-| M7 Usage & Dashboards | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
+| M7 Usage & Dashboards | ✅ | ✅ | ✅ dashboards, CSV exports, ledger verification, alerts, notification feed | ⬜ (M8) | ⬜ | ✅ 34 API + 79 unit tests (reconciliation, tamper, dedupe) | ⬜ | ⬜ | ⬜ | ⬜ |
 | M8 Blazor Portal polish | ⬜ | – | – | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M9 Hardening | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M10 Release readiness | – | – | – | – | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |

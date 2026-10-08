@@ -8,6 +8,8 @@ using NexaVerify.Application.Identity;
 using NexaVerify.Application.Persistence;
 using NexaVerify.Application.Api;
 using NexaVerify.Application.Auditing;
+using NexaVerify.Application.Dashboards;
+using NexaVerify.Application.Licensing;
 using NexaVerify.Application.Faces;
 using NexaVerify.Infrastructure.Faces;
 using NexaVerify.Infrastructure.Auditing;
@@ -152,6 +154,21 @@ public static class DependencyInjection
         services.AddSingleton<ApiRequestLogWriter>();
         services.AddSingleton<IApiRequestLogSink>(sp => sp.GetRequiredService<ApiRequestLogWriter>());
         services.AddHostedService(sp => sp.GetRequiredService<ApiRequestLogWriter>());
+
+        services.AddOptions<DashboardOptions>().Bind(configuration.GetSection(DashboardOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
+        services.AddScoped<IDashboardQueries, DashboardQueries>();
+
+        services.AddOptions<LedgerVerificationOptions>().Bind(configuration.GetSection(LedgerVerificationOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
+        services.AddScoped<ILedgerVerificationStore, LedgerVerificationStore>();
+        services.AddHostedService<LedgerVerificationJob>();
+
+        services.AddOptions<LicenseAlertOptions>().Bind(configuration.GetSection(LicenseAlertOptions.SectionName)).ValidateDataAnnotations()
+            .Validate(o => o.ExpiringFinalNoticeDays < o.ExpiringNoticeDays, "Metering:Alerts: the final expiry notice must be shorter than the first.")
+            .ValidateOnStart();
+        services.AddScoped<ILicenseAlertRepository, LicenseAlertRepository>();
+        services.AddScoped<ILicenseAlertCandidates, LicenseAlertCandidates>();
+        services.AddSingleton<LicenseAlertProcessor>();
+        services.AddHostedService<LicenseAlertJob>();
 
         return services;
     }
