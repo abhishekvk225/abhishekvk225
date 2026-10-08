@@ -9,7 +9,7 @@ Gate legend: ✅ passed · 🔄 in progress · ⬜ not started · ❌ failed. A 
 | M2 Identity & Access | ✅ | ✅ | ✅ | 🔄 shell done; screens wire to API in M8 | ✅ re-verified: pass-with-conditions (Lows) | ✅ 136 API tests | changes applied, re-review | 🔄 | ⬜ | ⬜ |
 | M3 Client Management | ✅ | ✅ | ✅ | ⬜ (M8) | 🔄 pass-with-conditions (M3-M1..M3 open) | ✅ | 🔄 approve-with-changes, Majors fixed | 🔄 | ⬜ | ⬜ |
 | M4 Licensing & Metering | ✅ | ✅ | ✅ | ⬜ (M8) | 🔄 pass-with-conditions (see below) | ✅ 25 API + 17 domain tests | 🔄 Majors M-1..M-4 fixed | 🔄 | ⬜ | ⬜ |
-| M5 Face Recognition | ✅ | ✅ | ✅ (mock engine; real provider pending) | ⬜ (M8) | 🔄 review running | ✅ 17 API + 8 unit tests | 🔄 review running | 🔄 | ⬜ | ⬜ |
+| M5 Face Recognition | ✅ | ✅ | ✅ (mock engine; real provider pending) | ⬜ (M8) | 🔄 High fixed; re-verify + conditions below | ✅ 22 API + 8 unit tests | 🔄 Blocker + Majors fixed; rest below | 🔄 | ⬜ | ⬜ |
 | M6 API Management | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M7 Usage & Dashboards | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M8 Blazor Portal polish | ⬜ | – | – | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
@@ -30,3 +30,7 @@ Gate legend: ✅ passed · 🔄 in progress · ⬜ not started · ❌ failed. A 
   - M4-M3: nightly ledger-verification job + alert (M7); consider keyed HMAC anchor (M9).
   - M3-M1/M2/M3: redact platform-staff data from client audit/profile; target-privilege check in client user management.
   - M4-M5: cap / second approver on `licenses.adjust` (M9).
+
+## M5 review outcomes (`docs/reviews/security-m5.md`, `code-m5.md`)
+- **Fixed:** idempotency key now bound to the request target (blocker); image gate is async with a bounded queue and 503 load-shedding, JPEG decoded at reduced size (High, cross-tenant DoS); re-enrolling an existing person needs the recorded consent (insider takeover); NoMatch no longer reveals the score; audit rows no longer keep the person's reference; retention override capped at 10 years; template-cache staleness/single-flight/byte-based size limit; concurrency conflicts map to 409; provider/image failures are logged; one corrupt template no longer breaks identify.
+- **Open (before M5 is Complete):** per-credential rate limit on face endpoints (arrives with M6 API keys); `limits.maxProfiles` is a soft limit under concurrent enrolment; shared recognition pipeline refactor (service is large); history rows keep image hash/IP without a purge job; sweeper batch size; real engine provider; gitleaks in CI; security re-verification of the High.

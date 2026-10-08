@@ -111,7 +111,8 @@ public sealed class FaceProfileService : IFaceProfileService
 
         if (request.RetentionUntil is { } until)
         {
-            profile.RetentionUntil = DateTime.SpecifyKind(until, DateTimeKind.Utc);
+            var max = _time.GetUtcNow().UtcDateTime.AddDays(3650);
+            profile.RetentionUntil = DateTime.SpecifyKind(until, DateTimeKind.Utc) > max ? max : DateTime.SpecifyKind(until, DateTimeKind.Utc);
         }
 
         if (request.Status is { } status)
@@ -147,7 +148,7 @@ public sealed class FaceProfileService : IFaceProfileService
 
         // Templates go with the profile (cascade). History keeps only the profile id, which identifies nobody once the profile is gone.
         _faces.Remove(profile);
-        _audit.Record(new AuditEntry("face.profile_erased", nameof(FaceProfile), profile.Id.ToString(), clientId, OldValues: new { profile.ExternalRef }));
+        _audit.Record(new AuditEntry("face.profile_erased", nameof(FaceProfile), profile.Id.ToString(), clientId, OldValues: null));
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         _index.Invalidate(clientId);
         return Result.Success();
@@ -289,7 +290,7 @@ public sealed class FaceRetentionProcessor : IFaceRetentionProcessor
             }
 
             _faces.Remove(profile);
-            _audit.Record(new AuditEntry("face.profile_retention_erased", nameof(FaceProfile), id.ToString(), clientId, OldValues: new { profile.ExternalRef, profile.RetentionUntil }));
+            _audit.Record(new AuditEntry("face.profile_retention_erased", nameof(FaceProfile), id.ToString(), clientId, OldValues: new { profile.RetentionUntil }));
         }
 
         if (due.Count > 0)

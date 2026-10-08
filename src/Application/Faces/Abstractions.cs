@@ -10,7 +10,8 @@ public sealed record DetectedFace(int X, int Y, int Width, int Height, decimal Q
 /// <summary>Validates untrusted upload bytes (magic bytes, size, pixel count) and normalises them. Pure CPU work, no I/O.</summary>
 public interface IImageProcessor
 {
-    Result<PreparedImage> Prepare(byte[] data);
+    /// <summary>Fails fast with 503 when the node is already busy decoding, instead of queueing unbounded work.</summary>
+    Task<Result<PreparedImage>> PrepareAsync(byte[] data, CancellationToken cancellationToken);
 }
 
 /// <summary>The face provider contract. Swapping the implementation never touches business code.</summary>

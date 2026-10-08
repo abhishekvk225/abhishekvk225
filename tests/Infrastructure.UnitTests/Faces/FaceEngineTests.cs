@@ -34,30 +34,30 @@ public class FaceEngineTests
     }
 
     [Fact]
-    public void The_processor_decides_the_type_from_the_bytes_and_strips_everything_else()
+    public async Task The_processor_decides_the_type_from_the_bytes_and_strips_everything_else()
     {
         var processor = new SkiaImageProcessor();
 
-        processor.Prepare(Pattern(1)).IsSuccess.ShouldBeTrue();
-        processor.Prepare(Image(160, 160, (x, y) => (byte)(x + y), SKEncodedImageFormat.Png)).IsSuccess.ShouldBeTrue();
+        (await processor.PrepareAsync(Pattern(1), default)).IsSuccess.ShouldBeTrue();
+        (await processor.PrepareAsync(Image(160, 160, (x, y) => (byte)(x + y), SKEncodedImageFormat.Png), default)).IsSuccess.ShouldBeTrue();
 
-        var text = processor.Prepare("GIF89a....."u8.ToArray());
+        var text = await processor.PrepareAsync("GIF89a....."u8.ToArray(), default);
         text.Error!.Code.ShouldBe(ErrorCodes.ImageUnsupportedType);
-        processor.Prepare([]).Error!.Code.ShouldBe(ErrorCodes.ImageInvalid);
-        processor.Prepare([0xFF, 0xD8, 0xFF, 1, 2, 3]).Error!.Code.ShouldBe(ErrorCodes.ImageInvalid);
+        (await processor.PrepareAsync([], default)).Error!.Code.ShouldBe(ErrorCodes.ImageInvalid);
+        (await processor.PrepareAsync([0xFF, 0xD8, 0xFF, 1, 2, 3], default)).Error!.Code.ShouldBe(ErrorCodes.ImageInvalid);
 
         var tooBig = new byte[SkiaImageProcessor.MaxBytes + 1];
         tooBig[0] = 0xFF;
-        processor.Prepare(tooBig).Error!.Type.ShouldBe(ErrorType.PayloadTooLarge);
+        (await processor.PrepareAsync(tooBig, default)).Error!.Type.ShouldBe(ErrorType.PayloadTooLarge);
 
-        processor.Prepare(Image(30, 30, (_, _) => 90)).Error!.Code.ShouldBe(ErrorCodes.ImageInvalid); // below the minimum side
+        (await processor.PrepareAsync(Image(30, 30, (_, _) => 90), default)).Error!.Code.ShouldBe(ErrorCodes.ImageInvalid); // below the minimum side
     }
 
     [Fact]
-    public void Large_images_are_scaled_down_and_always_come_back_as_plain_jpeg()
+    public async Task Large_images_are_scaled_down_and_always_come_back_as_plain_jpeg()
     {
         var processor = new SkiaImageProcessor();
-        var prepared = processor.Prepare(Image(3000, 2000, (x, y) => (byte)((x / 50) + (y / 50)), SKEncodedImageFormat.Png)).Value!;
+        var prepared = (await processor.PrepareAsync(Image(3000, 2000, (x, y) => (byte)((x / 50) + (y / 50)), SKEncodedImageFormat.Png), default)).Value!;
 
         Math.Max(prepared.Width, prepared.Height).ShouldBe(SkiaImageProcessor.MaxSide);
         prepared.Jpeg[0].ShouldBe((byte)0xFF);
@@ -73,7 +73,7 @@ public class FaceEngineTests
 
         async Task<float[]> Embed(byte[] bytes)
         {
-            var image = processor.Prepare(bytes).Value!;
+            var image = (await processor.PrepareAsync(bytes, default)).Value!;
             var faces = await engine.DetectAsync(image, default);
             return await engine.ExtractAsync(image, faces[0], default);
         }

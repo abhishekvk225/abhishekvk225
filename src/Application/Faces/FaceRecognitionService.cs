@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.Extensions.Logging;
 using NexaVerify.Application.Abstractions;
 using NexaVerify.Application.Auditing;
 using NexaVerify.Application.Common;
@@ -49,6 +50,7 @@ public sealed class FaceRecognitionService : IFaceRecognitionService
     private readonly IAuditService _audit;
     private readonly IUnitOfWork _unitOfWork;
     private readonly TimeProvider _time;
+    private readonly ILogger<FaceRecognitionService> _logger;
 
     public FaceRecognitionService(
         ICurrentUser currentUser,
@@ -64,8 +66,10 @@ public sealed class FaceRecognitionService : IFaceRecognitionService
         IRecognitionRepository requests,
         IAuditService audit,
         IUnitOfWork unitOfWork,
-        TimeProvider time)
+        TimeProvider time,
+        ILogger<FaceRecognitionService> logger)
     {
+        _logger = logger;
         _currentUser = currentUser;
         _request = request;
         _settings = settings;
@@ -88,7 +92,7 @@ public sealed class FaceRecognitionService : IFaceRecognitionService
 
     public async Task<Result<EnrollFaceResponse>> EnrollAsync(EnrollFaceRequest request, byte[] image, string? idempotencyKey, CancellationToken cancellationToken)
     {
-        if (Begin(MeteredOperation.Enroll, image, idempotencyKey) is not { } begin)
+        if (Begin(MeteredOperation.Enroll, image, idempotencyKey, string.Join('\u001f', request.ExternalRef.Trim(), request.ConsentReference.Trim(), request.DisplayName?.Trim(), request.Metadata)) is not { } begin)
         {
             return Error.Forbidden(ErrorCodes.Forbidden, "Face recognition is only available to client accounts.");
         }
@@ -115,6 +119,12 @@ public sealed class FaceRecognitionService : IFaceRecognitionService
             return Error.Conflict("PROFILE_DISABLED", "This person's profile is disabled.");
         }
 
+        if (existing is not null && !string.Equals(existing.ConsentReference, request.ConsentReference.Trim(), StringComparison.Ordinal))
+        {
+            // Adding a face to an existing person changes who they are verified as: it needs the same consent the person gave.
+            return Error.Conflict("CONSENT_MISMATCH", "The consent reference does not match the one recorded for this person.");
+        }
+
         if (existing is null && await _faces.CountProfilesAsync(cancellationToken) >= settings.Int(SettingKeys.Limits.MaxProfiles))
         {
             return Error.Conflict("PROFILE_LIMIT_REACHED", "The maximum number of registered people for this account has been reached.");
@@ -125,7 +135,7 @@ public sealed class FaceRecognitionService : IFaceRecognitionService
             return Error.Conflict("DUPLICATE_TEMPLATE", "This image is already registered.");
         }
 
-        var prepared = _images.Prepare(image);
+        var prepared = await _images.PrepareAsync(image, cancellationToken);
         if (prepared.IsFailure)
         {
             return prepared.Error!;
@@ -207,7 +217,7 @@ public sealed class FaceRecognitionService : IFaceRecognitionService
 
                 _faces.Add(template);
                 record.AddMatch(profile.Id, template.Id, face.Quality, true);
-                _audit.Record(new AuditEntry("face.enrolled", nameof(FaceProfile), profile.Id.ToString(), clientId, NewValues: new { profile.ExternalRef, profileCreated, record.CreditsCharged }));
+                _audit.Record(new AuditEntry("face.enrolled", nameof(FaceProfile), profile.Id.ToString(), clientId, NewValues: new { profileCreated, record.CreditsCharged }));
             },
             (record, credits) => new EnrollFaceResponse(profile.Id, template.Id, profileCreated, face.Quality, nameof(RecognitionOutcome.Enrolled), record, credits),
             cancellationToken);
@@ -224,7 +234,7 @@ public sealed class FaceRecognitionService : IFaceRecognitionService
 
     public async Task<Result<VerifyFaceResponse>> VerifyAsync(VerifyFaceRequest request, byte[] image, string? idempotencyKey, CancellationToken cancellationToken)
     {
-        if (Begin(MeteredOperation.Verify, image, idempotencyKey) is not { } begin)
+        if (Begin(MeteredOperation.Verify, image, idempotencyKey, request.ProfileId?.ToString("N") ?? "ref:" + request.ExternalRef?.Trim()) is not { } begin)
         {
             return Error.Forbidden(ErrorCodes.Forbidden, "Face recognition is only available to client accounts.");
         }
@@ -236,7 +246,7 @@ public sealed class FaceRecognitionService : IFaceRecognitionService
                 return FailureFor(stored.Outcome);
             }
 
-            return new VerifyFaceResponse(stored.Outcome == RecognitionOutcome.Matched, stored.Matches[0].Score, stored.ThresholdUsed,
+            return new VerifyFaceResponse(stored.Outcome == RecognitionOutcome.Matched, stored.Outcome == RecognitionOutcome.Matched ? stored.Matches[0].Score : 0m, stored.ThresholdUsed,
                 stored.Outcome.ToString(), stored.Matches[0].ProfileId, stored.Id, new CreditsDto(stored.CreditsCharged, stored.BalanceAfter));
         }
 
@@ -267,7 +277,7 @@ public sealed class FaceRecognitionService : IFaceRecognitionService
             return Error.Conflict("PROFILE_HAS_NO_TEMPLATE", "This person has no registered face for the current recognition model.");
         }
 
-        var prepared = _images.Prepare(image);
+        var prepared = await _images.PrepareAsync(image, cancellationToken);
         if (prepared.IsFailure)
         {
             return prepared.Error!;
@@ -312,7 +322,7 @@ public sealed class FaceRecognitionService : IFaceRecognitionService
                 record.AddMatch(profile.Id, best.TemplateId, (decimal)best.Score, matched);
                 return Task.CompletedTask;
             },
-            (record, credits) => new VerifyFaceResponse(matched, Math.Round((decimal)best.Score, 4), threshold, outcome.ToString(), profile.Id, record, credits),
+            (record, credits) => new VerifyFaceResponse(matched, matched ? Math.Round((decimal)best.Score, 4) : 0m, threshold, outcome.ToString(), profile.Id, record, credits),
             cancellationToken);
     }
 
@@ -320,7 +330,7 @@ public sealed class FaceRecognitionService : IFaceRecognitionService
 
     public async Task<Result<IdentifyFaceResponse>> IdentifyAsync(IdentifyFaceRequest request, byte[] image, string? idempotencyKey, CancellationToken cancellationToken)
     {
-        if (Begin(MeteredOperation.Identify, image, idempotencyKey) is not { } begin)
+        if (Begin(MeteredOperation.Identify, image, idempotencyKey, "k:" + request.TopK) is not { } begin)
         {
             return Error.Forbidden(ErrorCodes.Forbidden, "Face recognition is only available to client accounts.");
         }
@@ -335,7 +345,7 @@ public sealed class FaceRecognitionService : IFaceRecognitionService
             var refs = await _faces.GetExternalRefsAsync(stored.Matches.Where(m => m.IsMatch).Select(m => m.ProfileId).ToList(), cancellationToken);
             var replayed = stored.Matches.Where(m => m.IsMatch && refs.ContainsKey(m.ProfileId))
                 .Select(m => new FaceMatchDto(m.ProfileId, refs[m.ProfileId], m.Score)).ToList();
-            return new IdentifyFaceResponse(replayed, stored.BestScore, stored.ThresholdUsed, stored.Outcome.ToString(), stored.Id,
+            return new IdentifyFaceResponse(replayed, stored.Outcome == RecognitionOutcome.Matched ? stored.BestScore : null, stored.ThresholdUsed, stored.Outcome.ToString(), stored.Id,
                 new CreditsDto(stored.CreditsCharged, stored.BalanceAfter));
         }
 
@@ -347,7 +357,7 @@ public sealed class FaceRecognitionService : IFaceRecognitionService
             return gate.Error!;
         }
 
-        var prepared = _images.Prepare(image);
+        var prepared = await _images.PrepareAsync(image, cancellationToken);
         if (prepared.IsFailure)
         {
             return prepared.Error!;
@@ -398,7 +408,7 @@ public sealed class FaceRecognitionService : IFaceRecognitionService
             (record, credits) => new IdentifyFaceResponse(
                 matches.Where(m => refsNow.ContainsKey(m.Template.ProfileId))
                     .Select(m => new FaceMatchDto(m.Template.ProfileId, refsNow[m.Template.ProfileId], Math.Round((decimal)m.Score, 4))).ToList(),
-                best is null ? null : Math.Round(best.Value, 4), threshold, outcome.ToString(), record, credits),
+                outcome == RecognitionOutcome.Matched && best is not null ? Math.Round(best.Value, 4) : null, threshold, outcome.ToString(), record, credits),
             cancellationToken);
     }
 
@@ -417,7 +427,7 @@ public sealed class FaceRecognitionService : IFaceRecognitionService
             return gate.Error!;
         }
 
-        var prepared = _images.Prepare(image);
+        var prepared = await _images.PrepareAsync(image, cancellationToken);
         if (prepared.IsFailure)
         {
             return prepared.Error!;
@@ -452,7 +462,7 @@ public sealed class FaceRecognitionService : IFaceRecognitionService
 
     private sealed record BeginContext(Guid ClientId, MeteredOperation Operation, byte[] RawSha256, string? DerivedKey, Guid RequestId);
 
-    private BeginContext? Begin(MeteredOperation operation, byte[] image, string? idempotencyKey)
+    private BeginContext? Begin(MeteredOperation operation, byte[] image, string? idempotencyKey, string fingerprint = "")
     {
         if (_currentUser.ClientId is not { } clientId)
         {
@@ -464,7 +474,7 @@ public sealed class FaceRecognitionService : IFaceRecognitionService
         if (!string.IsNullOrWhiteSpace(idempotencyKey))
         {
             // Bound to the operation and the exact image: reusing a key for anything else yields a different derived key.
-            derived = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{clientId:N}|{operation}|{idempotencyKey.Trim()}|{Convert.ToHexString(sha)}")));
+            derived = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{clientId:N}|{operation}|{idempotencyKey.Trim()}|{Convert.ToHexString(sha)}|{fingerprint}")));
         }
 
         return new BeginContext(clientId, operation, sha, derived, Guid.CreateVersion7());
@@ -512,7 +522,7 @@ public sealed class FaceRecognitionService : IFaceRecognitionService
     /// <summary>The provider failed: recorded for diagnostics, never billed, never replayed (a retry must reach the engine again).</summary>
     private async Task<Error> ProviderFailureAsync(BeginContext begin, decimal threshold, Stopwatch watch, FaceProviderException ex, CancellationToken cancellationToken)
     {
-        _ = ex;
+        _logger.LogError(ex, "Face provider {Provider} failed during {Operation}", _engine.Provider, begin.Operation);
         var recorded = RecognitionRequest.Create(
             begin.RequestId, begin.ClientId, begin.Operation, Source(), _currentUser.ActorId, null, RecognitionOutcome.ProviderError,
             ErrorCodes.FaceProviderUnavailable, threshold, null, 0, _engine.Provider, _engine.ModelVersion, begin.RawSha256,
@@ -575,6 +585,11 @@ public sealed class FaceRecognitionService : IFaceRecognitionService
                 },
                 cancellationToken);
         }
+        catch (ConcurrencyConflictException)
+        {
+            _unitOfWork.ClearTracked();
+            return Error.Conflict(ErrorCodes.ConcurrencyConflict, "This person was changed by another request at the same time. Please retry.");
+        }
         catch (UniqueConstraintViolationException)
         {
             _unitOfWork.ClearTracked();
@@ -583,7 +598,9 @@ public sealed class FaceRecognitionService : IFaceRecognitionService
                 return Error.Conflict(ErrorCodes.Conflict, "An identical request is already being processed. Retry to receive its result.");
             }
 
-            return Error.Conflict(ErrorCodes.DuplicateExternalRef, "A person with this reference was registered at the same time.");
+            return begin.Operation == MeteredOperation.Enroll
+                ? Error.Conflict(ErrorCodes.DuplicateExternalRef, "A person with this reference was registered at the same time.")
+                : Error.Conflict(ErrorCodes.Conflict, "The request conflicted with a concurrent change. Please retry.");
         }
     }
 }

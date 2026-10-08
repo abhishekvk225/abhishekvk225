@@ -81,6 +81,7 @@ public class FacesTests : IAsyncLifetime
 
         var stranger = await (await VerifyAsync(t, "emp-1", TestImages.Person(2))).Content.ReadFromJsonAsync<VerifyFaceResponse>(AuthApp.Json);
         stranger!.Match.ShouldBeFalse();
+        stranger.Score.ShouldBe(0m); // a near-miss score is never revealed (no hill-climbing oracle)
         stranger.Outcome.ShouldBe("NoMatch");
 
         // 1 (enrol) + 1 + 1 (a "no match" is a definitive, billable answer)
@@ -171,6 +172,32 @@ public class FacesTests : IAsyncLifetime
         var disabled = await VerifyAsync(t, "emp-1", TestImages.Person(4, 1));
         disabled.StatusCode.ShouldBe(HttpStatusCode.Conflict);
         (await CodeOf(disabled)).ShouldBe("PROFILE_DISABLED");
+    }
+
+    [Fact]
+    public async Task Adding_a_face_to_an_existing_person_needs_the_consent_on_record()
+    {
+        var t = await NewTenantAsync("F21");
+        (await EnrollAsync(t, "emp-1", TestImages.Person(300), consent: "consent-A")).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var takeover = await EnrollAsync(t, "emp-1", TestImages.Person(301), consent: "something-else");
+        takeover.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await CodeOf(takeover)).ShouldBe("CONSENT_MISMATCH");
+        (await EnrollAsync(t, "emp-1", TestImages.Person(301), consent: "consent-A")).StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await ConsumedAsync(t)).ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task Audit_entries_for_faces_never_carry_the_persons_reference()
+    {
+        var t = await NewTenantAsync("F22");
+        await EnrollAsync(t, "secret-employee-id", TestImages.Person(310));
+        var profile = (await JsonOf(await _app.GetAsync("/api/v1/faces/profiles", t.Token))).GetProperty("items")[0].GetProperty("id").GetGuid();
+        await _app.DeleteAsync($"/api/v1/faces/profiles/{profile}", t.Token);
+
+        var json = await _app.WithDbAsync(async db =>
+            string.Join("|", await db.AuditLogs.AsNoTracking().Where(a => a.ClientId == t.ClientId && a.Action.StartsWith("face.")).Select(a => a.OldValuesJson + a.NewValuesJson).ToListAsync()));
+        json.ShouldNotContain("secret-employee-id");
     }
 
     [Fact]
@@ -284,6 +311,55 @@ public class FacesTests : IAsyncLifetime
         var identify = await IdentifyAsync(t, TestImages.Person(40, 1), key: "abc");
         identify.StatusCode.ShouldBe(HttpStatusCode.OK);
         (await ConsumedAsync(t)).ShouldBe(before + 4); // identify costs 2
+    }
+
+    [Fact]
+    public async Task An_idempotency_key_is_bound_to_the_request_target_not_just_the_image()
+    {
+        var t = await NewTenantAsync("F18");
+        var photo = TestImages.Person(45);
+        (await EnrollAsync(t, "emp-1", photo, key: "k1")).StatusCode.ShouldBe(HttpStatusCode.OK);
+        await EnrollAsync(t, "emp-2", TestImages.Person(46));
+        var consumed = await ConsumedAsync(t);
+
+        // same key + same image, different target: must be a new, billed request - not a free replay of emp-1's result
+        var verifyA = await VerifyAsync(t, "emp-1", TestImages.Person(45, 1), key: "k2");
+        var verifyB = await VerifyAsync(t, "emp-2", TestImages.Person(45, 1), key: "k2");
+        (await verifyA.Content.ReadFromJsonAsync<VerifyFaceResponse>(AuthApp.Json))!.Match.ShouldBeTrue();
+        (await verifyB.Content.ReadFromJsonAsync<VerifyFaceResponse>(AuthApp.Json))!.Match.ShouldBeFalse();
+        (await ConsumedAsync(t)).ShouldBe(consumed + 2);
+
+        // an enrolment for a different person must not be swallowed by a replay either
+        var other = TestImages.Person(47);
+        (await EnrollAsync(t, "emp-3", other, key: "k3")).StatusCode.ShouldBe(HttpStatusCode.OK);
+        var again = await EnrollAsync(t, "emp-4", other, key: "k3");
+        again.StatusCode.ShouldBe(HttpStatusCode.Conflict); // duplicate image, not a replayed success for emp-3
+        (await _app.WithTenantDbAsync(t.ClientId, db => db.FaceProfiles.AnyAsync(p => p.ExternalRef == "emp-4"))).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Concurrent_enrolments_of_one_person_never_fail_with_a_server_error()
+    {
+        var t = await NewTenantAsync("F19");
+        var responses = await Task.WhenAll(Enumerable.Range(0, 6).Select(i => Task.Run(() => EnrollAsync(t, "same", TestImages.Person(200 + i)))));
+
+        responses.ShouldAllBe(r => r.StatusCode == HttpStatusCode.OK || r.StatusCode == HttpStatusCode.Conflict);
+        responses.Count(r => r.StatusCode == HttpStatusCode.OK).ShouldBeGreaterThanOrEqualTo(1);
+        (await _app.WithTenantDbAsync(t.ClientId, db => db.FaceProfiles.CountAsync())).ShouldBe(1);
+        // every successful enrolment was charged, every refused one was not
+        (await ConsumedAsync(t)).ShouldBe(responses.Count(r => r.StatusCode == HttpStatusCode.OK));
+    }
+
+    [Fact]
+    public async Task A_new_enrolment_is_found_at_once_even_when_the_index_was_warm()
+    {
+        var t = await NewTenantAsync("F20");
+        await EnrollAsync(t, "first", TestImages.Person(210));
+        (await IdentifyAsync(t, TestImages.Person(211))).StatusCode.ShouldBe(HttpStatusCode.OK); // warms the cache without the new person
+
+        await EnrollAsync(t, "second", TestImages.Person(211));
+        var found = await (await IdentifyAsync(t, TestImages.Person(211, 1))).Content.ReadFromJsonAsync<IdentifyFaceResponse>(AuthApp.Json);
+        found!.Matches.Single().ExternalRef.ShouldBe("second");
     }
 
     [Fact]

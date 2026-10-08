@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using Microsoft.Extensions.Logging;
 using NexaVerify.Application.Common;
 using NexaVerify.Application.Faces;
 using NexaVerify.Contracts.Common;
@@ -14,14 +15,29 @@ namespace NexaVerify.Infrastructure.Faces;
 /// </summary>
 public sealed class SkiaImageProcessor : IImageProcessor
 {
+    private readonly ILogger<SkiaImageProcessor>? _logger;
+
+    public SkiaImageProcessor()
+    {
+    }
+
+    public SkiaImageProcessor(ILogger<SkiaImageProcessor> logger)
+    {
+        _logger = logger;
+    }
+
     public const int MaxBytes = 5 * 1024 * 1024;
     public const long MaxPixels = 25_000_000;
     public const int MinSide = 64;
     public const int MaxSide = 1600;
 
-    private static readonly SemaphoreSlim Gate = new(4);
+    private const int MaxConcurrentDecodes = 3;
+    private const int MaxWaiting = 12;
 
-    public Result<PreparedImage> Prepare(byte[] data)
+    private static readonly SemaphoreSlim Gate = new(MaxConcurrentDecodes);
+    private static int _waiting;
+
+    public async Task<Result<PreparedImage>> PrepareAsync(byte[] data, CancellationToken cancellationToken)
     {
         if (data.Length == 0)
         {
@@ -38,11 +54,43 @@ public sealed class SkiaImageProcessor : IImageProcessor
             return new Error(ErrorCodes.ImageUnsupportedType, "Only JPEG, PNG and WebP images are accepted.", ErrorType.Validation);
         }
 
-        if (!Gate.Wait(TimeSpan.FromSeconds(10)))
+        // Bounded queue: when the node is saturated, shed load immediately instead of parking request threads (one tenant must not
+        // be able to starve the others by flooding the decoder).
+        if (Interlocked.Increment(ref _waiting) > MaxWaiting)
         {
-            return Error.Unavailable(ErrorCodes.RateLimited, "The server is busy processing images. Please retry shortly.");
+            Interlocked.Decrement(ref _waiting);
+            return Busy();
         }
 
+        var entered = false;
+        try
+        {
+            entered = await Gate.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _waiting);
+        }
+
+        if (!entered)
+        {
+            return Busy();
+        }
+
+        try
+        {
+            return await Task.Run(() => Decode(data), cancellationToken);
+        }
+        finally
+        {
+            Gate.Release();
+        }
+    }
+
+    private static Error Busy() => Error.Unavailable(ErrorCodes.RateLimited, "The server is busy processing images. Please retry shortly.");
+
+    private Result<PreparedImage> Decode(byte[] data)
+    {
         try
         {
             using var skData = SKData.CreateCopy(data);
@@ -63,30 +111,50 @@ public sealed class SkiaImageProcessor : IImageProcessor
                 return new Error(ErrorCodes.ImageInvalid, $"The image must be at least {MinSide}×{MinSide} pixels.", ErrorType.Validation);
             }
 
-            using var decoded = SKBitmap.Decode(codec, new SKImageInfo(info.Width, info.Height, SKColorType.Rgba8888, SKAlphaType.Opaque));
+            // JPEG can be decoded at 1/2, 1/4 or 1/8 size straight from the DCT: a 25 MP photo never needs a 100 MB bitmap.
+            var longest = Math.Max(info.Width, info.Height);
+            var target = longest > MaxSide ? codec.GetScaledDimensions((float)MaxSide / longest) : info.Size;
+            if (target.Width < MinSide || target.Height < MinSide)
+            {
+                target = info.Size;
+            }
+
+            using var decoded = SKBitmap.Decode(codec, new SKImageInfo(target.Width, target.Height, SKColorType.Rgba8888, SKAlphaType.Opaque));
             if (decoded is null)
             {
                 return new Error(ErrorCodes.ImageInvalid, "The image could not be decoded.", ErrorType.Validation);
             }
 
-            using var oriented = Orient(decoded, codec.EncodedOrigin);
-            using var scaled = Downscale(oriented);
-            using var image = SKImage.FromBitmap(scaled);
-            using var encoded = image.Encode(SKEncodedImageFormat.Jpeg, 90);
-            if (encoded is null)
+            var oriented = Orient(decoded, codec.EncodedOrigin);
+            var scaled = Downscale(oriented);
+            try
             {
-                return new Error(ErrorCodes.ImageInvalid, "The image could not be processed.", ErrorType.Validation);
-            }
+                using var image = SKImage.FromBitmap(scaled);
+                using var encoded = image.Encode(SKEncodedImageFormat.Jpeg, 90);
+                if (encoded is null)
+                {
+                    return new Error(ErrorCodes.ImageInvalid, "The image could not be processed.", ErrorType.Validation);
+                }
 
-            return new PreparedImage(encoded.ToArray(), scaled.Width, scaled.Height, SHA256.HashData(data));
+                return new PreparedImage(encoded.ToArray(), scaled.Width, scaled.Height, SHA256.HashData(data));
+            }
+            finally
+            {
+                if (!ReferenceEquals(scaled, oriented))
+                {
+                    scaled.Dispose();
+                }
+
+                if (!ReferenceEquals(oriented, decoded))
+                {
+                    oriented.Dispose();
+                }
+            }
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
+            _logger?.LogWarning(ex, "Image processing failed");
             return new Error(ErrorCodes.ImageInvalid, "The image could not be processed.", ErrorType.Validation);
-        }
-        finally
-        {
-            Gate.Release();
         }
     }
 
@@ -100,19 +168,19 @@ public sealed class SkiaImageProcessor : IImageProcessor
         var longest = Math.Max(source.Width, source.Height);
         if (longest <= MaxSide)
         {
-            return source.Copy();
+            return source;
         }
 
         var ratio = (double)MaxSide / longest;
         var info = new SKImageInfo(Math.Max(1, (int)(source.Width * ratio)), Math.Max(1, (int)(source.Height * ratio)), SKColorType.Rgba8888, SKAlphaType.Opaque);
-        return source.Resize(info, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear)) ?? source.Copy();
+        return source.Resize(info, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear)) ?? source;
     }
 
     private static SKBitmap Orient(SKBitmap source, SKEncodedOrigin origin)
     {
         if (origin is SKEncodedOrigin.TopLeft or SKEncodedOrigin.Default)
         {
-            return source.Copy();
+            return source;
         }
 
         var swap = origin is SKEncodedOrigin.LeftTop or SKEncodedOrigin.RightTop or SKEncodedOrigin.RightBottom or SKEncodedOrigin.LeftBottom;
