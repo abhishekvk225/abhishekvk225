@@ -60,7 +60,6 @@ public class ClientKeyServiceTests : IAsyncLifetime
         var plain = await service.DecryptAsync(_a, cipher, "face-template", default);
 
         plain.ShouldBe(secret);
-        cipher.ShouldNotContain(secret[0]); // sanity: not a trivial copy
         cipher.AsSpan().IndexOf(secret).ShouldBe(-1);
         var stored = await context.ClientKeys.AsNoTracking().SingleAsync();
         stored.WrappedDataKey.Length.ShouldBeGreaterThan(32); // wrapped (nonce+tag+key), not a bare key

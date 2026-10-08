@@ -37,3 +37,20 @@ public sealed record ApiLogQuery
 
     public DateTime? To { get; init; }
 }
+
+public sealed record WebhookEndpointDto(
+    Guid Id, string Name, string Url, IReadOnlyList<string> Events, string Status, int FailureCount, DateTime? DisabledAt, string? DisabledReason,
+    DateTime CreatedAt, string RowVersion);
+
+/// <summary>The only response that contains the signing secret. Store it now: it cannot be shown again.</summary>
+public sealed record CreatedWebhookDto(WebhookEndpointDto Endpoint, string Secret);
+
+public sealed record CreateWebhookRequest(string Name, string Url, IReadOnlyList<string> Events);
+
+public sealed record UpdateWebhookRequest(string Name, string Url, IReadOnlyList<string> Events, bool Enabled, string RowVersion);
+
+public sealed record WebhookDeliveryDto(
+    long Id, Guid EventId, string EventType, string Status, int Attempts, DateTime NextAttemptAt, int? LastStatusCode, string? LastError,
+    DateTime CreatedAt, DateTime? DeliveredAt);
+
+public sealed record WebhookEventDto(string Type, string Description);

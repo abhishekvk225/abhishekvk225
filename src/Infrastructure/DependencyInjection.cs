@@ -140,6 +140,13 @@ public static class DependencyInjection
         services.AddScoped<IApiKeyRepository, ApiKeyRepository>();
         services.AddScoped<IApiLogRepository, ApiLogRepository>();
         services.AddScoped<IApiKeyAuthenticator, ApiKeyAuthenticator>();
+        services.AddScoped<IWebhookRepository, WebhookRepository>();
+        services.AddOptions<WebhookOptions>().Bind(configuration.GetSection(WebhookOptions.SectionName));
+        services.AddSingleton<IWebhookUrlGuard, WebhookUrlGuard>();
+        services.AddScoped<IWebhookPublisher, WebhookPublisher>();
+        services.AddScoped<WebhookStore>();
+        services.AddSingleton<WebhookDispatcher>();
+        services.AddHostedService(sp => sp.GetRequiredService<WebhookDispatcher>());
         services.AddSingleton<IApiUsageLimiter, ApiUsageLimiter>();
         services.AddOptions<ApiLogOptions>().Bind(configuration.GetSection(ApiLogOptions.SectionName));
         services.AddSingleton<ApiRequestLogWriter>();

@@ -69,3 +69,44 @@ internal sealed class ApiLogRepository : IApiLogRepository
         return (items, total);
     }
 }
+
+internal sealed class WebhookRepository : IWebhookRepository
+{
+    private readonly AppDbContext _db;
+
+    public WebhookRepository(AppDbContext db)
+    {
+        _db = db;
+    }
+
+    public Task<WebhookEndpoint?> GetEndpointAsync(Guid id, CancellationToken cancellationToken) => _db.WebhookEndpoints.FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
+
+    public async Task<IReadOnlyList<WebhookEndpoint>> ListEndpointsAsync(CancellationToken cancellationToken) =>
+        await _db.WebhookEndpoints.AsNoTracking().OrderBy(e => e.CreatedAt).ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<WebhookEndpoint>> ListActiveForEventAsync(string eventType, CancellationToken cancellationToken)
+    {
+        var active = await _db.WebhookEndpoints.AsNoTracking().Where(e => e.Status == WebhookStatus.Active).ToListAsync(cancellationToken);
+        return active.Where(e => e.Subscribes(eventType)).ToList();
+    }
+
+    public Task<int> CountEndpointsAsync(CancellationToken cancellationToken) => _db.WebhookEndpoints.CountAsync(cancellationToken);
+
+    public Task<WebhookDelivery?> GetDeliveryAsync(long id, CancellationToken cancellationToken) => _db.WebhookDeliveries.FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
+
+    public async Task<(IReadOnlyList<WebhookDelivery> Items, int Total)> ListDeliveriesAsync(Guid endpointId, int skip, int take, CancellationToken cancellationToken)
+    {
+        var query = _db.WebhookDeliveries.AsNoTracking().Where(d => d.EndpointId == endpointId);
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query.OrderByDescending(d => d.CreatedAt).ThenByDescending(d => d.Id).Skip(skip).Take(take).ToListAsync(cancellationToken);
+        return (items, total);
+    }
+
+    public void Add(WebhookEndpoint endpoint) => _db.WebhookEndpoints.Add(endpoint);
+
+    public void Add(WebhookDelivery delivery) => _db.WebhookDeliveries.Add(delivery);
+
+    public void Remove(WebhookEndpoint endpoint) => _db.WebhookEndpoints.Remove(endpoint);
+
+    public void SetExpectedVersion(WebhookEndpoint endpoint, byte[] rowVersion) => _db.Entry(endpoint).Property(e => e.RowVersion).OriginalValue = rowVersion;
+}

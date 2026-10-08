@@ -45,3 +45,38 @@ internal sealed class ApiRequestLogConfiguration : IEntityTypeConfiguration<ApiR
         b.HasIndex(x => x.CreatedAt); // retention purge
     }
 }
+
+internal sealed class WebhookEndpointConfiguration : IEntityTypeConfiguration<WebhookEndpoint>
+{
+    public void Configure(EntityTypeBuilder<WebhookEndpoint> b)
+    {
+        b.ToTable("WebhookEndpoints", "api");
+        b.Property(x => x.Name).HasMaxLength(100).IsRequired();
+        b.Property(x => x.Url).HasMaxLength(500).IsRequired();
+        b.Property(x => x.SecretEnc).HasMaxLength(512).IsRequired();
+        b.Property(x => x.Events).HasMaxLength(500).IsUnicode(false).IsRequired();
+        b.Property(x => x.DisabledReason).HasMaxLength(300);
+        b.Property(x => x.RowVersion).IsRowVersion();
+        b.Ignore(x => x.EventList);
+        b.HasOne<Client>().WithMany().HasForeignKey(x => x.ClientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => new { x.ClientId, x.Status });
+    }
+}
+
+internal sealed class WebhookDeliveryConfiguration : IEntityTypeConfiguration<WebhookDelivery>
+{
+    public void Configure(EntityTypeBuilder<WebhookDelivery> b)
+    {
+        b.ToTable("WebhookDeliveries", "api");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Id).ValueGeneratedOnAdd();
+        b.Property(x => x.EventType).HasMaxLength(60).IsUnicode(false).IsRequired();
+        b.Property(x => x.PayloadJson).HasColumnType("nvarchar(max)").IsRequired();
+        b.Property(x => x.LastError).HasMaxLength(300);
+        b.HasOne<Client>().WithMany().HasForeignKey(x => x.ClientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<WebhookEndpoint>().WithMany().HasForeignKey(x => x.EndpointId).OnDelete(DeleteBehavior.Cascade);
+        b.HasIndex(x => new { x.Status, x.NextAttemptAt });
+        b.HasIndex(x => new { x.EndpointId, x.CreatedAt }).IsDescending(false, true);
+        b.HasIndex(x => new { x.ClientId, x.CreatedAt }).IsDescending(false, true);
+    }
+}

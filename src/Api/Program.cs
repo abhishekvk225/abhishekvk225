@@ -65,7 +65,7 @@ _ = app.Services.GetRequiredService<NexaVerify.Infrastructure.Identity.JwtKeyPro
 _ = app.Services.GetRequiredService<NexaVerify.Infrastructure.Security.MasterKeyProvider>();
 if (app.Environment.IsProduction())
 {
-    var unsafeSwitches = new[] { "Jwt:AllowEphemeralKey", "Encryption:AllowEphemeralKey", "Email:LogBodies" }
+    var unsafeSwitches = new[] { "Jwt:AllowEphemeralKey", "Encryption:AllowEphemeralKey", "Email:LogBodies", "Webhooks:AllowUnsafeTargets" }
         .Where(key => app.Configuration.GetValue<bool>(key))
         .ToList();
     if (unsafeSwitches.Count > 0)

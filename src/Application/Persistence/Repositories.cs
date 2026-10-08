@@ -330,3 +330,27 @@ public interface IApiLogRepository
     Task<(IReadOnlyList<Domain.Api.ApiRequestLog> Items, int Total)> ListAsync(
         Guid? apiKeyId, string? statusClass, DateTime? from, DateTime? to, int skip, int take, CancellationToken cancellationToken);
 }
+
+public interface IWebhookRepository
+{
+    Task<Domain.Api.WebhookEndpoint?> GetEndpointAsync(Guid id, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<Domain.Api.WebhookEndpoint>> ListEndpointsAsync(CancellationToken cancellationToken);
+
+    /// <summary>Read-only; active endpoints of the current client subscribed to <paramref name="eventType"/>.</summary>
+    Task<IReadOnlyList<Domain.Api.WebhookEndpoint>> ListActiveForEventAsync(string eventType, CancellationToken cancellationToken);
+
+    Task<int> CountEndpointsAsync(CancellationToken cancellationToken);
+
+    Task<Domain.Api.WebhookDelivery?> GetDeliveryAsync(long id, CancellationToken cancellationToken);
+
+    Task<(IReadOnlyList<Domain.Api.WebhookDelivery> Items, int Total)> ListDeliveriesAsync(Guid endpointId, int skip, int take, CancellationToken cancellationToken);
+
+    void Add(Domain.Api.WebhookEndpoint endpoint);
+
+    void Add(Domain.Api.WebhookDelivery delivery);
+
+    void Remove(Domain.Api.WebhookEndpoint endpoint);
+
+    void SetExpectedVersion(Domain.Api.WebhookEndpoint endpoint, byte[] rowVersion);
+}

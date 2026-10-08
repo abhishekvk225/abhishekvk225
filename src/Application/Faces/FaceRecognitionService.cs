@@ -51,6 +51,7 @@ public sealed class FaceRecognitionService : IFaceRecognitionService
     private readonly IUnitOfWork _unitOfWork;
     private readonly TimeProvider _time;
     private readonly ILogger<FaceRecognitionService> _logger;
+    private readonly Api.IWebhookPublisher _webhooks;
 
     public FaceRecognitionService(
         ICurrentUser currentUser,
@@ -67,9 +68,11 @@ public sealed class FaceRecognitionService : IFaceRecognitionService
         IAuditService audit,
         IUnitOfWork unitOfWork,
         TimeProvider time,
-        ILogger<FaceRecognitionService> logger)
+        ILogger<FaceRecognitionService> logger,
+        Api.IWebhookPublisher webhooks)
     {
         _logger = logger;
+        _webhooks = webhooks;
         _currentUser = currentUser;
         _request = request;
         _settings = settings;
@@ -579,6 +582,8 @@ public sealed class FaceRecognitionService : IFaceRecognitionService
                         begin.DerivedKey, _request.IpAddress, _request.CorrelationId, Now);
                     record.RecordCharge(charge.Value.Charged, charge.Value.RemainingBalance, charge.Value.TransactionId);
                     _requests.Add(record);
+                    await _webhooks.PublishAsync(begin.ClientId, Domain.Api.WebhookEvents.RecognitionCompleted,
+                        new { requestId = record.Id, operation = begin.Operation.ToString(), outcome = outcome.ToString(), creditsCharged = record.CreditsCharged, balanceAfter = record.BalanceAfter }, ct);
                     await persistExtras(record, credits, ct);
                     await _unitOfWork.SaveChangesAsync(ct);
                     return build(record.Id, credits);

@@ -32,6 +32,7 @@ public static class DependencyInjection
         services.AddScoped<ILicenseService, LicenseService>();
         services.AddScoped<IApiKeyService, Api.ApiKeyService>();
         services.AddScoped<IApiLogService, Api.ApiLogService>();
+        services.AddScoped<IWebhookService, Api.WebhookService>();
         services.AddScoped<IFaceRecognitionService, Faces.FaceRecognitionService>();
         services.AddScoped<IFaceProfileService, Faces.FaceProfileService>();
         services.AddScoped<IRecognitionHistoryService, Faces.RecognitionHistoryService>();
