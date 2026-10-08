@@ -212,8 +212,11 @@ public class WebhookTests : IAsyncLifetime
             return true;
         });
 
-        await DispatchAsync();
-        await DispatchAsync();
+        // one endpoint gets at most MaxPerEndpointPerCycle deliveries per cycle (fairness), so it takes a few cycles to try all 20 events
+        for (var cycle = 0; cycle < 6; cycle++)
+        {
+            await DispatchAsync();
+        }
 
         var endpoint = (await (await _app.GetAsync($"/api/v1/client/webhooks/{hook.Endpoint.Id}", t.Token)).Content.ReadFromJsonAsync<WebhookEndpointDto>(AuthApp.Json))!;
         endpoint.Status.ShouldBe("Disabled");

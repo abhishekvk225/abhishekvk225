@@ -35,6 +35,7 @@ public static class WebhookEvents
 public sealed class WebhookEndpoint : AuditableEntity, ITenantOwned
 {
     public const int MaxPerClient = 10;
+    /// <summary>Default for <c>Webhooks:DisableAfterFailedEvents</c>: consecutive failed events (not attempts) before an endpoint is switched off.</summary>
     public const int DisableAfterConsecutiveFailures = 20;
 
     private WebhookEndpoint()

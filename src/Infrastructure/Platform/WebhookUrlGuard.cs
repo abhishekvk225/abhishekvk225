@@ -15,7 +15,38 @@ public sealed class WebhookOptions
     /// </summary>
     public bool AllowUnsafeTargets { get; set; }
 
+    [System.ComponentModel.DataAnnotations.Range(1, 30)]
     public int TimeoutSeconds { get; set; } = 5;
+
+    /// <summary>Deliveries one dispatcher cycle (every 2 s) claims at most, across all endpoints.</summary>
+    [System.ComponentModel.DataAnnotations.Range(1, 1000)]
+    public int BatchSize { get; set; } = 50;
+
+    /// <summary>Deliveries sent at the same time by one node.</summary>
+    [System.ComponentModel.DataAnnotations.Range(1, 64)]
+    public int Parallelism { get; set; } = 8;
+
+    /// <summary>
+    /// Fairness/throttle: one endpoint gets at most this many of the deliveries in a cycle, so a client with a huge backlog (or a slow
+    /// receiver) cannot starve everybody else. Per endpoint that is at most this many sends every 2 seconds per node.
+    /// </summary>
+    [System.ComponentModel.DataAnnotations.Range(1, 1000)]
+    public int MaxPerEndpointPerCycle { get; set; } = 5;
+
+    /// <summary>
+    /// How long a claimed delivery is reserved for this node before another node may take it (a crashed dispatcher's work reappears after it).
+    /// 0 = derive it from the batch size, parallelism and timeout (the worst case of one cycle). A smaller explicit value than that is
+    /// refused at startup: a delivery still in flight could be sent twice.
+    /// </summary>
+    [System.ComponentModel.DataAnnotations.Range(0, 3600)]
+    public int LeaseSeconds { get; set; }
+
+    /// <summary>An endpoint is disabled automatically after this many consecutive failed EVENTS (an event counts once, when its first attempt fails; any success resets).</summary>
+    [System.ComponentModel.DataAnnotations.Range(1, 1000)]
+    public int DisableAfterFailedEvents { get; set; } = Domain.Api.WebhookEndpoint.DisableAfterConsecutiveFailures;
+
+    /// <summary>The lease the worst-case cycle needs: every slot waits for the full timeout, plus a margin.</summary>
+    public TimeSpan DerivedLease => TimeSpan.FromSeconds((Math.Ceiling(BatchSize / (double)Parallelism) * (TimeoutSeconds + 5)) + 30);
 
     /// <summary>Turn the background dispatch loop off (tests drive the dispatcher by hand; a worker-only deployment can also split roles).</summary>
     public bool BackgroundEnabled { get; set; } = true;

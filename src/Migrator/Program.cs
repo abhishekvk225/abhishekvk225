@@ -3,6 +3,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NexaVerify.Application;
+using NexaVerify.Application.Abstractions;
+using NexaVerify.Application.Licensing;
 using NexaVerify.Infrastructure;
 using NexaVerify.Infrastructure.Persistence.Maintenance;
 using Serilog;
@@ -11,6 +13,8 @@ using Serilog;
 //   migrate (default)  drop RLS policy → apply migrations → install guards → seed identity data
 //   script             print the idempotent SQL equivalent (for DBA-run deployments)
 //   recover-superadmin break-glass: (re)create the Seed:SuperAdminEmail account as an active Super Admin with Seed:SuperAdminPassword
+//   verify-ledger      recompute every license ledger (hash chain, balances, signed checkpoints); exit code 3 when something is broken.
+//                      Needs the SAME Encryption__MasterKeyBase64 as the API (the checkpoints are keyed). Used by the restore drill.
 //   app-principal      create the least-privilege login the API connects as (Migrator:AppLogin / Migrator:AppPassword)
 // Connection string: ConnectionStrings__Default (an administrative principal). Seed: Seed__SuperAdminEmail / Seed__SuperAdminPassword.
 
@@ -64,8 +68,28 @@ try
             logger.LogInformation("Application principal '{Login}' is ready.", login);
             return 0;
 
+        case "verify-ledger":
+            using (scope.ServiceProvider.GetRequiredService<ITenantScope>().BeginPlatform("ledger verification (operator command)"))
+            {
+                var verified = await scope.ServiceProvider.GetRequiredService<ILedgerVerificationService>().RunAsync("cli", null, CancellationToken.None);
+                if (verified.IsFailure)
+                {
+                    logger.LogError("Ledger verification could not run: {Message}", verified.Error!.Message);
+                    return 1;
+                }
+
+                var report = verified.Value;
+                Console.WriteLine($"Ledger verification: {report.LicensesChecked} license(s), {report.EntriesChecked} entries, {report.BrokenLicenses} broken.");
+                foreach (var broken in report.Breaks)
+                {
+                    Console.WriteLine($"  BROKEN license {broken.LicenseId}: {broken.Reason}");
+                }
+
+                return report.BrokenLicenses == 0 ? 0 : 3;
+            }
+
         default:
-            logger.LogError("Unknown command '{Command}'. Use: migrate | script | app-principal | recover-superadmin", command);
+            logger.LogError("Unknown command '{Command}'. Use: migrate | script | app-principal | recover-superadmin | verify-ledger", command);
             return 2;
     }
 }

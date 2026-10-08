@@ -56,6 +56,18 @@ public class UsageReportTests : UsageTestBase
     }
 
     [Fact]
+    public async Task Exports_start_with_a_utf8_byte_order_mark_so_spreadsheets_read_names_correctly()
+    {
+        var a = await NewTenantAsync("R1C", credits: 10);
+
+        var client = await (await App.GetAsync($"/api/v1/client/reports/usage.csv?from={Today}&to={Today}", a.Token)).Content.ReadAsByteArrayAsync();
+        var admin = await (await App.GetAsync($"/api/v1/admin/reports/usage.csv?from={Today}&to={Today}", Platform.AccessToken)).Content.ReadAsByteArrayAsync();
+
+        client.Take(3).ShouldBe([(byte)0xEF, (byte)0xBB, (byte)0xBF]);
+        admin.Take(3).ShouldBe([(byte)0xEF, (byte)0xBB, (byte)0xBF]);
+    }
+
+    [Fact]
     public async Task The_admin_export_is_billed_usage_per_client_from_the_ledger()
     {
         var a = await NewTenantAsync("R2A", credits: 100);

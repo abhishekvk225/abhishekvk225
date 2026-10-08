@@ -81,3 +81,15 @@ internal sealed class WebhookDeliveryConfiguration : IEntityTypeConfiguration<We
         b.HasIndex(x => new { x.Status, x.CreatedAt }); // delivery-health counts on the admin dashboard
     }
 }
+
+internal sealed class UsageCounterConfiguration : IEntityTypeConfiguration<UsageCounter>
+{
+    public void Configure(EntityTypeBuilder<UsageCounter> b)
+    {
+        // Not tenant-owned on purpose: an opaque (kind, key, bucket) -> count map with no personal data, bumped by raw SQL on a hot path.
+        b.ToTable("UsageCounters", "api");
+        b.HasKey(x => new { x.Kind, x.KeyId, x.Bucket });
+        b.Property(x => x.UpdatedAt).HasPrecision(3);
+        b.HasIndex(x => new { x.Kind, x.UpdatedAt }); // purge of old buckets
+    }
+}

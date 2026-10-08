@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using NexaVerify.Api.Authorization;
+using NexaVerify.Api.Filters;
+using NexaVerify.Application.Api;
 using NexaVerify.Api.Http;
 using NexaVerify.Application.Dashboards;
 using NexaVerify.Application.Licensing;
@@ -27,6 +29,7 @@ public sealed class AdminDashboardController : ApiControllerBase
     /// <summary>Clients and licenses by status, expiring and low-balance licenses, credits per day, top clients, API health, webhook health. Aggregates only.</summary>
     [HttpGet("dashboard")]
     [HasPermission(Permissions.Dashboard.Admin)]
+    [Throttle(ThrottlePolicies.Dashboards)]
     [ProducesResponseType<AdminDashboardDto>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Dashboard([FromQuery] DashboardQuery query, CancellationToken cancellationToken) =>
         ToActionResult(await _dashboard.GetAsync(query, cancellationToken));
@@ -34,6 +37,7 @@ public sealed class AdminDashboardController : ApiControllerBase
     /// <summary>Billed usage per day, client and operation as CSV (at most 92 days), neutralised against CSV injection and audit-logged.</summary>
     [HttpGet("reports/usage.csv")]
     [HasPermission(Permissions.Reports.Read)]
+    [Throttle(ThrottlePolicies.Exports)]
     [Produces("text/csv")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> UsageCsv([FromQuery] UsageReportQuery query, CancellationToken cancellationToken)
@@ -64,4 +68,14 @@ public sealed class AdminDashboardController : ApiControllerBase
     [HasPermission(Permissions.Licenses.VerifyLedger)]
     public async Task<IActionResult> VerifyLedgerRuns(CancellationToken cancellationToken) =>
         ToActionResult(await _verification.ListRunsAsync(cancellationToken));
+
+    /// <summary>
+    /// The operator-visible alert list: ledger findings that are still open. Each is alerted once when first found (not every night);
+    /// <c>lastReminderAt</c> shows the occasional reminder.
+    /// </summary>
+    [HttpGet("licensing/ledger-breaks")]
+    [HasPermission(Permissions.Licenses.VerifyLedger)]
+    [ProducesResponseType<IReadOnlyList<LedgerOpenBreakDto>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> OpenLedgerBreaks(CancellationToken cancellationToken) =>
+        ToActionResult(await _verification.ListOpenBreaksAsync(cancellationToken));
 }

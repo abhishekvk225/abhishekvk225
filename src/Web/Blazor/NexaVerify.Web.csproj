@@ -6,6 +6,8 @@
   <ItemGroup>
     <PackageReference Include="MudBlazor" />
     <PackageReference Include="QRCoder" />
+    <PackageReference Include="Microsoft.Extensions.Caching.SqlServer" />
+    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="NexaVerify.Web.ComponentTests" />

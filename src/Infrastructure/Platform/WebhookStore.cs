@@ -19,16 +19,26 @@ public sealed class WebhookStore
         _db = db;
     }
 
-    public async Task<IReadOnlyList<long>> ClaimDueAsync(int batch, DateTime now, TimeSpan lease, CancellationToken cancellationToken)
+    /// <summary>
+    /// Claims up to <paramref name="batch"/> due deliveries, at most <paramref name="perEndpoint"/> per endpoint (oldest first), so one
+    /// endpoint's backlog cannot crowd out the others. The candidate list is computed without locks and the UPDATE re-checks "still due"
+    /// under <c>UPDLOCK, READPAST</c>, so two nodes can never claim the same row.
+    /// </summary>
+    public async Task<IReadOnlyList<long>> ClaimDueAsync(int batch, int perEndpoint, DateTime now, TimeSpan lease, CancellationToken cancellationToken)
     {
         const string sql = """
-            ;WITH due AS (
-                SELECT TOP (@batch) Id, NextAttemptAt
-                FROM api.WebhookDeliveries WITH (UPDLOCK, READPAST, ROWLOCK)
-                WHERE Status = 'Pending' AND NextAttemptAt <= @now
-                ORDER BY NextAttemptAt, Id)
-            UPDATE due SET NextAttemptAt = @lease
+            UPDATE d SET NextAttemptAt = @lease
             OUTPUT inserted.Id
+            FROM api.WebhookDeliveries AS d WITH (UPDLOCK, READPAST, ROWLOCK)
+            WHERE d.Status = 'Pending' AND d.NextAttemptAt <= @now
+              AND d.Id IN (
+                  SELECT TOP (@batch) c.Id
+                  FROM (SELECT Id, NextAttemptAt,
+                               ROW_NUMBER() OVER (PARTITION BY EndpointId ORDER BY NextAttemptAt, Id) AS Position
+                        FROM api.WebhookDeliveries WITH (READPAST)
+                        WHERE Status = 'Pending' AND NextAttemptAt <= @now) AS c
+                  WHERE c.Position <= @perEndpoint
+                  ORDER BY c.NextAttemptAt, c.Id)
             """;
 
         await _db.Database.OpenConnectionAsync(cancellationToken);
@@ -37,6 +47,7 @@ public sealed class WebhookStore
             await using var command = _db.Database.GetDbConnection().CreateCommand();
             command.CommandText = sql;
             command.Parameters.Add(new SqlParameter("@batch", SqlDbType.Int) { Value = batch });
+            command.Parameters.Add(new SqlParameter("@perEndpoint", SqlDbType.Int) { Value = perEndpoint });
             command.Parameters.Add(new SqlParameter("@now", SqlDbType.DateTime2) { Value = now, Scale = 3 });
             command.Parameters.Add(new SqlParameter("@lease", SqlDbType.DateTime2) { Value = now + lease, Scale = 3 });
 
