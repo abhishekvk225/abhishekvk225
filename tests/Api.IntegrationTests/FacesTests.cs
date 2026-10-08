@@ -421,7 +421,7 @@ public class FacesTests : IAsyncLifetime
             return true;
         });
 
-        var sweeper = new FaceRetentionSweeper(_app.Factory.Services.GetRequiredService<IServiceScopeFactory>(), Microsoft.Extensions.Logging.Abstractions.NullLogger<FaceRetentionSweeper>.Instance);
+        var sweeper = new FaceRetentionSweeper(_app.Factory.Services.GetRequiredService<IServiceScopeFactory>(), Microsoft.Extensions.Options.Options.Create(new FaceRetentionOptions()), TimeProvider.System, Microsoft.Extensions.Logging.Abstractions.NullLogger<FaceRetentionSweeper>.Instance);
         (await sweeper.SweepOnceAsync(default)).ShouldBe(1);
 
         (await _app.WithTenantDbAsync(t.ClientId, db => db.FaceProfiles.Select(p => p.ExternalRef).ToListAsync())).ShouldBe(["fresh"]);

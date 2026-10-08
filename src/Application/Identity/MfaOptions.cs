@@ -38,9 +38,13 @@ public sealed class MfaOptions
 
     /// <summary>
     /// Platform default of <c>security.requireMfa</c> for staff: accounts holding one of these roles must enrol before they can do
-    /// anything else. Empty = never required. Client accounts are governed by each client's own <c>security.requireMfa</c> setting.
+    /// anything else, as a comma-separated list. Empty = never required. Client accounts are governed by each client's own
+    /// <c>security.requireMfa</c> setting.
     /// </summary>
-    public string[] RequiredPlatformRoles { get; set; } = [SystemRoles.SuperAdmin];
+    public string RequiredPlatformRoles { get; set; } = SystemRoles.SuperAdmin;
+
+    public IReadOnlySet<string> RequiredRoleSet() =>
+        RequiredPlatformRoles.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet(StringComparer.Ordinal);
 
     /// <summary>Whether client users may enrol at all (and so be required to by their client's setting).</summary>
     public bool AllowClientUsers { get; set; } = true;
@@ -78,7 +82,8 @@ public sealed class MfaPolicy : IMfaPolicy
 
         if (user.IsPlatformUser)
         {
-            return roles.Any(r => _options.RequiredPlatformRoles.Contains(r, StringComparer.Ordinal));
+            var required = _options.RequiredRoleSet();
+            return roles.Any(required.Contains);
         }
 
         return (await _settings.GetEffectiveAsync(user.ClientId, cancellationToken)).Bool(SettingKeys.Security.RequireMfa);
