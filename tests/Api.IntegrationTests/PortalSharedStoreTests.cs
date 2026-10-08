@@ -34,6 +34,7 @@ public class PortalSharedStoreTests : IAsyncLifetime
             await node.DisposeAsync();
         }
 
+        await SqlServerFixture.TryDropDatabaseAsync(_connectionString);
         if (Directory.Exists(_keyDirectory))
         {
             Directory.Delete(_keyDirectory, recursive: true);

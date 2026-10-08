@@ -202,3 +202,9 @@ The tenant is written to `SESSION_CONTEXT` by EF interceptors on every connectio
 | `licensing.LedgerCheckpoints` | **Append-only** (`IAppendOnly`: trigger + DENY): `(LicenseId, LastEntryId)` unique, `EntryCount`, `HeadHash`, `BalanceAfter`, `KeyId`, `Mac` (HMAC-SHA256 over the canonical fields). Tenant-owned |
 | `licensing.LedgerBreakRecords` | One row per `(LicenseId, BreakKey)` (`row:{id}`, `balance`, `checkpoint:{id}`, `license-missing`, `unreadable`): `FirstSeenAt`, `LastSeenAt`, `TimesSeen`, `ClearedAt`. De-duplicates the audit entry. No FK to Licenses (a deleted license must still be recordable) |
 | `licensing.LedgerVerificationRuns` | Platform-level (no `ClientId`): `Status`, `Trigger`, counts, `BreaksJson` (bounded). Backs the 202 + status endpoint across nodes |
+
+## M9b additions
+| Table / column | Purpose |
+|---|---|
+| `api.UsageCounters` | Shared rate-limit / quota buckets, **not tenant-owned** (no `ClientId`, no personal data; PK `(Kind, KeyId, Bucket)`). `Kind` 1 = calls per credential per UTC minute, 2 = calls per client per UTC day, 3 = per-principal throttle window (`KeyId` is a SHA-256-derived GUID of policy + principal); `Bucket` is the window index; `Used` is bumped by ONE statement (`UPDATE ... SET Used = Used + grant`, grant computed in the statement and capped at the limit; `INSERT` on first use, duplicate key falls back to the `UPDATE`). A node reserves blocks of permits and serves them from memory. `IX(Kind, UpdatedAt)` backs the purge (minute/throttle rows after 1 h, day rows after 3 days) |
+| `licensing.LedgerBreakRecords.AlertedAt`, `LastReminderAt` | When the operator alert (Critical log 7001) fired for this break and when it was last re-announced. A persistent break alerts once, then only as a reminder every `Metering:LedgerVerification:ReminderDays` |

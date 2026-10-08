@@ -80,10 +80,11 @@ TOTP secrets are encrypted at rest (AES-256-GCM, key derived from `Encryption:Ma
 | `Dashboards:ExpiringWithinDays` / `LowBalancePercent` | 30 / 10 | Admin "expiring" horizon and the "low balance" threshold (share of credits left). |
 | `Dashboards:LatencyBucketMilliseconds` / `LatencyCapMilliseconds` | 25 / 10000 | The p95 latency is read off a histogram of this resolution (exact to one bucket); slower requests count in the last bucket. |
 | `Dashboards:DefaultReportDays` / `MaxReportDays` | 30 / 92 | Default and maximum range of one usage CSV export. |
-| `Metering:LedgerVerification:Enabled` | `true` | Nightly tamper check of every license ledger (hash chain, balance **and the signed checkpoints**). Findings are logged at **Critical on every run** (event id 7001: alert on it) and audited as `ledger.verification_failed` **once per license and broken thing** (a persistent break is counted on `licensing.LedgerBreakRecords`, not re-audited nightly). The on-demand `POST /api/v1/admin/licensing/verify-ledger` (202 + run id, poll `GET .../runs/{id}`) works even when this is off. |
+| `Metering:LedgerVerification:Enabled` | `true` | Nightly tamper check of every license ledger (hash chain, balance **and the signed checkpoints**). A break is announced **once**: Critical log (event id 7001: alert on it) and audit entry `ledger.verification_failed` when first found, then only a reminder every `ReminderDays`; the nights in between log a Warning (7003, "still unresolved"). Open findings are listed by `GET /api/v1/admin/licensing/ledger-breaks` (the operator-visible list: `alertedAt`, `lastReminderAt`, `timesSeen`). The on-demand `POST /api/v1/admin/licensing/verify-ledger` (202 + run id, poll `GET .../runs/{id}`) works even when this is off. |
 | *(ledger anchors)* | | Each license that verifies clean gets an HMAC-SHA256 checkpoint (`licensing.LedgerCheckpoints`, append-only) keyed from `Encryption:MasterKeyBase64` (purpose `ledger-anchor`, never stored in the database). **Changing the master key invalidates all checkpoints** (reported as failed signatures): re-anchor deliberately after a rotation. Every checkpoint is also logged at Information (event 7002, head hash and MAC): ship that log line to storage the database operator cannot edit, because an attacker who can delete the newest checkpoints together with the newest ledger rows is only caught by such an external copy. |
 | `Metering:LedgerVerification:IntervalHours` / `InitialDelayMinutes` | 24 / 10 | Run cadence and the wait after start-up (so a restart does not skip the check). |
 | `Metering:LedgerVerification:LicenseBatchSize` / `EntryBatchSize` | 200 / 1000 | Paging of the read-only scan. |
+| `Metering:LedgerVerification:ReminderDays` | 7 | A break that stays unresolved is re-announced (Critical 7001) every this many days; `0` = alert once, never remind. |
 | `Metering:LedgerVerification:BalanceRecheckAttempts` / `RecheckDelayMilliseconds` | 2 / 250 | A balance-only mismatch is re-checked (a charge may have landed mid-scan) before being reported; a broken row is reported at once. |
 | `Metering:Alerts:Enabled` | `true` | Hourly job raising `license.low_balance`, `license.exhausted`, `license.expiring`, `license.expired` and `apikey.expiring` (webhook + in-app notification). Set `false` in tests. |
 | `Metering:Alerts:IntervalMinutes` / `InitialDelaySeconds` | 60 / 60 | |
@@ -103,7 +104,7 @@ The portal is a separate deployable. The browser only ever holds an opaque, Http
 | `Api:TimeoutSeconds` | 30 | Per call to the API (enforced per call; the HttpClient itself has no timeout). A timeout is shown as "taking longer than expected", an unreachable API as "can't reach the service"; never a raw exception. |
 | `Api:LongRunningTimeoutSeconds` | 300 | For operations that can legitimately run long (the on-demand credit ledger scan). After a timeout the Reports page holds the button back for 3 minutes so runs do not stack. |
 | `Session:CookieName` | *(empty)* | Empty = `__Host-nv.session` when cookies are Secure (browsers then refuse a cookie planted from a sibling subdomain; antiforgery uses `__Host-nv.af`) and `nv.session` for plain-http Development. A `__Host-` name with `RequireSecure=false` is refused at startup. |
-| `Session:AllowInMemoryStore` | `false` | Sessions live in this process's memory (lost on restart, not shared between nodes). Outside Development/Testing the portal refuses to start unless you set this to `true` on purpose (single node or sticky sessions). |
+| `Session:AllowInMemoryStore` | `false` | Sessions live in this process's memory (lost on restart, not shared between nodes). Outside Development/Testing the portal refuses to start unless you set this to `true` on purpose (single node or sticky sessions) **or** configure a shared store (`PortalCache:Provider`, below). |
 | `Session:IdleTimeoutMinutes` | 30 | Sliding window: no portal activity for this long ends the session. An open circuit notices within 30 s. |
 | `Session:AbsoluteTimeoutHours` | 12 | Hard limit from sign-in, however active the user is. Keep it at or below the refresh-token lifetime (`Auth:RefreshTokenDays`). |
 | `Session:RefreshSkewSeconds` | 30 | Access tokens are refreshed this many seconds before they expire. |
@@ -118,14 +119,52 @@ The portal is a separate deployable. The browser only ever holds an opaque, Http
 
 **Startup guards.** Only `Development` is relaxed. Any other environment name (Production, Staging, `UiDemo`, anything) refuses to start with: `Security:Cookies:RequireSecure=false`, `Security:Cookies:SameSite` other than Strict, `Security:Headers:Enabled`/`ContentSecurityPolicyEnabled` off or `AllowInsecureWebSockets` on, `AllowedHosts` empty or `*`, a non-https `Api:BaseUrl` (`Testing` may use http), invalid numbers (`Api:*`, `Session:*`, idle timeout above the absolute timeout). Outside `Development` and `Testing` it also needs `DataProtection:KeyPath` and `Session:AllowInMemoryStore=true`.
 
-Multi-node notes: the session store is `IDistributedCache` (in-memory by default = single node or sticky sessions). For several portal nodes register a shared cache (Redis/SQL) and share `DataProtection:KeyPath`; the single-flight token refresh is per process, so keep a session on one node (sticky) or accept that two nodes refreshing at the same instant look like token reuse to the API and end that session.
+Multi-node notes: the session store is `IDistributedCache` (in-memory by default = single node or sticky sessions). For several portal nodes set `PortalCache:Provider` to `SqlServer` or `Redis` (see "Scalability and multi-node operation") and share `DataProtection:KeyPath`; the single-flight token refresh is per process, so keep a session on one node (sticky) or accept that two nodes refreshing at the same instant look like token reuse to the API and end that session.
 On the API side: add the portal's address to `ForwardedHeaders:KnownProxies` so the end user's address (sent as `X-Forwarded-For` on sign-in) drives the per-IP auth limits, otherwise all sign-ins share the portal's IP bucket. Set `Auth:PasswordResetUrlTemplate` to the portal's `/reset-password?email={email}&token={token}`.
+
+## Scalability and multi-node operation (M9b)
+Several API nodes behind a load balancer need no sticky sessions. What is shared, how, and what to set:
+
+| Key | Default | Notes |
+|---|---|---|
+| `Counters:Shared` | `true` | Per-credential per-minute limit and per-client daily quota (and the per-principal throttles below) are counted in SQL Server (`api.UsageCounters`), so the limits hold **across nodes**. `false` = every node counts alone (limits multiply by the node count; fine for one node and tests). If the database is unreachable a node falls back to counting alone and logs a warning once a minute. |
+| `Counters:ReservationDivisor` / `MaxReservation` | 20 / 50 | A node reserves up to `limit / divisor` permits (1 .. max) from the database at a time and serves them from memory, so roughly one call in that many touches SQL. The sum over all nodes never exceeds the limit; permits a quiet node reserved are lost for that window (small limits therefore reserve one at a time and are exact). |
+| `Counters:ExhaustedRecheckSeconds` | 2 | After the database refused a permit, further calls for that key are refused from memory for this long. |
+| `Counters:ShortBucketRetentionMinutes` / `DailyBucketRetentionDays` / `PurgeIntervalMinutes` | 60 / 3 / 10 | Old buckets are purged in batches by every node (idempotent). |
+| `Throttle:DashboardsPerMinute` | 60 | Per signed-in user / API key, shared across nodes. Over the limit: `429 RATE_LIMITED` + `Retry-After`. |
+| `Throttle:ExportsPerMinute` | 6 | CSV exports (admin and client). The portal's own per-session limit (also 6) sits in front of it. |
+| `Throttle:WebhookTestsPerMinute` / `WebhookRetriesPerMinute` | 10 / 30 | "Send test event" and manual delivery retry. |
+| `Webhooks:BatchSize` | 50 | Deliveries one dispatcher cycle (every 2 s) claims across all endpoints. |
+| `Webhooks:MaxPerEndpointPerCycle` | 5 | **Fairness/throttle**: one endpoint can take at most this many of a cycle's deliveries, oldest first, so a huge backlog or a slow receiver cannot starve other clients. Also the maximum send rate per endpoint (this many per 2 s per node). |
+| `Webhooks:Parallelism` | 8 | Sends in flight per node. |
+| `Webhooks:LeaseSeconds` | 0 | How long a claimed delivery is reserved for its node before another node may take it (crash recovery). `0` = derived from the worst case of one cycle: `ceil(BatchSize / Parallelism) x (TimeoutSeconds + 5) + 30`. A smaller explicit value is **refused at start-up** (a delivery still in flight could be sent twice). |
+| `Webhooks:TimeoutSeconds` | 5 | 1..30, per delivery. |
+| `Webhooks:DisableAfterFailedEvents` | 20 | An endpoint is switched off after this many **consecutive failed events**. An event counts once, when its first attempt fails (its up to 8 retries do not pile on); any success resets the count; test events never count. |
+
+`api.UsageCounters` holds one small row per active credential per minute and per client per day; it stays bounded by the purger.
+
+### Portal (BFF) shared store
+The portal keeps sessions, pending MFA sign-ins and (softly) its export throttle in an `IDistributedCache`. Choose where:
+
+| Key | Default | Notes |
+|---|---|---|
+| `PortalCache:Provider` | `Memory` | `Memory` (this process: single node or sticky sessions; outside Development/Testing it needs `Session:AllowInMemoryStore=true`), `SqlServer` or `Redis`. With a shared provider the in-memory opt-in is not needed, and a sign-in started on one node (password step, MFA challenge) can finish on another. |
+| `PortalCache:SqlServer:ConnectionString` | | **Secret.** Database holding the cache table; preferably a small database of its own, with a login that can only use that table. |
+| `PortalCache:SqlServer:SchemaName` / `TableName` | `dbo` / `PortalCache` | Plain identifiers only. Create the table with `deploy/sql/portal-cache.sql` (same shape as `dotnet sql-cache create`), or set `EnsureTable=true` to let the portal create it at start-up (needs DDL rights; leave off with a least-privilege login). |
+| `PortalCache:SqlServer:ExpiredItemsDeletionIntervalMinutes` | 30 | |
+| `PortalCache:Redis:Configuration` / `InstanceName` | | **Secret** (may contain a password). StackExchange.Redis configuration string; `InstanceName` prefixes the keys (default `nexaverify-portal:`). |
+
+Everything stored is encrypted with ASP.NET Data Protection **before** it reaches the cache (a cache dump shows no tokens), so every portal node must share the **same key ring**: mount one `DataProtection:KeyPath`. Known limits with several nodes: the single-flight token refresh is per process (two nodes refreshing the same session at the same instant look like refresh-token reuse to the API and end that session; sticky routing per session avoids it), the portal's per-session export limit is counted softly in the shared cache (no atomic increment; the API's `Throttle:ExportsPerMinute` is the hard cap and the portal shows its 429), and permissions in a session stay a snapshot from sign-in.
+
+### Operations tooling
+* Load tests: `tests/Load/README.md` (k6 script and a .NET driver; budgets from docs/01 section 10).
+* Backup, restore and the drill: `docs/runbooks/backup-restore.md`, `deploy/scripts/backup-restore-drill.sh`; `Migrator verify-ledger` (exit 3 when the ledger is broken; needs the production `Encryption__MasterKeyBase64`).
 
 ## Development-only switches (the API refuses to start in Production with any of these on)
 `Jwt:AllowEphemeralKey`, `Encryption:AllowEphemeralKey`, `Email:LogBodies` (logs reset links!). In Development `Mfa:RequiredPlatformRoles` is `-` (see above).
 
 ## Migrator commands
-`migrate` · `script` (idempotent SQL for DBAs) · `app-principal` (`Migrator:AppLogin`, `Migrator:AppPassword`) · `recover-superadmin`.
+`migrate` · `script` (idempotent SQL for DBAs) · `app-principal` (`Migrator:AppLogin`, `Migrator:AppPassword`) · `recover-superadmin` · `verify-ledger` (recompute every license ledger incl. signed checkpoints; exit 0 clean, 3 broken, 1 could not run; used by the restore drill).
 
 ## Tests only
 `TEST_SQL_CONNECTION` — use an existing SQL Server instead of Testcontainers.
