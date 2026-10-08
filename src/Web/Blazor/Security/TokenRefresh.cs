@@ -232,13 +232,18 @@ public sealed class SessionBearerHandler(ISessionStore store, TokenRefreshCoordi
             token = proactive.AccessToken ?? token; // Unavailable: try the old token, the API decides
         }
 
-        await store.TouchAsync(sessionId, cancellationToken);
+        if (!(request.Options.TryGetValue(ApiGateway.PassiveKey, out var passive) && passive))
+        {
+            await store.TouchAsync(sessionId, cancellationToken);
+        }
 
-        // Buffer the body once so a refresh-and-retry can replay it.
-        byte[]? body = request.Content is null ? null : await request.Content.ReadAsByteArrayAsync(cancellationToken);
-        var contentHeaders = request.Content?.Headers.ToList();
+        // A retry after a token refresh needs the body again. Uploads can rebuild theirs from a factory (no extra copy of a large photo);
+        // small JSON bodies are simply buffered once.
+        request.Options.TryGetValue(ApiGateway.ContentFactoryKey, out var factory);
+        byte[]? body = factory is null && request.Content is not null ? await request.Content.ReadAsByteArrayAsync(cancellationToken) : null;
+        var contentHeaders = factory is null ? request.Content?.Headers.ToList() : null;
 
-        var response = await SendWithAsync(request, token, body, contentHeaders, cancellationToken, clone: false);
+        var response = await SendWithAsync(request, token, body, contentHeaders, factory, cancellationToken, clone: false);
         if (response.StatusCode != HttpStatusCode.Unauthorized)
         {
             return response;
@@ -249,7 +254,7 @@ public sealed class SessionBearerHandler(ISessionStore store, TokenRefreshCoordi
         {
             case RefreshStatus.Refreshed:
                 response.Dispose();
-                return await SendWithAsync(request, outcome.AccessToken!, body, contentHeaders, cancellationToken, clone: true);
+                return await SendWithAsync(request, outcome.AccessToken!, body, contentHeaders, factory, cancellationToken, clone: true);
             case RefreshStatus.SessionEnded:
                 response.Dispose();
                 return SessionEnded(request);
@@ -259,7 +264,7 @@ public sealed class SessionBearerHandler(ISessionStore store, TokenRefreshCoordi
     }
 
     private async Task<HttpResponseMessage> SendWithAsync(
-        HttpRequestMessage original, string token, byte[]? body, List<KeyValuePair<string, IEnumerable<string>>>? contentHeaders, CancellationToken ct, bool clone)
+        HttpRequestMessage original, string token, byte[]? body, List<KeyValuePair<string, IEnumerable<string>>>? contentHeaders, Func<HttpContent>? factory, CancellationToken ct, bool clone)
     {
         var message = original;
         if (clone)
@@ -273,7 +278,11 @@ public sealed class SessionBearerHandler(ISessionStore store, TokenRefreshCoordi
                 }
             }
 
-            if (body is not null)
+            if (factory is not null)
+            {
+                message.Content = factory();
+            }
+            else if (body is not null)
             {
                 message.Content = new ByteArrayContent(body);
                 foreach (var header in contentHeaders ?? [])

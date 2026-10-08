@@ -10,6 +10,11 @@ public sealed class NotificationState
 
     public event Action? Changed;
 
+    /// <summary>Raised when the user marks something as read, so the bell's list (not just its badge) refreshes.</summary>
+    public event Action? ReadChanged;
+
+    public void NotifyRead() => ReadChanged?.Invoke();
+
     public void Set(long unread)
     {
         var value = Math.Max(0, unread);

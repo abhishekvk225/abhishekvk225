@@ -24,4 +24,12 @@ public static class ImageSniffer
 
         return null;
     }
+
+    /// <summary>File extension for an image content type (used for the neutral name the portal sends the API).</summary>
+    public static string ExtensionFor(string contentType) => contentType switch
+    {
+        "image/png" => ".png",
+        "image/webp" => ".webp",
+        _ => ".jpg",
+    };
 }

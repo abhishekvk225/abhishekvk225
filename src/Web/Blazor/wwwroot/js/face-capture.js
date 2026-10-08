@@ -1,5 +1,5 @@
 // Camera access for the FaceCapture component. ES module imported on demand.
-// Nothing is stored or uploaded here: frames are returned to .NET as a base64 JPEG and the stream is stopped on dispose.
+// Nothing is stored or uploaded here: frames are handed to .NET as a stream and the camera is stopped on dispose.
 
 export function isSupported() {
   try {
@@ -30,19 +30,21 @@ export async function start(video) {
   }
 }
 
-// Returns a base64 JPEG (no data: prefix) or '' when no frame is available.
-export function capture(video, quality) {
-  try {
-    if (!video || !video.videoWidth) { return ''; }
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext('2d').drawImage(video, 0, 0);
-    const url = canvas.toDataURL('image/jpeg', quality || 0.92);
-    return url.substring(url.indexOf(',') + 1);
-  } catch (e) {
-    return '';
-  }
+// Returns the current frame as a JPEG Blob (or null). .NET reads it as a stream in small chunks, so the SignalR hub keeps its default
+// message-size limit; a base64 string of the whole frame would be rejected (or force a large global limit that is a memory-DoS lever).
+export function captureStream(video, quality) {
+  return new Promise(function (resolve) {
+    try {
+      if (!video || !video.videoWidth) { resolve(null); return; }
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      canvas.toBlob(function (blob) { resolve(blob); }, 'image/jpeg', quality || 0.92);
+    } catch (e) {
+      resolve(null);
+    }
+  });
 }
 
 export function stop(video) {

@@ -1,5 +1,6 @@
 @page "/client/identify"
 @attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.FacesIdentify)]
+@implements IDisposable
 @inject IFacesApiClient Api
 @inject IAppSnackbar Snackbar
 
@@ -16,7 +17,7 @@
                     <MudNumericField T="int?" @bind-Value="_form.TopK" For="() => _form.TopK" Label="How many matches to show" Variant="Variant.Outlined" Min="1" Max="20" Disabled="_busy" data-testid="identify-topk" />
                     <div>
                         <MudText Typo="Typo.subtitle2" HtmlTag="h2" Class="mb-2">Photo</MudText>
-                        <FacePhotoInput @bind-Image="_image" />
+                        <FacePhotoInput Image="_image" ImageChanged="OnImageChanged" />
                         @if (_photoProblem is not null)
                         {
                             <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2" role="alert" data-testid="photo-problem">@_photoProblem</MudAlert>
@@ -25,6 +26,12 @@
                     @if (_error is not null)
                     {
                         <ErrorState Error="_error" />
+                        @if (_photoKept)
+                        {
+                            <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined" data-testid="photo-kept">
+                                Your photo is still here. Press the button again to retry; if the first attempt did go through, you will not be charged twice.
+                            </MudAlert>
+                        }
                     }
                     <div>
                         <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_busy || _image is null)" data-testid="identify-submit">
@@ -79,6 +86,43 @@
     private ApiError? _error;
     private IdentifyFaceResponse? _result;
     private long _elapsedMs;
+    private bool _photoKept;
+    private readonly PhotoAttempt _attempt = new();
+    private readonly CancellationTokenSource _cts = new();
+
+    // Success: the photo is no longer needed, so overwrite it and start a new logical request next time.
+    private void Settle(CapturedImage image)
+    {
+        PhotoGuard.Forget(image);
+        _image = null;
+        _photoKept = false;
+        _attempt.Reset();
+    }
+
+    // Failure: the photo stays until the user removes it or it succeeds. A temporary failure keeps the idempotency key too, so the
+    // retry cannot be charged a second time; a definitive refusal starts over with a new key (the photo or details will change).
+    private void KeepOrSettleFailure(ApiError error)
+    {
+        _photoKept = true;
+        if (!PhotoGuard.IsRetryable(error))
+        {
+            _attempt.Reset();
+        }
+    }
+
+    private void OnImageChanged(CapturedImage? image)
+    {
+        _image = image;
+        _photoKept = false;
+        _attempt.Reset(); // a different photo is a different request
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+        PhotoGuard.Forget(_image);
+    }
 
     private async Task SubmitAsync()
     {
@@ -95,22 +139,32 @@
         try
         {
             var started = System.Diagnostics.Stopwatch.GetTimestamp();
-            var result = await Api.IdentifyAsync(_form.ToRequest(), image, PhotoGuard.NewIdempotencyKey());
+            var request = _form.ToRequest();
+            ApiResult<IdentifyFaceResponse> result;
+            try
+            {
+                result = await Api.IdentifyAsync(request, image, _attempt.KeyFor(request), _cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return; // the page was left: stop quietly
+            }
+
             _elapsedMs = (long)System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
             if (result.IsSuccess)
             {
+                Settle(image);
                 _result = result.Value;
             }
             else
             {
                 _error = result.Error;
                 Snackbar.Error(result.Error!);
+                KeepOrSettleFailure(result.Error!);
             }
         }
         finally
         {
-            PhotoGuard.Forget(image);
-            _image = null;
             _busy = false;
         }
     }

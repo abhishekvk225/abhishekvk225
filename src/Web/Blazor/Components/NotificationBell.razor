@@ -53,53 +53,92 @@
     protected override async Task OnInitializedAsync()
     {
         State.Changed += OnStateChanged;
+        State.ReadChanged += OnReadChanged;
         if (!User.Has(WebPermissions.NotificationsRead))
         {
             return;
         }
 
-        await RefreshAsync();
+        await RefreshAsync(background: false);
         _timer = new PeriodicTimer(PollInterval, Clock);
         _loop = PollAsync(_timer, _stop.Token);
     }
 
+    /// <summary>
+    /// Polls quietly. The poll is background work: it must not keep an unattended session alive, so it is sent as a passive call.
+    /// It stops for good when the session has ended, survives any other failure, and never throws into disposal.
+    /// </summary>
     private async Task PollAsync(PeriodicTimer timer, CancellationToken ct)
     {
         try
         {
             while (await timer.WaitForNextTickAsync(ct))
             {
-                await RefreshAsync();
-                await InvokeAsync(StateHasChanged);
+                try
+                {
+                    if (!await RefreshAsync(background: true))
+                    {
+                        return; // session over: nothing left to poll for
+                    }
+
+                    await InvokeAsync(StateHasChanged);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // A failed poll keeps what the user already sees; the next tick tries again.
+                }
             }
         }
-        catch (OperationCanceledException)
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
         {
             // Disposed: stop quietly.
         }
-        catch (ObjectDisposedException)
-        {
-            // Circuit gone while a refresh was in flight.
-        }
     }
 
-    private async Task RefreshAsync()
+    /// <summary>Returns false when the session no longer exists.</summary>
+    private async Task<bool> RefreshAsync(bool background)
     {
-        var feed = await Api.ListAsync(new NotificationListQuery { Page = 1, PageSize = 5 }, _stop.Token);
+        var feed = await Api.ListAsync(new NotificationListQuery { Page = 1, PageSize = 5 }, _stop.Token, background);
         if (feed.IsSuccess)
         {
             _latest = feed.Value.Notifications.Items;
             State.Set(feed.Value.UnreadCount);
         }
+        else if (feed.Error!.Code == ApiGateway.SessionExpiredCode)
+        {
+            return false;
+        }
 
-        // A failed poll keeps what the user already sees; the next tick tries again.
+        return true;
     }
 
-    private void OnStateChanged() => _ = InvokeAsync(StateHasChanged);
+    private void OnStateChanged() => _ = ObserveAsync(() => InvokeAsync(StateHasChanged));
+
+    private void OnReadChanged() => _ = ObserveAsync(async () =>
+    {
+        if (await RefreshAsync(background: false))
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+    });
+
+    // Event handlers cannot be awaited; make sure a failure here is observed instead of becoming an unobserved task exception.
+    private static async Task ObserveAsync(Func<Task> work)
+    {
+        try
+        {
+            await work();
+        }
+        catch (Exception)
+        {
+            // The component was disposed while the refresh ran, or the call failed: the next poll corrects the view.
+        }
+    }
 
     public async ValueTask DisposeAsync()
     {
         State.Changed -= OnStateChanged;
+        State.ReadChanged -= OnReadChanged;
         await _stop.CancelAsync();
         _timer?.Dispose();
         if (_loop is not null)
@@ -108,9 +147,9 @@
             {
                 await _loop;
             }
-            catch (OperationCanceledException)
+            catch (Exception)
             {
-                // expected
+                // The loop never rethrows into teardown.
             }
         }
 

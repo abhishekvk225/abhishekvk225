@@ -40,7 +40,8 @@ public class ClientApiClientTests
         seen.Body!.ShouldContain("EMP-1001");
         seen.Body!.ShouldContain("name=ConsentReference");
         seen.Body!.ShouldContain("name=image");
-        seen.Body!.ShouldContain("filename=ada.jpg");
+        seen.Body!.ShouldContain("filename=upload.jpg");
+        seen.Body!.ShouldNotContain("ada.jpg", Case.Insensitive, "the original file name (it may be a person's name) is not sent");
         seen.Body!.ShouldNotContain("name=Metadata", Case.Sensitive, "empty optional fields are not sent");
         IndexOf(seen.BodyBytes!, Jpeg).ShouldBeGreaterThan(0, "the image bytes travel unchanged");
     }

@@ -4,9 +4,16 @@
 <div data-testid="face-capture">
     <MudTabs Elevation="0" Rounded="true" ActivePanelIndexChanged="OnTabChangedAsync" TabPanelsClass="pt-4" KeepPanelsAlive="true">
         <MudTabPanel Text="Use camera" Icon="@Icons.Material.Outlined.PhotoCamera">
-            @if (_preview is not null)
+            @if (_hasPhoto && _source == Source.Camera)
             {
-                <img class="nv-preview" src="@_preview" alt="Preview of the captured photo" data-testid="capture-preview" />
+                @if (_preview is not null)
+                {
+                    <img class="nv-preview" src="@_preview" alt="Preview of the captured photo" data-testid="capture-preview" />
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" data-testid="capture-ready">@PhotoDescription</MudText>
+                }
                 <div class="d-flex flex-wrap mt-3" style="gap: var(--nv-space-2);">
                     <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="UseAsync" data-testid="capture-use">Use this photo</MudButton>
                     <MudButton Variant="Variant.Outlined" OnClick="RetakeAsync" data-testid="capture-retake">Retake</MudButton>
@@ -33,21 +40,28 @@
             }
         </MudTabPanel>
         <MudTabPanel Text="Upload a photo" Icon="@Icons.Material.Outlined.UploadFile">
-            <MudText Typo="Typo.body2" Class="nv-muted mb-2">JPEG, PNG or WebP, up to @(MaxBytes / (1024 * 1024)) MB.</MudText>
+            <MudText Typo="Typo.body2" Class="nv-muted mb-2">@FaceLimits.TypesText, up to @FaceLimits.MaxImageMegabytes MB.</MudText>
             <label class="mud-button-root mud-button mud-button-outlined mud-button-outlined-primary mud-button-outlined-size-medium mud-ripple" style="cursor:pointer; padding: 6px 16px;">
                 Choose a photo
-                <InputFile OnChange="OnFileAsync" accept="image/jpeg,image/png,image/webp" class="nv-sr" data-testid="capture-file" />
+                <InputFile OnChange="OnFileAsync" accept="@string.Join(',', FaceLimits.AllowedImageTypes)" class="nv-sr" data-testid="capture-file" />
             </label>
             @if (_uploadProblem is not null)
             {
                 <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3" data-testid="upload-problem">@_uploadProblem</MudAlert>
             }
-            @if (_preview is not null && _source == Source.Upload)
+            @if (_hasPhoto && _source == Source.Upload)
             {
-                <img class="nv-preview mt-3" src="@_preview" alt="Preview of the chosen photo" />
+                @if (_preview is not null)
+                {
+                    <img class="nv-preview mt-3" src="@_preview" alt="Preview of the chosen photo" />
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Class="mt-3" data-testid="upload-ready">@PhotoDescription</MudText>
+                }
                 <div class="d-flex flex-wrap mt-3" style="gap: var(--nv-space-2);">
-                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="UseAsync">Use this photo</MudButton>
-                    <MudButton Variant="Variant.Outlined" OnClick="RetakeAsync">Choose another</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="UseAsync" data-testid="capture-use">Use this photo</MudButton>
+                    <MudButton Variant="Variant.Outlined" OnClick="RetakeAsync" data-testid="capture-retake">Choose another</MudButton>
                 </div>
             }
         </MudTabPanel>
@@ -55,8 +69,6 @@
 </div>
 
 @code {
-    private static readonly string[] AllowedTypes = ["image/jpeg", "image/png", "image/webp"];
-
     private enum Source
     {
         Camera,
@@ -71,11 +83,14 @@
     private string? _preview;
     private byte[]? _bytes;
     private string _contentType = "image/jpeg";
-    private string _fileName = "capture.jpg";
+    private bool _hasPhoto;
+    private long _photoSize;
     private Source _source;
 
-    /// <summary>Largest accepted photo (matches the API default, docs/03 §5).</summary>
-    [Parameter] public long MaxBytes { get; set; } = 5 * 1024 * 1024;
+    private const int PreviewLimitBytes = 1024 * 1024;
+
+    /// <summary>Largest accepted photo (matches the API default, docs/03 section 5).</summary>
+    [Parameter] public long MaxBytes { get; set; } = FaceLimits.MaxImageBytes;
 
     /// <summary>Raised when the user confirms a photo. The component forgets its copy straight afterwards.</summary>
     [Parameter] public EventCallback<CapturedImage> OnCaptured { get; set; }
@@ -155,31 +170,49 @@
     private async Task CaptureAsync()
     {
         _cameraProblem = null;
-        string base64;
+        IJSStreamReference? frame = null;
         try
         {
-            base64 = await _module!.InvokeAsync<string>("capture", _video, 0.92);
+            frame = await _module!.InvokeAsync<IJSStreamReference?>("captureStream", _video, 0.92);
         }
         catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
         {
-            base64 = string.Empty;
+            frame = null;
         }
 
-        if (base64.Length == 0)
+        if (frame is null)
         {
             _cameraProblem = "We could not take the photo. Please try again.";
             return;
         }
 
-        var bytes = Convert.FromBase64String(base64);
-        if (bytes.Length > MaxBytes)
+        await using (frame)
         {
-            _cameraProblem = $"The photo is too large (max {MaxBytes / (1024 * 1024)} MB). Please try again.";
-            return;
-        }
+            // The size is known up front: refuse an oversized frame before reading a byte, and read in chunks into one exact-size buffer.
+            if (frame.Length <= 0 || frame.Length > MaxBytes)
+            {
+                _cameraProblem = frame.Length > MaxBytes
+                    ? $"The photo is too large (max {FaceLimits.MaxImageMegabytes} MB). Please try again."
+                    : "We could not take the photo. Please try again.";
+                return;
+            }
 
-        await StopCameraAsync();
-        Accept(bytes, "image/jpeg", "capture.jpg", Source.Camera);
+            byte[] bytes;
+            try
+            {
+                await using var stream = await frame.OpenReadStreamAsync(MaxBytes);
+                bytes = new byte[(int)frame.Length];
+                await stream.ReadExactlyAsync(bytes);
+            }
+            catch (Exception ex) when (ex is IOException or JSException or JSDisconnectedException or InvalidOperationException or EndOfStreamException)
+            {
+                _cameraProblem = "We could not take the photo. Please try again.";
+                return;
+            }
+
+            await StopCameraAsync();
+            Accept(bytes, "image/jpeg", Source.Camera);
+        }
     }
 
     private async Task OnFileAsync(InputFileChangeEventArgs e)
@@ -189,45 +222,57 @@
 
         if (file.Size > MaxBytes)
         {
-            _uploadProblem = $"That photo is too large. The limit is {MaxBytes / (1024 * 1024)} MB.";
+            _uploadProblem = $"That photo is too large. The limit is {FaceLimits.MaxImageMegabytes} MB.";
             return;
         }
 
-        if (!AllowedTypes.Contains(file.ContentType, StringComparer.OrdinalIgnoreCase))
+        if (!FaceLimits.AllowedImageTypes.Contains(file.ContentType, StringComparer.OrdinalIgnoreCase))
         {
-            _uploadProblem = "Please choose a JPEG, PNG or WebP photo.";
+            _uploadProblem = $"Please choose a {FaceLimits.TypesText} photo.";
             return;
         }
 
+        byte[]? bytes = null;
         try
         {
+            // One exact-size buffer (no MemoryStream + ToArray copy).
             await using var stream = file.OpenReadStream(MaxBytes);
-            using var buffer = new MemoryStream();
-            await stream.CopyToAsync(buffer);
-            var bytes = buffer.ToArray();
+            bytes = new byte[file.Size];
+            await stream.ReadExactlyAsync(bytes);
 
             var detected = ImageSniffer.Detect(bytes);
             if (detected is null)
             {
-                _uploadProblem = "That file does not look like a valid photo. Please choose a JPEG, PNG or WebP photo.";
+                Array.Clear(bytes);
+                _uploadProblem = $"That file does not look like a valid photo. Please choose a {FaceLimits.TypesText} photo.";
                 return;
             }
 
-            Accept(bytes, detected, SafeName(file.Name, detected), Source.Upload);
+            Accept(bytes, detected, Source.Upload);
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or EndOfStreamException)
         {
-            _uploadProblem = $"That photo is too large. The limit is {MaxBytes / (1024 * 1024)} MB.";
+            if (bytes is not null)
+            {
+                Array.Clear(bytes);
+            }
+
+            _uploadProblem = $"That photo is too large. The limit is {FaceLimits.MaxImageMegabytes} MB.";
         }
     }
 
-    private void Accept(byte[] bytes, string contentType, string fileName, Source source)
+    private void Accept(byte[] bytes, string contentType, Source source)
     {
+        Wipe();
         _bytes = bytes;
         _contentType = contentType;
-        _fileName = fileName;
         _source = source;
-        _preview = $"data:{contentType};base64,{Convert.ToBase64String(bytes)}";
+
+        // A data-URI preview is a string several times the photo's size that travels to the browser in a render batch: only for small
+        // photos. Larger ones show a short description instead.
+        _preview = bytes.Length <= PreviewLimitBytes ? $"data:{contentType};base64,{Convert.ToBase64String(bytes)}" : null;
+        _hasPhoto = true;
+        _photoSize = bytes.Length;
     }
 
     private async Task UseAsync()
@@ -237,14 +282,17 @@
             return;
         }
 
-        var image = new CapturedImage(_bytes, _contentType, _fileName);
-        Forget();
+        // Ownership of the buffer passes to the caller, who clears it when done.
+        var image = new CapturedImage(_bytes, _contentType, "upload" + ImageSniffer.ExtensionFor(_contentType));
+        _bytes = null;
+        _preview = null;
+        _hasPhoto = false;
         await OnCaptured.InvokeAsync(image);
     }
 
     private async Task RetakeAsync()
     {
-        Forget();
+        Wipe();
         if (_source == Source.Camera)
         {
             await StartCameraAsync();
@@ -259,22 +307,24 @@
         }
     }
 
-    private void Forget()
+    /// <summary>Drops the photo this component still holds, overwriting its bytes (best effort: the GC may have moved copies).</summary>
+    private void Wipe()
     {
+        if (_bytes is not null)
+        {
+            Array.Clear(_bytes);
+        }
+
         _bytes = null;
         _preview = null;
+        _hasPhoto = false;
     }
 
-    private static string SafeName(string name, string contentType)
-    {
-        var ext = contentType switch { "image/png" => ".png", "image/webp" => ".webp", _ => ".jpg" };
-        var stem = new string(Path.GetFileNameWithoutExtension(name).Where(c => char.IsLetterOrDigit(c) || c is '-' or '_').Take(40).ToArray());
-        return (stem.Length == 0 ? "upload" : stem) + ext;
-    }
+    private string PhotoDescription => $"Photo ready ({_photoSize / 1024.0 / 1024.0:0.0} MB).";
 
     public async ValueTask DisposeAsync()
     {
-        Forget();
+        Wipe();
         if (_module is not null)
         {
             try

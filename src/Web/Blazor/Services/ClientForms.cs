@@ -10,6 +10,21 @@ namespace NexaVerify.Web.Services;
 public static class FaceLimits
 {
     public const long MaxImageBytes = 5 * 1024 * 1024;
+
+    public const int MaxImageMegabytes = (int)(MaxImageBytes / (1024 * 1024));
+
+    /// <summary>Image types the API accepts (it re-checks by content, not by name).</summary>
+    public static readonly IReadOnlyList<string> AllowedImageTypes = ["image/jpeg", "image/png", "image/webp"];
+
+    /// <summary>How the accepted types read in messages.</summary>
+    public const string TypesText = "JPEG, PNG or WebP";
+}
+
+/// <summary>Text helpers shared by the forms.</summary>
+public static class Strings
+{
+    /// <summary>Trimmed text, or null when it is empty or whitespace.</summary>
+    public static string? NullIfBlank(this string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }
 
 /// <summary>Last-moment check before a photo leaves the portal (size, real image type). Returns a friendly message or null.</summary>
@@ -24,16 +39,23 @@ public static class PhotoGuard
 
         if (image.Data.Length > FaceLimits.MaxImageBytes)
         {
-            return "That photo is too large. The limit is 5 MB.";
+            return $"That photo is too large. The limit is {FaceLimits.MaxImageMegabytes} MB.";
         }
 
         return NexaVerify.Web.Components.ImageSniffer.Detect(image.Data) is null
-            ? "That file does not look like a valid photo. Please use a JPEG or PNG photo."
+            ? $"That file does not look like a valid photo. Please use a {FaceLimits.TypesText} photo."
             : null;
     }
 
-    /// <summary>A fresh key for every submit, so the same click can never be charged twice.</summary>
     public static string NewIdempotencyKey() => Guid.NewGuid().ToString("N");
+
+    /// <summary>
+    /// True when the outcome is unknown or temporary (timeout, unreachable service, 5xx, 429): the API may or may not have charged for
+    /// the check, so the retry must carry the same idempotency key. Definitive refusals (no face found, invalid input) are not retryable
+    /// as they stand.
+    /// </summary>
+    public static bool IsRetryable(ApiError error) =>
+        error.Status is null or >= 500 or 429 or 408 || error.Code is "API_UNAVAILABLE" or "API_TIMEOUT";
 
     /// <summary>Overwrites the photo bytes once the request is done. The portal never keeps images.</summary>
     public static void Forget(NexaVerify.Web.Components.CapturedImage? image)
@@ -42,6 +64,37 @@ public static class PhotoGuard
         {
             Array.Clear(image.Data);
         }
+    }
+}
+
+/// <summary>
+/// One logical submit of a photo. The idempotency key stays the same while the same photo and details are being (re)sent, so a retry
+/// after a timeout can never charge twice; it is replaced when the photo changes, the details change, or the attempt ended
+/// definitively (success or refusal).
+/// </summary>
+public sealed class PhotoAttempt
+{
+    private string? _key;
+    private string? _fingerprint;
+
+    /// <summary>The key for sending <paramref name="request"/> now: the previous one if nothing changed since the last attempt.</summary>
+    public string KeyFor(object request)
+    {
+        var fingerprint = System.Text.Json.JsonSerializer.Serialize(request);
+        if (_key is null || !string.Equals(_fingerprint, fingerprint, StringComparison.Ordinal))
+        {
+            _key = PhotoGuard.NewIdempotencyKey();
+            _fingerprint = fingerprint;
+        }
+
+        return _key;
+    }
+
+    /// <summary>Forget the key: the next send is a new logical request (new photo, or the last attempt is settled).</summary>
+    public void Reset()
+    {
+        _key = null;
+        _fingerprint = null;
     }
 }
 

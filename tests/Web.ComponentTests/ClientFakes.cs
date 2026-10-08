@@ -276,15 +276,25 @@ public sealed class FakeNotificationsApi : INotificationsApiClient
 
     public int Calls => _calls;
 
+    private int _backgroundCalls;
+
+    /// <summary>How many calls were flagged as background polls (they must not count as user activity).</summary>
+    public int BackgroundCalls => _backgroundCalls;
+
     public List<Guid> MarkedRead { get; } = [];
 
     public long Unread { get; set; } = 3;
 
     public Func<NotificationListQuery, Task<ApiResult<NotificationFeedDto>>>? Override { get; set; }
 
-    public Task<ApiResult<NotificationFeedDto>> ListAsync(NotificationListQuery query, CancellationToken ct = default)
+    public Task<ApiResult<NotificationFeedDto>> ListAsync(NotificationListQuery query, CancellationToken ct = default, bool background = false)
     {
         Interlocked.Increment(ref _calls);
+        if (background)
+        {
+            Interlocked.Increment(ref _backgroundCalls);
+        }
+
         if (Override is not null)
         {
             return Override(query);

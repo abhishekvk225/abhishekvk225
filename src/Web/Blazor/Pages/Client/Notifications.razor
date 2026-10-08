@@ -55,9 +55,13 @@
     private async Task MarkReadAsync(NotificationDto item)
     {
         var result = await Api.MarkReadAsync(item.Id);
-        if (result.Report(Snackbar, "Marked as read.") && _table is not null)
+        if (result.Report(Snackbar, "Marked as read."))
         {
-            await _table.ReloadAsync(); // also refreshes the unread count shown in the bell
+            State.NotifyRead(); // the bell reloads its list and count
+            if (_table is not null)
+            {
+                await _table.ReloadAsync();
+            }
         }
     }
 }

@@ -182,40 +182,127 @@ public class EnrollPageTests : ClientPageTestBase
         Faces.UploadedImages.Single().Length.ShouldBe(2048);
     }
 
+    private void SubmitEnroll(IRenderedComponent<EnrollPage> cut, string reference = "EMP-1")
+    {
+        Fill(cut, "Your reference for this person", reference);
+        Fill(cut, "Where their consent is recorded", "FORM-42");
+        cut.Find("form").Submit();
+    }
+
     [Fact]
-    public void Every_submit_gets_a_fresh_idempotency_key()
+    public void Separate_registrations_use_separate_idempotency_keys()
     {
         SignInAsClientAdmin();
         var cut = Render<EnrollPage>();
         for (var i = 0; i < 2; i++)
         {
             ChoosePhoto(cut, Jpeg());
-            Fill(cut, "Your reference for this person", $"EMP-{i}");
-            Fill(cut, "Where their consent is recorded", "FORM-42");
-            cut.Find("form").Submit();
+            SubmitEnroll(cut, $"EMP-{i}");
             var expected = i + 1;
             cut.WaitForAssertion(() => Faces.IdempotencyKeys.Count.ShouldBe(expected));
+            cut.WaitForAssertion(() => cut.FindAll("[data-testid=photo-ready]").ShouldBeEmpty());
         }
 
         Faces.IdempotencyKeys.Distinct().Count().ShouldBe(2);
     }
 
     [Fact]
-    public void An_api_refusal_is_shown_with_the_reference_and_the_photo_is_still_dropped()
+    public void A_retry_after_a_timeout_keeps_the_photo_and_the_same_key_so_it_cannot_be_charged_twice()
     {
         SignInAsClientAdmin();
-        Faces.Enroll = () => Ok.Fail<EnrollFaceResponse>("NO_FACE_DETECTED", "We could not find a face in the photo.", "corr-nf", 422);
+        var attempts = 0;
+        Faces.Enroll = () => ++attempts == 1
+            ? Ok.Fail<EnrollFaceResponse>("API_TIMEOUT", "This is taking longer than expected.", null, 504)
+            : Ok.Of(new EnrollFaceResponse(Guid.NewGuid(), Guid.NewGuid(), true, 0.93m, "Enrolled", Guid.NewGuid(), new CreditsDto(1, 99)));
         var cut = Render<EnrollPage>();
         ChoosePhoto(cut, Jpeg());
-        Fill(cut, "Your reference for this person", "EMP-1");
-        Fill(cut, "Where their consent is recorded", "FORM-1");
 
+        SubmitEnroll(cut);
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=photo-kept]").Count.ShouldBe(1));
+
+        cut.FindAll("[data-testid=photo-ready]").Count.ShouldBe(1, "the photo is still there");
+        Faces.LiveBuffers.Single().Any(b => b != 0).ShouldBeTrue("not wiped after a failure");
         cut.Find("form").Submit();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=enroll-result] [data-testid=charge-summary]").Count.ShouldBe(1));
+
+        Faces.IdempotencyKeys.Count.ShouldBe(2);
+        Faces.IdempotencyKeys.Distinct().Count().ShouldBe(1, "same logical request, same key");
+        Faces.LiveBuffers.ShouldAllBe(buffer => buffer.All(b => b == 0));
+        cut.FindAll("[data-testid=photo-ready]").ShouldBeEmpty("wiped after success");
+    }
+
+    [Fact]
+    public void A_definitive_refusal_keeps_the_photo_but_starts_a_new_request_next_time()
+    {
+        SignInAsClientAdmin();
+        var attempts = 0;
+        Faces.Enroll = () => ++attempts == 1
+            ? Ok.Fail<EnrollFaceResponse>("NO_FACE_DETECTED", "We could not find a face in the photo.", "corr-nf", 422)
+            : Ok.Of(new EnrollFaceResponse(Guid.NewGuid(), Guid.NewGuid(), true, 0.93m, "Enrolled", Guid.NewGuid(), new CreditsDto(1, 99)));
+        var cut = Render<EnrollPage>();
+        ChoosePhoto(cut, Jpeg());
+
+        SubmitEnroll(cut);
 
         cut.WaitForAssertion(() => cut.Find("[data-testid=correlation-id]").TextContent.ShouldBe("corr-nf"));
-        Faces.LiveBuffers.Single().ShouldAllBe(b => b == 0);
+        cut.FindAll("[data-testid=photo-ready]").Count.ShouldBe(1);
         cut.FindAll("[data-testid=enroll-result] [data-testid=charge-summary]").ShouldBeEmpty();
+        cut.Find("form").Submit();
+        cut.WaitForAssertion(() => Faces.IdempotencyKeys.Count.ShouldBe(2));
+        Faces.IdempotencyKeys.Distinct().Count().ShouldBe(2);
     }
+
+    [Fact]
+    public void Changing_the_details_or_the_photo_after_a_timeout_means_a_new_key()
+    {
+        SignInAsClientAdmin();
+        Faces.Enroll = () => Ok.Fail<EnrollFaceResponse>("API_UNAVAILABLE", "We can't reach the service right now.", null, 503);
+        var cut = Render<EnrollPage>();
+        ChoosePhoto(cut, Jpeg());
+        SubmitEnroll(cut);
+        cut.WaitForAssertion(() => Faces.IdempotencyKeys.Count.ShouldBe(1));
+
+        cut.Find("form").Submit();
+        cut.WaitForAssertion(() => Faces.IdempotencyKeys.Count.ShouldBe(2));
+        Fill(cut, "Your reference for this person", "EMP-2");
+        cut.Find("form").Submit();
+        cut.WaitForAssertion(() => Faces.IdempotencyKeys.Count.ShouldBe(3));
+        cut.Find("[data-testid=photo-remove]").Click();
+        ChoosePhoto(cut, Jpeg(4096));
+        cut.Find("form").Submit();
+        cut.WaitForAssertion(() => Faces.IdempotencyKeys.Count.ShouldBe(4));
+
+        Faces.IdempotencyKeys[0].ShouldBe(Faces.IdempotencyKeys[1]);
+        Faces.IdempotencyKeys[2].ShouldNotBe(Faces.IdempotencyKeys[1]);
+        Faces.IdempotencyKeys[3].ShouldNotBe(Faces.IdempotencyKeys[2]);
+    }
+
+    [Fact]
+    public void A_removed_photo_is_wiped()
+    {
+        SignInAsClientAdmin();
+        Faces.Enroll = () => Ok.Fail<EnrollFaceResponse>("API_TIMEOUT", "Slow.", null, 504);
+        var cut = Render<EnrollPage>();
+        ChoosePhoto(cut, Jpeg());
+        SubmitEnroll(cut);
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=photo-kept]").Count.ShouldBe(1));
+
+        cut.Find("[data-testid=photo-remove]").Click();
+
+        Faces.LiveBuffers.Single().ShouldAllBe(b => b == 0);
+    }
+
+    [Theory]
+    [InlineData("API_TIMEOUT", 504, true)]
+    [InlineData("API_UNAVAILABLE", 503, true)]
+    [InlineData("INTERNAL_ERROR", 500, true)]
+    [InlineData("RATE_LIMITED", 429, true)]
+    [InlineData("SESSION_EXPIRED", 401, false)]
+    [InlineData("NO_FACE_DETECTED", 422, false)]
+    [InlineData("LICENSE_INSUFFICIENT_BALANCE", 402, false)]
+    [InlineData("VALIDATION_FAILED", 400, false)]
+    public void Only_temporary_failures_are_retried_with_the_same_key(string code, int status, bool retryable) =>
+        PhotoGuard.IsRetryable(new ApiError(code, "x", null, status)).ShouldBe(retryable);
 
     [Fact]
     public void Only_people_who_may_register_faces_see_the_nav_entry()

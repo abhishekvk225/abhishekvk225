@@ -91,21 +91,27 @@ public sealed class FacesApiClient(IApiGateway api) : IFacesApiClient
 
     private Task<ApiResult<T>> UploadAsync<T>(string path, CapturedImage image, string idempotencyKey, CancellationToken ct, params (string Name, string? Value)[] fields)
     {
-        var form = new MultipartFormDataContent();
-        foreach (var (name, value) in fields)
+        // Built on demand (and again for a retry after a token refresh) around the caller's own buffer: the photo is never copied here.
+        // The original file name is not sent (it may be a person's name); the API only needs the content type.
+        HttpContent BuildForm()
         {
-            if (!string.IsNullOrEmpty(value))
+            var form = new MultipartFormDataContent();
+            foreach (var (name, value) in fields)
             {
-                form.Add(new StringContent(value), name);
+                if (!string.IsNullOrEmpty(value))
+                {
+                    form.Add(new StringContent(value), name);
+                }
             }
+
+            var file = new ByteArrayContent(image.Data);
+            file.Headers.ContentType = MediaTypeHeaderValue.Parse(image.ContentType);
+            form.Add(file, "image", "upload" + ImageSniffer.ExtensionFor(image.ContentType));
+            return form;
         }
 
-        var file = new ByteArrayContent(image.Data);
-        file.Headers.ContentType = MediaTypeHeaderValue.Parse(image.ContentType);
-        form.Add(file, "image", image.FileName);
-
-        // The multipart body is disposed with the request; the caller clears its own buffer straight afterwards.
-        return api.SendAsync<T>(HttpMethod.Post, path, form, ct, new ApiCallOptions { Headers = new Dictionary<string, string> { [IdempotencyHeader] = idempotencyKey } });
+        return api.SendAsync<T>(HttpMethod.Post, path, (Func<HttpContent>)BuildForm, ct,
+            new ApiCallOptions { Headers = new Dictionary<string, string> { [IdempotencyHeader] = idempotencyKey } });
     }
 }
 
@@ -276,15 +282,17 @@ public sealed class ClientAccountApiClient(IApiGateway api) : IClientAccountApiC
 /// <summary>In-app notification feed (<c>/client/notifications</c>).</summary>
 public interface INotificationsApiClient
 {
-    Task<ApiResult<NotificationFeedDto>> ListAsync(NotificationListQuery query, CancellationToken ct = default);
+    /// <param name="background">True for polls the user did not ask for: they must not keep an idle session alive.</param>
+    Task<ApiResult<NotificationFeedDto>> ListAsync(NotificationListQuery query, CancellationToken ct = default, bool background = false);
 
     Task<ApiResult<bool>> MarkReadAsync(Guid id, CancellationToken ct = default);
 }
 
 public sealed class NotificationsApiClient(IApiGateway api) : INotificationsApiClient
 {
-    public Task<ApiResult<NotificationFeedDto>> ListAsync(NotificationListQuery query, CancellationToken ct = default) =>
-        api.GetAsync<NotificationFeedDto>(ApiQuery.With("client/notifications", ("page", query.Page), ("pageSize", query.PageSize), ("unreadOnly", query.UnreadOnly ? "true" : null)), ct);
+    public Task<ApiResult<NotificationFeedDto>> ListAsync(NotificationListQuery query, CancellationToken ct = default, bool background = false) =>
+        api.GetAsync<NotificationFeedDto>(ApiQuery.With("client/notifications", ("page", query.Page), ("pageSize", query.PageSize), ("unreadOnly", query.UnreadOnly ? "true" : null)), ct,
+            background ? new ApiCallOptions { Passive = true } : null);
 
     public Task<ApiResult<bool>> MarkReadAsync(Guid id, CancellationToken ct = default) => api.SendAsync(HttpMethod.Post, $"client/notifications/{id}/read", null, ct);
 }

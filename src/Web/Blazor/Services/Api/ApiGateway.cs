@@ -39,6 +39,12 @@ public sealed record ApiCallOptions
     /// <summary>Operations that legitimately take long (a full ledger scan) wait for <c>Api:LongRunningTimeoutSeconds</c> instead of <c>Api:TimeoutSeconds</c>.</summary>
     public bool LongRunning { get; init; }
 
+    /// <summary>
+    /// Background work (a poll the user did not trigger) must not count as activity: it does not slide the idle-session window, so an
+    /// unattended tab still times out.
+    /// </summary>
+    public bool Passive { get; init; }
+
     /// <summary>Extra request headers (for example <c>Idempotency-Key</c>). Never used for credentials.</summary>
     public IReadOnlyDictionary<string, string>? Headers { get; init; }
 
@@ -95,6 +101,12 @@ public sealed class ApiGateway(
     public const string ForwardedForHeader = "X-Forwarded-For";
 
     public static readonly HttpRequestOptionsKey<string> SessionKey = new("nv.session-id");
+
+    /// <summary>Set for passive (background) calls: the token handler then leaves the session's idle clock alone.</summary>
+    public static readonly HttpRequestOptionsKey<bool> PassiveKey = new("nv.passive");
+
+    /// <summary>Lets the token handler rebuild an upload body for a retry without keeping a second copy of it in memory.</summary>
+    public static readonly HttpRequestOptionsKey<Func<HttpContent>> ContentFactoryKey = new("nv.content-factory");
 
     public static JsonSerializerOptions Json { get; } = CreateJson();
 
@@ -154,9 +166,15 @@ public sealed class ApiGateway(
         options ??= new ApiCallOptions();
         var effectiveIp = options.ClientIp ?? clientAddress?.Value;
         using var request = new HttpRequestMessage(method, path.TrimStart('/'));
-        if (body is HttpContent content)
+        if (body is Func<HttpContent> contentFactory)
         {
-            // Multipart uploads: the caller built the content; it is disposed with the request.
+            // Multipart uploads: built on demand, so a retry after a token refresh makes a fresh body instead of copying the old one.
+            request.Content = contentFactory();
+            request.Options.Set(ContentFactoryKey, contentFactory);
+        }
+        else if (body is HttpContent content)
+        {
+            // The caller built the content; it is disposed with the request.
             request.Content = content;
         }
         else if (body is not null)
@@ -197,6 +215,10 @@ public sealed class ApiGateway(
 
             clientName = ApiClientNames.Authenticated;
             request.Options.Set(SessionKey, sessionId);
+            if (options.Passive)
+            {
+                request.Options.Set(PassiveKey, true);
+            }
         }
 
         // The HttpClient has no timeout of its own: each call gets one here, so slow operations can ask for more and a timeout can be
