@@ -114,6 +114,14 @@ body { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; 
 
 .nv-secret { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; word-break: break-all; padding: var(--nv-space-3) var(--nv-space-4); border-radius: var(--nv-radius); background: var(--mud-palette-background); border: 1px dashed var(--mud-palette-lines-inputs); }
 
+/* Code samples (API docs) */
+.nv-code { margin: 0 0 var(--nv-space-4); border: 1px solid var(--mud-palette-lines-default); border-radius: var(--nv-radius); overflow: hidden; }
+.nv-code figcaption { padding: var(--nv-space-1) var(--nv-space-3); background: var(--mud-palette-background-gray); border-bottom: 1px solid var(--mud-palette-lines-default); }
+.nv-code pre { margin: 0; padding: var(--nv-space-3) var(--nv-space-4); overflow-x: auto; font-size: 0.8125rem; line-height: 1.5; }
+.nv-code pre:focus-visible { outline: 2px solid var(--mud-palette-primary); outline-offset: -2px; }
+.nv-code code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.nv-unread { font-weight: 600; }
+
 .mud-button-root { min-height: 36px; }
 .mud-icon-button { min-width: 40px; min-height: 40px; }
 

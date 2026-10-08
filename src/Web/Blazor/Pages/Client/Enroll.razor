@@ -1,0 +1,124 @@
+@page "/client/enroll"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.FacesEnroll)]
+@inject IFacesApiClient Api
+@inject IAppSnackbar Snackbar
+
+<PageTitle>Register a person · NexaVerify</PageTitle>
+
+<PageHeader Title="Register a person" Subtitle="Add a person's photo so they can be recognised later. Only register people who have agreed to it." />
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" lg="7">
+        <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+            <EditForm Model="_form" OnValidSubmit="SubmitAsync" novalidate>
+                <DataAnnotationsValidator />
+                <div class="nv-form">
+                    <MudTextField T="string" @bind-Value="_form.ExternalRef" For="() => _form.ExternalRef" Label="Your reference for this person" Variant="Variant.Outlined" Immediate="true"
+                                  HelperText="For example an employee or customer number. Used to find the person again." MaxLength="100" Disabled="_busy" data-testid="enroll-ref" />
+                    <MudTextField T="string" @bind-Value="_form.DisplayName" For="() => _form.DisplayName" Label="Name (optional)" Variant="Variant.Outlined" Immediate="true" MaxLength="200" Disabled="_busy" />
+                    <MudTextField T="string" @bind-Value="_form.ConsentReference" For="() => _form.ConsentReference" Label="Where their consent is recorded" Variant="Variant.Outlined" Immediate="true"
+                                  HelperText="For example a signed form number. Required." MaxLength="200" Disabled="_busy" data-testid="enroll-consent" />
+                    <MudTextField T="string" @bind-Value="_form.Metadata" For="() => _form.Metadata" Label="Extra details (optional)" Variant="Variant.Outlined" Immediate="true" Lines="2"
+                                  HelperText="Advanced: a simple JSON object such as {&quot;department&quot;:&quot;Sales&quot;}." MaxLength="4096" Disabled="_busy" />
+
+                    <div>
+                        <MudText Typo="Typo.subtitle2" HtmlTag="h2" Class="mb-2">Photo</MudText>
+                        <MudText Typo="Typo.body2" Class="nv-muted mb-2">One clear, front-facing photo of one person. JPEG, PNG or WebP, up to 5 MB.</MudText>
+                        <FacePhotoInput @bind-Image="_image" />
+                        @if (_photoProblem is not null)
+                        {
+                            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2" role="alert" data-testid="photo-problem">@_photoProblem</MudAlert>
+                        }
+                    </div>
+
+                    @if (_error is not null)
+                    {
+                        <ErrorState Error="_error" />
+                    }
+
+                    <div>
+                        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_busy || _image is null)" data-testid="enroll-submit">
+                            @(_busy ? "Registering…" : "Register person")
+                        </MudButton>
+                    </div>
+                </div>
+            </EditForm>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" lg="5">
+        <div aria-live="polite" data-testid="enroll-result">
+            @if (_result is not null)
+            {
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+                    <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Class="mb-3">
+                        @(_result.ProfileCreated ? "The person was registered." : "Another photo was added to an existing person.")
+                    </MudAlert>
+                    <DetailList Items="ResultItems()" />
+                    <div class="mt-3"><ChargeSummary Credits="_result.Credits" ElapsedMs="_elapsedMs" /></div>
+                    <MudLink Href="@($"client/profiles/{_result.ProfileId}")" Class="mt-3 d-inline-block">View this person</MudLink>
+                </MudPaper>
+            }
+        </div>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private readonly EnrollForm _form = new();
+    private CapturedImage? _image;
+    private bool _busy;
+    private string? _photoProblem;
+    private ApiError? _error;
+    private EnrollFaceResponse? _result;
+    private int? _templateCount;
+    private long _elapsedMs;
+
+    private async Task SubmitAsync()
+    {
+        _photoProblem = PhotoGuard.Check(_image);
+        if (_photoProblem is not null)
+        {
+            return;
+        }
+
+        var image = _image!;
+        _busy = true;
+        _error = null;
+        _result = null;
+        _templateCount = null;
+        try
+        {
+            var started = System.Diagnostics.Stopwatch.GetTimestamp();
+            var result = await Api.EnrollAsync(_form.ToRequest(), image, PhotoGuard.NewIdempotencyKey());
+            _elapsedMs = (long)System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            if (result.IsSuccess)
+            {
+                _result = result.Value;
+                Snackbar.Success(result.Value.ProfileCreated ? "The person was registered." : "The photo was added.");
+                var profile = await Api.GetProfileAsync(result.Value.ProfileId);
+                _templateCount = profile.IsSuccess ? profile.Value.TemplateCount : null;
+                _form.ExternalRef = string.Empty;
+                _form.DisplayName = null;
+                _form.ConsentReference = string.Empty;
+                _form.Metadata = null;
+            }
+            else
+            {
+                _error = result.Error;
+                Snackbar.Error(result.Error!);
+            }
+        }
+        finally
+        {
+            PhotoGuard.Forget(image);
+            _image = null;
+            _busy = false;
+        }
+    }
+
+    private IReadOnlyList<DetailItem> ResultItems() =>
+    [
+        new("Photo quality", _result!.Quality.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)),
+        new("Photos registered for this person", _templateCount is { } n ? UiText.Number(n) : null),
+    ];
+}

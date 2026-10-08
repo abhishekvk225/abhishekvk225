@@ -1,0 +1,87 @@
+@page "/client/license/{Id:guid}"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.LicenseRead)]
+@inject IClientLicenseApiClient Api
+
+<PageTitle>@(_result is { IsSuccess: true } ? _result.Value.Name : "License") · NexaVerify</PageTitle>
+
+<PageState T="LicenseDto" Result="_result" OnRetry="LoadAsync">
+    <Loading><SkeletonCard Lines="4" /></Loading>
+    <ChildContent Context="license">
+        <PageHeader Title="@license.Name" Subtitle="Credits and how they were used." Breadcrumbs="Crumbs(license)">
+            <Actions><StatusChip Kind="StatusKind.License" Value="@license.EffectiveStatus" /></Actions>
+        </PageHeader>
+
+        <MudGrid Spacing="3">
+            <MudItem xs="12" lg="5">
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0" Style="height: 100%;">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-4">Credits</MudText>
+                    <LicenseGauge Remaining="license.RemainingCredits" Total="license.TotalCredits" ExpiresAt="@(new DateTimeOffset(DateTime.SpecifyKind(license.ExpiresAt, DateTimeKind.Utc)))" />
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" lg="7">
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0" Style="height: 100%;">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Details</MudText>
+                    <DetailList Items="DetailItems(license)" />
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12">
+                <MudPaper Class="nv-card" Elevation="0">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="pa-4 pb-0">Credit history</MudText>
+                    <DataTable T="LicenseTransactionDto" Caption="Credit history" Columns="_columns" LoadData="p => Api.GetTransactionsAsync(license.Id, p)" PageSize="25" DefaultSort="createdAt:desc"
+                               EmptyMessage="No credits have been used yet." />
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    </ChildContent>
+</PageState>
+
+@code {
+    private ApiResult<LicenseDto>? _result;
+    private IReadOnlyList<DataColumn<LicenseTransactionDto>> _columns = [];
+
+    [Parameter] public Guid Id { get; set; }
+
+    protected override void OnInitialized() =>
+        _columns =
+        [
+            DataColumn<LicenseTransactionDto>.Text("When (UTC)", t => t.CreatedAt.ToString("d MMM yyyy, HH:mm", System.Globalization.CultureInfo.InvariantCulture)),
+            DataColumn<LicenseTransactionDto>.Text("What happened", t => Describe(t.Type)),
+            DataColumn<LicenseTransactionDto>.Text("Credits", t => t.Credits > 0 ? $"+{UiText.Number(t.Credits)}" : UiText.Number(t.Credits), numeric: true),
+            DataColumn<LicenseTransactionDto>.Text("Balance after", t => UiText.Number(t.BalanceAfter), numeric: true),
+            DataColumn<LicenseTransactionDto>.Text("For", t => t.Operation),
+            DataColumn<LicenseTransactionDto>.Text("Note", t => t.Reason),
+        ];
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _result = null;
+        _result = await Api.GetAsync(Id);
+    }
+
+    private static string Describe(string type) => type switch
+    {
+        "Consume" => "Used",
+        "Refund" => "Refunded",
+        "Adjustment" => "Adjusted",
+        "Grant" => "Credits added",
+        "Renewal" => "Renewed",
+        "ExpiryWriteOff" => "Expired credits removed",
+        "Revocation" => "License ended",
+        _ => type,
+    };
+
+    private static List<BreadcrumbItem> Crumbs(LicenseDto l) => [new("License and usage", "client/license"), new(l.Name, null, true)];
+
+    private static string Day(DateTime value) => value.ToString("d MMM yyyy", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static IReadOnlyList<DetailItem> DetailItems(LicenseDto l) =>
+    [
+        new("Plan", l.PlanName),
+        new("Starts", Day(l.StartsAt)),
+        new("Expires", $"{Day(l.ExpiresAt)} ({UiText.Plural(Math.Max(0, l.DaysRemaining), "day")} left)"),
+        new("Used", $"{UiText.Number(l.ConsumedCredits)} of {UiText.Number(l.TotalCredits)} credits ({l.UtilisationPercent}%)"),
+        new("License key", l.LicenseKey),
+    ];
+}

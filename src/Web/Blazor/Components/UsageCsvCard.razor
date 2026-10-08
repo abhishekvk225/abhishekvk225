@@ -1,0 +1,48 @@
+@inject TimeProvider Clock
+
+<MudPaper Class="nv-card nv-card-pad" Elevation="0" Style="height: 100%;" data-testid="usage-csv-card">
+    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-1">@Title</MudText>
+    <MudText Typo="Typo.body2" Class="nv-muted mb-4">@Description Up to @MaxDays days at a time.</MudText>
+    <MudGrid Spacing="2">
+        <MudItem xs="12" sm="6"><MudDatePicker Label="From" @bind-Date="_from" Variant="Variant.Outlined" Editable="true" MaxDate="_to" /></MudItem>
+        <MudItem xs="12" sm="6"><MudDatePicker Label="To" @bind-Date="_to" Variant="Variant.Outlined" Editable="true" MinDate="_from" /></MudItem>
+    </MudGrid>
+    @if (RangeProblem is { } problem)
+    {
+        <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3" role="alert" data-testid="range-problem">@problem</MudAlert>
+    }
+    <div class="mt-4">
+        @* A normal link: the portal fetches the file from the API on the server and streams it, so no token ever reaches the browser. *@
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Download" Href="@DownloadHref" data-enhance-nav="false" download="usage-report.csv"
+                   Disabled="@(RangeProblem is not null)" data-testid="download-csv">Download CSV</MudButton>
+    </div>
+</MudPaper>
+
+@code {
+    private DateTime? _from;
+    private DateTime? _to;
+
+    /// <summary>Portal (BFF) path that relays the CSV, e.g. <c>bff/client/reports/usage.csv</c>.</summary>
+    [Parameter, EditorRequired] public string DownloadPath { get; set; } = string.Empty;
+
+    [Parameter] public string Title { get; set; } = "Usage report (CSV)";
+
+    [Parameter] public string Description { get; set; } = "Daily usage you can open in Excel or any spreadsheet.";
+
+    [Parameter] public int MaxDays { get; set; } = 92;
+
+    protected override void OnInitialized()
+    {
+        var today = Clock.GetUtcNow().UtcDateTime.Date;
+        _to = today;
+        _from = today.AddDays(-29);
+    }
+
+    private string? RangeProblem =>
+        _from is null || _to is null ? "Choose both dates."
+        : _from > _to ? "The start date must be before the end date."
+        : (_to.Value - _from.Value).TotalDays >= MaxDays ? $"Choose at most {MaxDays} days."
+        : null;
+
+    private string DownloadHref => $"{DownloadPath}?from={_from:yyyy-MM-dd}&to={_to:yyyy-MM-dd}";
+}

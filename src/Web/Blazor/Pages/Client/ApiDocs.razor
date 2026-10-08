@@ -1,0 +1,122 @@
+@page "/client/api-docs"
+
+<PageTitle>API guide · NexaVerify</PageTitle>
+
+<PageHeader Title="API guide" Subtitle="Connect your own software to NexaVerify. All examples use placeholders: never paste a real key into code you share." />
+
+<MudPaper Class="nv-card nv-card-pad mb-4" Elevation="0">
+    <nav aria-label="On this page">
+        <MudText Typo="Typo.overline" HtmlTag="h2" Class="nv-muted">On this page</MudText>
+        <ul class="ma-0 pl-5">
+            <li><a href="client/api-docs#authentication">Signing your requests</a></li>
+            @foreach (var endpoint in ApiDocsContent.Endpoints)
+            {
+                <li><a href="@($"client/api-docs#{endpoint.Id}")">@endpoint.Title</a></li>
+            }
+            <li><a href="client/api-docs#errors">Errors</a></li>
+            <li><a href="client/api-docs#limits">Rate limits</a></li>
+            <li><a href="client/api-docs#idempotency">Safe retries</a></li>
+            <li><a href="client/api-docs#webhooks">Webhooks</a></li>
+        </ul>
+    </nav>
+</MudPaper>
+
+<div class="d-flex flex-column" style="gap: var(--nv-space-4);">
+    <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+        <MudText Typo="Typo.h4" HtmlTag="h2" id="authentication" Class="mb-2">Signing your requests</MudText>
+        <MudText Typo="Typo.body1" Class="mb-3">
+            Create a key on the <MudLink Href="client/api-keys">API keys</MudLink> page and send it in the <code>X-Api-Key</code> header of every request.
+            Keep keys on your server, never in a web page or mobile app. Every address below starts with your NexaVerify API address, shown here as <code>@ApiDocsContent.BaseUrlPlaceholder</code>.
+        </MudText>
+        <CodeSample Title="Example request" Code="@("curl \"" + ApiDocsContent.BaseUrlPlaceholder + "/faces/balance\" -H \"X-Api-Key: YOUR_API_KEY\"")" />
+    </MudPaper>
+
+    @foreach (var endpoint in ApiDocsContent.Endpoints)
+    {
+        <MudPaper Class="nv-card nv-card-pad" Elevation="0" data-testid="@($"doc-{endpoint.Id}")">
+            <MudText Typo="Typo.h4" HtmlTag="h2" id="@endpoint.Id" Class="mb-1">@endpoint.Title</MudText>
+            <MudText Typo="Typo.body2" Class="nv-muted mb-2"><code>@endpoint.Method @endpoint.Path</code> · key needs <code>@endpoint.Permission</code></MudText>
+            <MudText Typo="Typo.body1" Class="mb-3">@endpoint.Summary</MudText>
+            <MudTabs Elevation="0" Rounded="true" TabPanelsClass="pt-3" KeepPanelsAlive="true">
+                @foreach (var sample in endpoint.Samples)
+                {
+                    <MudTabPanel Text="@sample.Language"><CodeSample Title="@($"{endpoint.Title} ({sample.Language})")" Code="@sample.Code" /></MudTabPanel>
+                }
+            </MudTabs>
+        </MudPaper>
+    }
+
+    <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+        <MudText Typo="Typo.h4" HtmlTag="h2" id="errors" Class="mb-2">Errors</MudText>
+        <MudText Typo="Typo.body1" Class="mb-3">
+            When something goes wrong you get an HTTP error status and a JSON body with a stable <code>code</code>, a short <code>detail</code> and a <code>correlationId</code>.
+            Quote the correlation id if you contact support.
+        </MudText>
+        <CodeSample Title="Example error" Code="@ApiDocsContent.ErrorExample.Code" />
+        <div class="nv-table-wrap">
+            <table class="nv-table nv-dense" aria-label="Error codes" data-testid="error-codes">
+                <thead><tr><th scope="col">Code</th><th scope="col">What it means</th></tr></thead>
+                <tbody>
+                    @foreach (var error in ApiDocsContent.ErrorCodeList)
+                    {
+                        <tr><td><code>@error.Code</code></td><td>@error.Meaning</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </MudPaper>
+
+    <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+        <MudText Typo="Typo.h4" HtmlTag="h2" id="limits" Class="mb-2">Rate limits</MudText>
+        <MudText Typo="Typo.body1" Class="mb-3">
+            Each key may make a limited number of requests per minute, and your account has a daily allowance. Responses carry <code>X-RateLimit-Limit</code>,
+            <code>X-RateLimit-Remaining</code> and <code>X-RateLimit-Reset</code>. When you go over, you get status <code>429</code> with a <code>Retry-After</code> header
+            telling you how many seconds to wait. Wait that long, then try again.
+        </MudText>
+        <CodeSample Title="Retry politely (JavaScript)" Code="@ApiDocsContent.RetrySample.Code" />
+    </MudPaper>
+
+    <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+        <MudText Typo="Typo.h4" HtmlTag="h2" id="idempotency" Class="mb-2">Safe retries</MudText>
+        <MudText Typo="Typo.body1">
+            Registering and checking faces uses credits. Send an <code>Idempotency-Key</code> header (any unique text up to 100 characters, such as a UUID) with each of these calls.
+            If a request times out and you send it again with the same key within 24 hours, you get the original answer back
+            (marked with <code>Idempotent-Replayed: true</code>) and you are not charged twice. Use a new key for each new check.
+        </MudText>
+    </MudPaper>
+
+    <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+        <MudText Typo="Typo.h4" HtmlTag="h2" id="webhooks" Class="mb-2">Webhooks</MudText>
+        <MudText Typo="Typo.body1" Class="mb-3">
+            Add an https address on the <MudLink Href="client/webhooks">Webhooks</MudLink> page and we send it a <code>POST</code> with a JSON body whenever one of your chosen events happens.
+            Reply with any <code>2xx</code> status to confirm; otherwise we try again a few times.
+        </MudText>
+        <CodeSample Title="Event body" Code="@ApiDocsContent.WebhookPayloadExample" />
+
+        <MudText Typo="Typo.h5" HtmlTag="h3" Class="mt-4 mb-2">Events</MudText>
+        <div class="nv-table-wrap">
+            <table class="nv-table nv-dense" aria-label="Webhook events" data-testid="event-catalogue">
+                <thead><tr><th scope="col">Event</th><th scope="col">When it is sent</th></tr></thead>
+                <tbody>
+                    @foreach (var item in ApiDocsContent.Events)
+                    {
+                        <tr><td><code>@item.Type</code></td><td>@item.Description</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <MudText Typo="Typo.h5" HtmlTag="h3" Class="mt-4 mb-2">Check that an event really came from us</MudText>
+        <MudText Typo="Typo.body1" Class="mb-3">
+            Every event has an <code>X-Signature</code> header like <code>t=1760000000,v1=9f2c…</code>. Compute an HMAC-SHA256 of the text <code>t + "." + body</code> using your signing secret
+            (shown once when you add the endpoint) and compare it with <code>v1</code> in constant time. Also reject events whose <code>t</code> is more than a few minutes old.
+            Always use the raw body exactly as received.
+        </MudText>
+        <MudTabs Elevation="0" Rounded="true" TabPanelsClass="pt-3" KeepPanelsAlive="true">
+            @foreach (var sample in ApiDocsContent.WebhookVerification)
+            {
+                <MudTabPanel Text="@sample.Language"><CodeSample Title="@($"Verify a signature ({sample.Language})")" Code="@sample.Code" /></MudTabPanel>
+            }
+        </MudTabs>
+    </MudPaper>
+</div>

@@ -1,0 +1,141 @@
+@page "/client/webhooks"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.WebhooksManage)]
+@inject IWebhooksApiClient Api
+@inject IDialogService Dialogs
+@inject IAppSnackbar Snackbar
+
+<PageTitle>Webhooks · NexaVerify</PageTitle>
+
+<PageHeader Title="Webhooks" Subtitle="Have NexaVerify tell your software when something happens, such as a finished check or low credits.">
+    <Actions>
+        <MudButton Variant="Variant.Outlined" Href="client/api-docs#webhooks" StartIcon="@Icons.Material.Outlined.MenuBook">How to verify events</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Add" OnClick="CreateAsync" data-testid="create-webhook">Add endpoint</MudButton>
+    </Actions>
+</PageHeader>
+
+<MudPaper Class="nv-card" Elevation="0">
+    <DataTable @ref="_table" T="WebhookEndpointDto" Caption="Webhook endpoints" Columns="_columns" LoadData="LoadAsync" PageSize="25" PageSizeOptions="@([25, 50, 100])"
+               EmptyMessage="No endpoints yet. Add one to receive events in your own software.">
+        <RowActions Context="hook">
+            <MudButton Size="Size.Small" Variant="Variant.Text" Href="@($"client/webhooks/{hook.Id}")" aria-label="@($"Open {hook.Name}")">Open</MudButton>
+            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => EditAsync(hook)" aria-label="@($"Edit {hook.Name}")" data-testid="edit-webhook">Edit</MudButton>
+            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => ToggleAsync(hook)" aria-label="@($"{(IsOn(hook) ? "Turn off" : "Turn on")} {hook.Name}")" data-testid="toggle-webhook">@(IsOn(hook) ? "Turn off" : "Turn on")</MudButton>
+            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" OnClick="() => DeleteAsync(hook)" aria-label="@($"Delete {hook.Name}")" data-testid="delete-webhook">Delete</MudButton>
+        </RowActions>
+    </DataTable>
+</MudPaper>
+
+@code {
+    private DataTable<WebhookEndpointDto>? _table;
+    private IReadOnlyList<DataColumn<WebhookEndpointDto>> _columns = [];
+    private IReadOnlyList<WebhookEventDto>? _events;
+
+    protected override void OnInitialized() =>
+        _columns =
+        [
+            DataColumn<WebhookEndpointDto>.Text("Name", h => h.Name),
+            DataColumn<WebhookEndpointDto>.Text("Address", h => h.Url),
+            DataColumn<WebhookEndpointDto>.Custom("Status", h => @<StatusChip Kind="StatusKind.Webhook" Value="@h.Status" />),
+            DataColumn<WebhookEndpointDto>.Text("Events", h => UiText.Number(h.Events.Count), numeric: true),
+            DataColumn<WebhookEndpointDto>.Text("Recent failures", h => UiText.Number(h.FailureCount), numeric: true),
+        ];
+
+    private static bool IsOn(WebhookEndpointDto hook) => string.Equals(hook.Status, "Active", StringComparison.OrdinalIgnoreCase);
+
+    private async Task<ApiResult<PagedResult<WebhookEndpointDto>>> LoadAsync(PageRequest _) => (await Api.ListAsync()).AsPage();
+
+    private async Task<IReadOnlyList<WebhookEventDto>?> LoadEventsAsync()
+    {
+        if (_events is not null)
+        {
+            return _events;
+        }
+
+        var events = await Api.EventsAsync();
+        if (!events.IsSuccess)
+        {
+            Snackbar.Error(events.Error!);
+            return null;
+        }
+
+        return _events = events.Value;
+    }
+
+    private async Task CreateAsync()
+    {
+        if (await LoadEventsAsync() is not { } events)
+        {
+            return;
+        }
+
+        string? secret = null;
+        var saved = await Dialogs.ShowFormAsync(
+            "Add a webhook endpoint", new WebhookForm(), m => @<WebhookFields Model="m" Events="events" />,
+            async m =>
+            {
+                var result = await Api.CreateAsync(m.ToCreate());
+                if (result.IsSuccess)
+                {
+                    secret = result.Value.Secret;
+                }
+
+                return result.ToFormError();
+            },
+            "Add endpoint");
+        if (saved is not null)
+        {
+            await RevealAsync(secret);
+            secret = null;
+            await ReloadAsync();
+        }
+    }
+
+    private async Task EditAsync(WebhookEndpointDto hook)
+    {
+        if (await LoadEventsAsync() is not { } events)
+        {
+            return;
+        }
+
+        var saved = await Dialogs.ShowFormAsync(
+            "Edit webhook endpoint", WebhookForm.From(hook), m => @<WebhookFields Model="m" Events="events" ShowEnabled="true" />,
+            async m => (await Api.UpdateAsync(hook.Id, m.ToUpdate())).ToFormError(),
+            "Save changes");
+        if (saved is not null)
+        {
+            Snackbar.Success("The endpoint was updated.");
+            await ReloadAsync();
+        }
+    }
+
+    private async Task ToggleAsync(WebhookEndpointDto hook)
+    {
+        var form = WebhookForm.From(hook);
+        form.Enabled = !IsOn(hook);
+        if ((await Api.UpdateAsync(hook.Id, form.ToUpdate())).Report(Snackbar, form.Enabled ? "The endpoint is on." : "The endpoint is off."))
+        {
+            await ReloadAsync();
+        }
+    }
+
+    private async Task DeleteAsync(WebhookEndpointDto hook)
+    {
+        var confirmed = await Dialogs.ConfirmAsync(
+            $"Delete {hook.Name}?", "Events stop being sent to this address and its delivery history is removed. This cannot be undone.", "Delete endpoint", destructive: true);
+        if (confirmed is not null && (await Api.DeleteAsync(hook.Id)).Report(Snackbar, "The endpoint was deleted."))
+        {
+            await ReloadAsync();
+        }
+    }
+
+    private async Task RevealAsync(string? secret)
+    {
+        if (secret is not null)
+        {
+            await Dialogs.RevealSecretAsync("Your signing secret", secret,
+                "Use this secret to check that events really come from NexaVerify. Copy it now: it is shown only once and cannot be shown again.");
+        }
+    }
+
+    private Task ReloadAsync() => _table is null ? Task.CompletedTask : _table.ReloadAsync();
+}

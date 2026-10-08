@@ -36,6 +36,9 @@ public sealed record ApiCallOptions
     /// </summary>
     public string? ClientIp { get; init; }
 
+    /// <summary>Extra request headers (for example <c>Idempotency-Key</c>). Never used for credentials.</summary>
+    public IReadOnlyDictionary<string, string>? Headers { get; init; }
+
     public static ApiCallOptions None { get; } = new() { Anonymous = true };
 }
 
@@ -132,9 +135,22 @@ public sealed class ApiGateway(IHttpClientFactory httpClients, ICurrentSession c
     {
         options ??= new ApiCallOptions();
         using var request = new HttpRequestMessage(method, path.TrimStart('/'));
-        if (body is not null)
+        if (body is HttpContent content)
+        {
+            // Multipart uploads: the caller built the content; it is disposed with the request.
+            request.Content = content;
+        }
+        else if (body is not null)
         {
             request.Content = JsonContent.Create(body, body.GetType(), options: Json);
+        }
+
+        if (options.Headers is not null)
+        {
+            foreach (var (name, value) in options.Headers)
+            {
+                request.Headers.TryAddWithoutValidation(name, value);
+            }
         }
 
         if (!string.IsNullOrEmpty(options.ClientIp))

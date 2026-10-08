@@ -1,0 +1,63 @@
+@page "/client/notifications"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.NotificationsRead)]
+@inject INotificationsApiClient Api
+@inject NotificationState State
+@inject IAppSnackbar Snackbar
+
+<PageTitle>Notifications · NexaVerify</PageTitle>
+
+<PageHeader Title="Notifications" Subtitle="Alerts about your credits, license and integrations.">
+    <Actions>
+        <MudSwitch T="bool" Value="_unreadOnly" ValueChanged="OnUnreadOnly" Label="Unread only" Color="Color.Primary" data-testid="unread-only" />
+    </Actions>
+</PageHeader>
+
+<MudPaper Class="nv-card" Elevation="0">
+    <DataTable @ref="_table" @key="_unreadOnly" T="NotificationDto" Caption="Notifications" Columns="_columns" PageSize="25" LoadData="LoadAsync"
+               EmptyMessage="@(_unreadOnly ? "You have read everything." : "No notifications yet. We will tell you here if your credits run low or a license is about to end.")">
+        <RowActions Context="item">
+            @if (!item.IsRead)
+            {
+                <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => MarkReadAsync(item)" aria-label="@($"Mark {item.Title} as read")" data-testid="mark-read">Mark as read</MudButton>
+            }
+        </RowActions>
+    </DataTable>
+</MudPaper>
+
+@code {
+    private DataTable<NotificationDto>? _table;
+    private IReadOnlyList<DataColumn<NotificationDto>> _columns = [];
+    private bool _unreadOnly;
+
+    protected override void OnInitialized() =>
+        _columns =
+        [
+            DataColumn<NotificationDto>.Custom("Importance", n => @<StatusChip Kind="StatusKind.Notification" Value="@n.Severity" />),
+            DataColumn<NotificationDto>.Custom("Message", n => @<div class="@(n.IsRead ? null : "nv-unread")"><div>@n.Title</div><MudText Typo="Typo.body2" Class="nv-muted">@n.Message</MudText></div>),
+            DataColumn<NotificationDto>.Text("When (UTC)", n => n.CreatedAt.ToString("d MMM yyyy, HH:mm", System.Globalization.CultureInfo.InvariantCulture)),
+            DataColumn<NotificationDto>.Text("Status", n => n.IsRead ? "Read" : "Unread"),
+        ];
+
+    private void OnUnreadOnly(bool on) => _unreadOnly = on;
+
+    private async Task<ApiResult<PagedResult<NotificationDto>>> LoadAsync(PageRequest page)
+    {
+        var feed = await Api.ListAsync(new NotificationListQuery { Page = page.Page, PageSize = page.PageSize, UnreadOnly = _unreadOnly });
+        if (!feed.IsSuccess)
+        {
+            return ApiResult<PagedResult<NotificationDto>>.Fail(feed.Error!);
+        }
+
+        State.Set(feed.Value.UnreadCount);
+        return ApiResult<PagedResult<NotificationDto>>.Ok(feed.Value.Notifications);
+    }
+
+    private async Task MarkReadAsync(NotificationDto item)
+    {
+        var result = await Api.MarkReadAsync(item.Id);
+        if (result.Report(Snackbar, "Marked as read.") && _table is not null)
+        {
+            await _table.ReloadAsync(); // also refreshes the unread count shown in the bell
+        }
+    }
+}

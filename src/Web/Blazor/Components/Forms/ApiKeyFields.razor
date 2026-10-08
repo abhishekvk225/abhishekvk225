@@ -1,0 +1,40 @@
+@using NexaVerify.Contracts.Api
+
+@* API key form. The list of permissions comes from the API (only face recognition operations can be given to a key). *@
+<div class="nv-form" data-testid="api-key-fields">
+    <MudTextField T="string" @bind-Value="Model.Name" For="() => Model.Name" Label="Key name" Variant="Variant.Outlined" Immediate="true" MaxLength="100"
+                  HelperText="So you can tell your keys apart, for example &quot;Front desk kiosk&quot;." />
+    <fieldset class="nv-fieldset">
+        <legend class="mud-typography mud-typography-subtitle2">What this key may do</legend>
+        @foreach (var scope in Scopes)
+        {
+            var key = scope.Key;
+            <MudCheckBox T="bool" Value="Model.Scopes.Contains(key)" ValueChanged="@(on => Toggle(key, on))" Label="@scope.Description" Color="Color.Primary" />
+        }
+        <ValidationMessage For="() => Model.Scopes" />
+    </fieldset>
+    <MudDatePicker Date="Model.ExpiresOn" DateChanged="@(d => Model.ExpiresOn = d)" Label="Expires on (optional)" Variant="Variant.Outlined" Editable="true" Clearable="true"
+                   HelperText="Leave empty for a key that does not expire." />
+    <MudNumericField T="int?" @bind-Value="Model.RateLimitPerMinute" For="() => Model.RateLimitPerMinute" Label="Requests per minute (optional)" Variant="Variant.Outlined" Min="1" Max="100000"
+                     HelperText="Leave empty to use your plan's limit." />
+    <MudTextField T="string" @bind-Value="Model.AllowedIpsText" For="() => Model.AllowedIpsText" Label="Allowed IP addresses (optional)" Variant="Variant.Outlined" Immediate="true" Lines="3"
+                  HelperText="One address or range per line, such as 203.0.113.7 or 203.0.113.0/24. Empty means any address." />
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ApiKeyForm Model { get; set; } = default!;
+
+    [Parameter, EditorRequired] public IReadOnlyList<ApiScopeDto> Scopes { get; set; } = [];
+
+    private void Toggle(string key, bool on)
+    {
+        if (on)
+        {
+            Model.Scopes.Add(key);
+        }
+        else
+        {
+            Model.Scopes.Remove(key);
+        }
+    }
+}
