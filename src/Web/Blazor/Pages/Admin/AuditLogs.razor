@@ -1,0 +1,31 @@
+@page "/admin/audit"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.AuditRead)]
+
+<PageTitle>Audit logs · Admin · NexaVerify</PageTitle>
+
+<PageHeader Title="Audit logs" Subtitle="Who did what, and when, for one client at a time." />
+
+<MudPaper Class="nv-card nv-card-pad mb-4" Elevation="0">
+    <div style="max-width: 480px;">
+        <ClientPicker Label="Choose a client" Value="_client" ValueChanged="OnClientChanged" HelperText="Start typing a name or code." />
+    </div>
+</MudPaper>
+
+@if (_client is null)
+{
+    <MudPaper Class="nv-card" Elevation="0">
+        <EmptyState Icon="@Icons.Material.Outlined.History" Title="Pick a client to see its audit trail"
+                    Message="The trail lists changes to the account, licenses and users, and every sign-in attempt." />
+    </MudPaper>
+}
+else
+{
+    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-2" data-testid="audit-client">@_client.Name</MudText>
+    <ClientAuditPanel @key="_client.Id" ClientId="_client.Id" />
+}
+
+@code {
+    private NexaVerify.Contracts.Tenancy.ClientListItemDto? _client;
+
+    private void OnClientChanged(NexaVerify.Contracts.Tenancy.ClientListItemDto? client) => _client = client;
+}

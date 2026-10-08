@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.CookiePolicy;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Http;
 using MudBlazor.Services;
 using NexaVerify.Web;
@@ -36,25 +37,52 @@ builder.Services.AddScoped<DashboardRangeState>();
 builder.Services.AddScoped<IClipboardService, ClipboardService>();
 builder.Services.AddScoped<IAppSnackbar, AppSnackbar>();
 
-// UI-1 stubs: they accept any password, so they exist ONLY for local development / the UI demo environment.
-// Anywhere else the app refuses to start until the BFF-backed API clients replace them.
-if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("UiDemo"))
-{
-    builder.Services.AddScoped<IAuthApiClient, StubAuthApiClient>();
-    builder.Services.AddScoped<IDashboardApiClient, StubDashboardApiClient>();
-}
-else
-{
-    throw new InvalidOperationException(
-        "The portal's API clients are not wired yet. Run in Development/UiDemo, or provide the real IAuthApiClient/IDashboardApiClient implementations.");
-}
+// BFF: server-side sessions, the opaque cookie, typed API clients. Stub clients are opt-in (Ui:UseStubClients) and refused outside
+// Development/UiDemo; every other environment must have a valid https Api:BaseUrl or the app does not start.
+builder.Services.AddPortalBff(builder.Configuration, builder.Environment);
 
 if (builder.Environment.IsProduction() && builder.Configuration["AllowedHosts"] is null or "" or "*")
 {
     throw new InvalidOperationException("AllowedHosts must list the real host names in Production ('*' disables host-header validation).");
 }
 
+// Behind a TLS-terminating proxy the real client address and scheme arrive in X-Forwarded-* headers. Only proxies you list are trusted.
+var forwarded = builder.Configuration.GetSection("ForwardedHeaders");
+var forwardedEnabled = forwarded.GetValue<bool>("Enabled");
+if (forwardedEnabled)
+{
+    var proxies = forwarded.GetSection("KnownProxies").Get<string[]>() ?? [];
+    var networks = forwarded.GetSection("KnownNetworks").Get<string[]>() ?? [];
+    if (proxies.Length == 0 && networks.Length == 0)
+    {
+        throw new InvalidOperationException("ForwardedHeaders:Enabled requires ForwardedHeaders:KnownProxies and/or KnownNetworks. Trusting every sender would allow IP and scheme spoofing.");
+    }
+
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+        options.ForwardLimit = forwarded.GetValue<int?>("ForwardLimit") ?? 1;
+        options.KnownIPNetworks.Clear();
+        options.KnownProxies.Clear();
+        foreach (var proxy in proxies)
+        {
+            options.KnownProxies.Add(System.Net.IPAddress.Parse(proxy));
+        }
+
+        foreach (var network in networks)
+        {
+            var parts = network.Split('/');
+            options.KnownIPNetworks.Add(new System.Net.IPNetwork(System.Net.IPAddress.Parse(parts[0]), int.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture)));
+        }
+    });
+}
+
 var app = builder.Build();
+
+if (forwardedEnabled)
+{
+    app.UseForwardedHeaders();
+}
 
 if (!app.Environment.IsDevelopment())
 {
@@ -72,10 +100,16 @@ app.UseCookiePolicy(new CookiePolicyOptions
 });
 
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+app.UseAuthentication();
+app.UseMiddleware<ForcePasswordChangeMiddleware>();
+app.UseAuthorization();
 app.UseAntiforgery();
 
 app.MapStaticAssets();
-app.MapGet("/", () => Results.Redirect("/login"));
+app.MapGet("/", (HttpContext http) =>
+    Results.Redirect(http.User.FindFirst(PortalClaims.Portal)?.Value is { } portal ? ReturnUrl.HomeFor(portal) : "/login"));
+app.MapPortalAuth();
+app.MapPortalDownloads();
 app.MapGet("/error", () => Results.Problem(title: "Something went wrong", statusCode: 500));
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 

@@ -1,0 +1,138 @@
+@using System.Text.Json
+@using NexaVerify.Contracts.Tenancy
+@inject IClientsApiClient Api
+@inject IAppSnackbar Snackbar
+
+<PageState T="IReadOnlyList<SettingDto>" Result="_result" OnRetry="LoadAsync" IsEmpty="@(s => s.Count == 0)" EmptyTitle="No settings" EmptyMessage="This client has no configurable settings.">
+    <ChildContent Context="settings">
+        <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+            <MudText Typo="Typo.body2" Class="nv-muted mb-4">
+                Settings marked "default" use the platform value. Changing one here overrides it for this client only.
+            </MudText>
+            <EditForm Model="_values" OnSubmit="SaveAsync" novalidate>
+                @foreach (var group in settings.GroupBy(s => s.Group))
+                {
+                    <fieldset class="nv-fieldset mb-4">
+                        <legend class="mud-typography mud-typography-subtitle2">@group.Key</legend>
+                        <div class="d-flex flex-column" style="gap: var(--nv-space-3);">
+                            @foreach (var setting in group)
+                            {
+                                var key = setting.Key;
+                                <div data-testid="@("setting-" + key)">
+                                    @switch (setting.Type)
+                                    {
+                                        case "Bool":
+                                            <MudSwitch T="bool" Value="@((bool)_values[key])" ValueChanged="@(v => _values[key] = v)" Label="@setting.Description" Color="Color.Primary" Disabled="!setting.Editable" />
+                                            break;
+                                        case "StringList":
+                                            <MudTextField T="string" Value="@((string)_values[key])" ValueChanged="@(v => _values[key] = v ?? string.Empty)" Lines="3" Label="@setting.Description"
+                                                          Variant="Variant.Outlined" Disabled="!setting.Editable" HelperText="One entry per line." Immediate="true" />
+                                            break;
+                                        default:
+                                            <MudNumericField T="decimal" Value="@((decimal)_values[key])" ValueChanged="@(v => _values[key] = v)" Label="@setting.Description" Variant="Variant.Outlined"
+                                                             Min="@(setting.Min ?? decimal.MinValue)" Max="@(setting.Max ?? decimal.MaxValue)" Disabled="!setting.Editable"
+                                                             HelperText="@Helper(setting)" />
+                                            break;
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </fieldset>
+                }
+                <div class="d-flex justify-end">
+                    <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy" data-testid="settings-save">
+                        @(_busy ? "Saving…" : "Save settings")
+                    </MudButton>
+                </div>
+            </EditForm>
+        </MudPaper>
+    </ChildContent>
+</PageState>
+
+@code {
+    private readonly Dictionary<string, object> _values = new(StringComparer.Ordinal);
+    private ApiResult<IReadOnlyList<SettingDto>>? _result;
+    private bool _busy;
+
+    [Parameter, EditorRequired] public Guid ClientId { get; set; }
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _result = null;
+        _result = await Api.GetSettingsAsync(ClientId);
+        if (_result.IsSuccess)
+        {
+            Reset(_result.Value);
+        }
+    }
+
+    private void Reset(IReadOnlyList<SettingDto> settings)
+    {
+        _values.Clear();
+        foreach (var s in settings)
+        {
+            _values[s.Key] = Read(s);
+        }
+    }
+
+    private static object Read(SettingDto s) => s.Type switch
+    {
+        "Bool" => s.Value.ValueKind == JsonValueKind.True,
+        "StringList" => s.Value.ValueKind == JsonValueKind.Array
+            ? string.Join('\n', s.Value.EnumerateArray().Select(e => e.GetString() ?? string.Empty))
+            : string.Empty,
+        _ => s.Value.ValueKind == JsonValueKind.Number && s.Value.TryGetDecimal(out var number) ? number : 0m,
+    };
+
+    private static string? Helper(SettingDto s) =>
+        s.Min is not null && s.Max is not null ? $"Between {s.Min:0.##} and {s.Max:0.##}" + (s.IsOverridden ? string.Empty : " · default") : (s.IsOverridden ? null : "default");
+
+    private async Task SaveAsync()
+    {
+        if (_result is not { IsSuccess: true })
+        {
+            return;
+        }
+
+        var changed = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        foreach (var setting in _result.Value.Where(s => s.Editable))
+        {
+            var current = _values[setting.Key];
+            if (Equals(current, Read(setting)))
+            {
+                continue;
+            }
+
+            changed[setting.Key] = setting.Type switch
+            {
+                "Bool" => JsonSerializer.SerializeToElement((bool)current),
+                "StringList" => JsonSerializer.SerializeToElement(((string)current).Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)),
+                "Int" => JsonSerializer.SerializeToElement((long)(decimal)current),
+                _ => JsonSerializer.SerializeToElement((decimal)current),
+            };
+        }
+
+        if (changed.Count == 0)
+        {
+            Snackbar.Info("Nothing to save: no settings were changed.");
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await Api.UpdateSettingsAsync(ClientId, new UpdateSettingsRequest(changed));
+            if (result.Report(Snackbar, "Settings saved."))
+            {
+                _result = result;
+                Reset(result.Value);
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

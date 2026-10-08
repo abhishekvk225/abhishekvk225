@@ -1,0 +1,141 @@
+@page "/admin/reports"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.ReportsRead)]
+@inject ILicensingApiClient Api
+@inject IAppSnackbar Snackbar
+@inject TimeProvider Clock
+
+<PageTitle>Reports · Admin · NexaVerify</PageTitle>
+
+<PageHeader Title="Reports" Subtitle="Download usage figures and check that credit records are intact." />
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" lg="6">
+        <MudPaper Class="nv-card nv-card-pad" Elevation="0" Style="height: 100%;">
+            <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-1">Usage report (CSV)</MudText>
+            <MudText Typo="Typo.body2" Class="nv-muted mb-4">Billed usage per day, client and operation. Opens in Excel or any spreadsheet. Up to @MaxDays days at a time.</MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="6"><MudDatePicker Label="From" @bind-Date="_from" Variant="Variant.Outlined" Editable="true" MaxDate="_to" /></MudItem>
+                <MudItem xs="12" sm="6"><MudDatePicker Label="To" @bind-Date="_to" Variant="Variant.Outlined" Editable="true" MinDate="_from" /></MudItem>
+            </MudGrid>
+            @if (RangeProblem is { } problem)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3" role="alert" data-testid="range-problem">@problem</MudAlert>
+            }
+            <div class="mt-4">
+                @* A normal link: the portal fetches the file from the API on the server and streams it, so no token ever reaches the browser. *@
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Download" Href="@DownloadHref" data-enhance-nav="false" download="usage-report.csv"
+                           Disabled="@(RangeProblem is not null)" data-testid="download-csv">Download CSV</MudButton>
+            </div>
+        </MudPaper>
+    </MudItem>
+
+    <Can Permission="@WebPermissions.LicensesVerifyLedger">
+        <MudItem xs="12" lg="6">
+            <MudPaper Class="nv-card nv-card-pad" Elevation="0" Style="height: 100%;">
+                <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-1">Credit records check</MudText>
+                <MudText Typo="Typo.body2" Class="nv-muted mb-4">
+                    Recomputes every license's credit history and balance to prove nothing was altered. It can take a while on large installations; a check also runs every night.
+                </MudText>
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.VerifiedUser" OnClick="VerifyAsync" Disabled="_verifying" data-testid="verify-ledgers">
+                    @if (_verifying)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        <span>Checking…</span>
+                    }
+                    else
+                    {
+                        <span>Run check now</span>
+                    }
+                </MudButton>
+                <div aria-live="polite" class="mt-4" data-testid="verify-result">
+                    @if (_error is not null)
+                    {
+                        <ErrorState Error="_error" Title="The check could not run" OnRetry="EventCallback.Factory.Create(this, VerifyAsync)" />
+                    }
+                    else if (_report is not null)
+                    {
+                        @if (_report.BrokenLicenses == 0)
+                        {
+                            <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" data-testid="verify-ok">
+                                All clear: @UiText.Number(_report.LicensesChecked) licenses and @UiText.Number(_report.EntriesChecked) credit entries checked, no problems found.
+                            </MudAlert>
+                        }
+                        else
+                        {
+                            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" data-testid="verify-broken">
+                                @UiText.Number(_report.BrokenLicenses) of @UiText.Number(_report.LicensesChecked) licenses failed the check. Investigate before any further adjustments.
+                            </MudAlert>
+                            <div class="nv-table-wrap mt-3">
+                                <table class="nv-table nv-dense" aria-label="Licenses that failed the check">
+                                    <thead><tr><th scope="col">License</th><th scope="col">First bad entry</th><th scope="col">What is wrong</th></tr></thead>
+                                    <tbody>
+                                        @foreach (var item in _report.Breaks)
+                                        {
+                                            <tr>
+                                                <td><MudLink Href="@($"admin/licenses/{item.LicenseId}")" Underline="Underline.Hover">Open license</MudLink></td>
+                                                <td>@(item.FirstBrokenEntryId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "Balance only")</td>
+                                                <td>@item.Reason</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        <MudText Typo="Typo.caption" Class="nv-muted mt-2 d-block">Finished @_report.CompletedAt.ToString("d MMM yyyy, HH:mm", System.Globalization.CultureInfo.InvariantCulture) UTC.</MudText>
+                    }
+                </div>
+            </MudPaper>
+        </MudItem>
+    </Can>
+</MudGrid>
+
+@code {
+    private const int MaxDays = 92;
+
+    private DateTime? _from;
+    private DateTime? _to;
+    private bool _verifying;
+    private LedgerVerificationReportDto? _report;
+    private ApiError? _error;
+
+    protected override void OnInitialized()
+    {
+        var today = Clock.GetUtcNow().UtcDateTime.Date;
+        _to = today;
+        _from = today.AddDays(-29);
+    }
+
+    private string? RangeProblem =>
+        _from is null || _to is null ? "Choose both dates."
+        : _from > _to ? "The start date must be before the end date."
+        : (_to.Value - _from.Value).TotalDays >= MaxDays ? $"Choose at most {MaxDays} days."
+        : null;
+
+    private string DownloadHref =>
+        $"bff/reports/usage.csv?from={_from:yyyy-MM-dd}&to={_to:yyyy-MM-dd}";
+
+    private async Task VerifyAsync()
+    {
+        _verifying = true;
+        _error = null;
+        try
+        {
+            var result = await Api.VerifyAllLedgersAsync();
+            if (result.IsSuccess)
+            {
+                _report = result.Value;
+                Snackbar.Success(result.Value.BrokenLicenses == 0 ? "The credit records check passed." : "The check found problems.");
+            }
+            else
+            {
+                _report = null;
+                _error = result.Error;
+                Snackbar.Error(result.Error!);
+            }
+        }
+        finally
+        {
+            _verifying = false;
+        }
+    }
+}

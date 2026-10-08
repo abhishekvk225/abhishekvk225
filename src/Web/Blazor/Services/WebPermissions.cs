@@ -1,72 +1,65 @@
+using NexaVerify.Contracts.Identity;
+
 namespace NexaVerify.Web.Services;
 
 /// <summary>
-/// Permission keys used to trim navigation. Mirrors the catalogue in docs/04 §3 (the API remains the only enforcement point).
-/// Replace with <c>Contracts.Permissions</c> once that exists.
+/// Short names for the permission catalogue in <c>Contracts.Identity.Permissions</c>, used to trim navigation and hide actions.
+/// Values are aliases of the contract constants so they cannot drift (the API remains the only enforcement point).
 /// </summary>
 public static class WebPermissions
 {
-    public const string ClientsRead = "clients.read";
-    public const string ClientsCreate = "clients.create";
-    public const string ClientsUpdate = "clients.update";
-    public const string ClientsManageStatus = "clients.manage-status";
-    public const string ClientsResetPassword = "clients.reset-password";
-    public const string ClientsSettings = "clients.settings";
+    public const string ClientsRead = Permissions.Clients.Read;
+    public const string ClientsCreate = Permissions.Clients.Create;
+    public const string ClientsUpdate = Permissions.Clients.Update;
+    public const string ClientsManageStatus = Permissions.Clients.ManageStatus;
+    public const string ClientsResetPassword = Permissions.Clients.ResetPassword;
+    public const string ClientsSettings = Permissions.Clients.Settings;
 
-    public const string LicensesRead = "licenses.read";
-    public const string LicensesCreate = "licenses.create";
-    public const string LicensesUpdate = "licenses.update";
-    public const string LicensesManageStatus = "licenses.manage-status";
-    public const string LicensesRenew = "licenses.renew";
-    public const string LicensesAdjust = "licenses.adjust";
-    public const string LicensesCostRules = "licenses.cost-rules";
+    public const string LicensesRead = Permissions.Licenses.Read;
+    public const string LicensesCreate = Permissions.Licenses.Create;
+    public const string LicensesUpdate = Permissions.Licenses.Update;
+    public const string LicensesManageStatus = Permissions.Licenses.ManageStatus;
+    public const string LicensesRenew = Permissions.Licenses.Renew;
+    public const string LicensesAdjust = Permissions.Licenses.Adjust;
+    public const string LicensesCostRules = Permissions.Licenses.CostRules;
+    public const string LicensesVerifyLedger = Permissions.Licenses.VerifyLedger;
 
-    public const string PlansManage = "plans.manage";
-    public const string DashboardAdmin = "dashboard.admin";
-    public const string DashboardClient = "dashboard.client";
-    public const string ReportsRead = "reports.read";
-    public const string AuditRead = "audit.read";
-    public const string AuditReadClient = "audit.read.client";
-    public const string SystemConfigure = "system.configure";
-    public const string RolesManage = "roles.manage";
-    public const string UsersPlatformManage = "users.platform-manage";
-    public const string UsersManage = "users.manage";
+    public const string PlansManage = Permissions.Plans.Manage;
+    public const string DashboardAdmin = Permissions.Dashboard.Admin;
+    public const string DashboardClient = Permissions.Dashboard.Client;
+    public const string ReportsRead = Permissions.Reports.Read;
+    public const string AuditRead = Permissions.Audit.Read;
+    public const string AuditReadClient = Permissions.Audit.ReadClient;
+    public const string SystemConfigure = Permissions.System.Configure;
+    public const string RolesManage = Permissions.RolesAdmin.Manage;
+    public const string UsersPlatformManage = Permissions.Users.PlatformManage;
+    public const string UsersManage = Permissions.Users.Manage;
 
-    public const string ClientProfileRead = "client.profile.read";
-    public const string ClientProfileUpdate = "client.profile.update";
-    public const string LicenseRead = "license.read";
-    public const string UsageRead = "usage.read";
-    public const string ApiKeysRead = "apikeys.read";
-    public const string ApiKeysManage = "apikeys.manage";
-    public const string ApiLogsRead = "apilogs.read";
-    public const string SettingsRecognition = "settings.recognition";
-    public const string SettingsNotifications = "settings.notifications";
-    public const string SettingsSecurity = "settings.security";
-    public const string WebhooksManage = "webhooks.manage";
-    public const string NotificationsRead = "notifications.read";
+    public const string ClientProfileRead = Permissions.ClientProfile.Read;
+    public const string ClientProfileUpdate = Permissions.ClientProfile.Update;
+    public const string LicenseRead = Permissions.LicenseView.Read;
+    public const string UsageRead = Permissions.Usage.Read;
+    public const string ApiKeysRead = Permissions.ApiKeys.Read;
+    public const string ApiKeysManage = Permissions.ApiKeys.Manage;
+    public const string ApiLogsRead = Permissions.ApiLogs.Read;
+    public const string SettingsRecognition = Permissions.Settings.Recognition;
+    public const string SettingsNotifications = Permissions.Settings.Notifications;
+    public const string SettingsSecurity = Permissions.Settings.Security;
+    public const string WebhooksManage = Permissions.Webhooks.Manage;
+    public const string NotificationsRead = Permissions.Notifications.Read;
 
-    public const string FacesEnroll = "faces.enroll";
-    public const string FacesVerify = "faces.verify";
-    public const string FacesIdentify = "faces.identify";
-    public const string FacesDetect = "faces.detect";
-    public const string FacesRead = "faces.read";
-    public const string FacesManage = "faces.manage";
-    public const string FacesErase = "faces.erase";
-    public const string FacesHistory = "faces.history";
+    public const string FacesEnroll = Permissions.Faces.Enroll;
+    public const string FacesVerify = Permissions.Faces.Verify;
+    public const string FacesIdentify = Permissions.Faces.Identify;
+    public const string FacesDetect = Permissions.Faces.Detect;
+    public const string FacesRead = Permissions.Faces.Read;
+    public const string FacesManage = Permissions.Faces.Manage;
+    public const string FacesErase = Permissions.Faces.Erase;
+    public const string FacesHistory = Permissions.Faces.History;
 
-    /// <summary>Permissions of the default Super Admin role (docs/04 role matrix) - used only by the stub user.</summary>
-    public static readonly IReadOnlyList<string> SuperAdminDefaults =
-    [
-        ClientsRead, ClientsCreate, ClientsUpdate, ClientsManageStatus, ClientsResetPassword, ClientsSettings,
-        LicensesRead, LicensesCreate, LicensesUpdate, LicensesManageStatus, LicensesRenew, LicensesAdjust, LicensesCostRules,
-        PlansManage, DashboardAdmin, ReportsRead, AuditRead, SystemConfigure, RolesManage, UsersPlatformManage,
-    ];
+    /// <summary>Permissions of the default Super Admin role (used by tests and the design stubs).</summary>
+    public static IReadOnlyList<string> SuperAdminDefaults => SystemRoles.PermissionsFor(SystemRoles.SuperAdmin);
 
-    /// <summary>Permissions of the default Client Admin role - used only by the stub user.</summary>
-    public static readonly IReadOnlyList<string> ClientAdminDefaults =
-    [
-        DashboardClient, ClientProfileRead, ClientProfileUpdate, LicenseRead, UsageRead, ApiKeysRead, ApiKeysManage, ApiLogsRead,
-        SettingsRecognition, SettingsNotifications, SettingsSecurity, WebhooksManage, NotificationsRead, UsersManage, AuditReadClient,
-        FacesEnroll, FacesVerify, FacesIdentify, FacesDetect, FacesRead, FacesManage, FacesErase, FacesHistory,
-    ];
+    /// <summary>Permissions of the default Client Admin role (used by tests and the design stubs).</summary>
+    public static IReadOnlyList<string> ClientAdminDefaults => SystemRoles.PermissionsFor(SystemRoles.ClientAdmin);
 }

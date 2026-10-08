@@ -1,0 +1,26 @@
+@inject CurrentUserState User
+
+@* Hides what the signed-in user may not use (convenience only - the API enforces every permission). *@
+@if (Allowed)
+{
+    @ChildContent
+}
+else if (NotAllowed is not null)
+{
+    @NotAllowed
+}
+
+@code {
+    /// <summary>A single permission key.</summary>
+    [Parameter] public string? Permission { get; set; }
+
+    /// <summary>Alternatively: any one of these is enough.</summary>
+    [Parameter] public IReadOnlyList<string>? AnyOf { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    [Parameter] public RenderFragment? NotAllowed { get; set; }
+
+    private bool Allowed =>
+        (Permission is not null && User.Has(Permission)) || (AnyOf is not null && AnyOf.Any(User.Has));
+}

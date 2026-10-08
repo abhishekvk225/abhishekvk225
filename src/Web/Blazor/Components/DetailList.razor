@@ -1,0 +1,23 @@
+<dl class="nv-detail" data-testid="detail-list">
+    @foreach (var item in Items)
+    {
+        <div class="nv-detail-row">
+            <dt>@item.Label</dt>
+            <dd>
+                @* API-supplied text is always rendered as text, never as markup. *@
+                @if (item.Content is not null)
+                {
+                    @item.Content
+                }
+                else
+                {
+                    @(string.IsNullOrWhiteSpace(item.Value) ? "—" : item.Value)
+                }
+            </dd>
+        </div>
+    }
+</dl>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<DetailItem> Items { get; set; } = [];
+}

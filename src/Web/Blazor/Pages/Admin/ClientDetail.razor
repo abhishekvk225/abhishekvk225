@@ -1,0 +1,134 @@
+@page "/admin/clients/{Id:guid}"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.ClientsRead)]
+@inject IClientsApiClient Api
+@inject IDialogService Dialogs
+@inject IAppSnackbar Snackbar
+
+<PageTitle>@(_result is { IsSuccess: true } ? _result.Value.Name : "Client") · Admin · NexaVerify</PageTitle>
+
+<PageState T="ClientDto" Result="_result" OnRetry="LoadAsync">
+    <Loading><SkeletonCard Lines="4" /></Loading>
+    <ChildContent Context="client">
+        <PageHeader Title="@client.Name" Subtitle="@($"Client code {client.Code}")" Breadcrumbs="Crumbs(client)">
+            <Actions>
+                <StatusChip Kind="StatusKind.Client" Value="@client.Status" />
+                <Can Permission="@WebPermissions.ClientsUpdate">
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Edit" OnClick="() => EditAsync(client)" data-testid="edit-client">Edit</MudButton>
+                </Can>
+                <Can Permission="@WebPermissions.ClientsManageStatus">
+                    @if (client.Status is "Active")
+                    {
+                        <MudButton Variant="Variant.Outlined" Color="Color.Warning" StartIcon="@Icons.Material.Outlined.PauseCircle" OnClick="() => SuspendAsync(client)" data-testid="suspend-client">Suspend</MudButton>
+                        <MudButton Variant="Variant.Text" Color="Color.Default" StartIcon="@Icons.Material.Outlined.Block" OnClick="() => DeactivateAsync(client)" data-testid="deactivate-client">Deactivate</MudButton>
+                    }
+                    else if (client.Status is not "Deleted")
+                    {
+                        <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Outlined.PlayCircle" OnClick="() => ActivateAsync(client)" data-testid="activate-client">
+                            @(client.Status is "Suspended" ? "Reactivate" : "Activate")
+                        </MudButton>
+                    }
+                </Can>
+            </Actions>
+        </PageHeader>
+
+        @if (client.Status is "Suspended" && !string.IsNullOrWhiteSpace(client.StatusReason))
+        {
+            <MudAlert Severity="Severity.Warning" Class="mb-4" data-testid="suspend-reason">Suspended: @client.StatusReason</MudAlert>
+        }
+
+        <MudTabs Elevation="0" Rounded="false" ApplyEffectsToContainer="true" TabPanelsClass="pt-4" Class="nv-tabs" aria-label="Client sections">
+            <MudTabPanel Text="Overview"><ClientOverviewTab Client="client" /></MudTabPanel>
+            <MudTabPanel Text="Users"><ClientUsersTab ClientId="client.Id" /></MudTabPanel>
+            @if (User.Has(WebPermissions.ClientsSettings))
+            {
+                <MudTabPanel Text="Settings"><ClientSettingsTab ClientId="client.Id" /></MudTabPanel>
+            }
+            @if (User.Has(WebPermissions.LicensesRead))
+            {
+                <MudTabPanel Text="License"><ClientLicensesTab ClientId="client.Id" /></MudTabPanel>
+            }
+            @if (User.Has(WebPermissions.AuditRead))
+            {
+                <MudTabPanel Text="Audit"><ClientAuditPanel ClientId="client.Id" /></MudTabPanel>
+            }
+        </MudTabs>
+    </ChildContent>
+</PageState>
+
+@code {
+    private ApiResult<ClientDto>? _result;
+
+    [Inject] private CurrentUserState User { get; set; } = default!;
+
+    [Parameter] public Guid Id { get; set; }
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _result = null;
+        _result = await Api.GetAsync(Id);
+    }
+
+    private static List<BreadcrumbItem> Crumbs(ClientDto client) => [new("Clients", "admin/clients"), new(client.Name, null, true)];
+
+    private async Task EditAsync(ClientDto client)
+    {
+        var saved = await Dialogs.ShowFormAsync(
+            "Edit client",
+            ClientForm.From(client),
+            m => @<ClientFields Model="m" />,
+            async m => (await Api.UpdateAsync(client.Id, m.ToUpdateRequest())).ToFormError(),
+            "Save changes");
+        if (saved is not null)
+        {
+            Snackbar.Success("Client details saved.");
+            await LoadAsync();
+        }
+    }
+
+    private async Task SuspendAsync(ClientDto client)
+    {
+        var confirmed = await Dialogs.ConfirmAsync(
+            $"Suspend {client.Name}?",
+            "Their users are signed out and API access stops straight away. You can reactivate them at any time.",
+            "Suspend client", destructive: true, requireReason: true);
+        if (confirmed is not null)
+        {
+            await ApplyAsync(Api.SuspendAsync(client.Id, confirmed.Reason), $"{client.Name} was suspended.");
+        }
+    }
+
+    private async Task DeactivateAsync(ClientDto client)
+    {
+        var confirmed = await Dialogs.ConfirmAsync(
+            $"Deactivate {client.Name}?",
+            "Their users are signed out and API access stops. Use this when the company is no longer a customer.",
+            "Deactivate client", destructive: true, requireReason: true);
+        if (confirmed is not null)
+        {
+            await ApplyAsync(Api.DeactivateAsync(client.Id, confirmed.Reason), $"{client.Name} was deactivated.");
+        }
+    }
+
+    private async Task ActivateAsync(ClientDto client)
+    {
+        var confirmed = await Dialogs.ConfirmAsync(
+            $"{(client.Status is "Suspended" ? "Reactivate" : "Activate")} {client.Name}?",
+            "Their users can sign in again and API access resumes.",
+            client.Status is "Suspended" ? "Reactivate" : "Activate");
+        if (confirmed is not null)
+        {
+            await ApplyAsync(Api.ActivateAsync(client.Id), $"{client.Name} is active again.");
+        }
+    }
+
+    private async Task ApplyAsync(Task<ApiResult<ClientDto>> call, string message)
+    {
+        var result = await call;
+        if (result.Report(Snackbar, message))
+        {
+            _result = result;
+        }
+    }
+}

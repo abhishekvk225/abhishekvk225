@@ -1,7 +1,21 @@
 <ThemeHost>
     <Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
         <Found Context="routeData">
-            <RouteView RouteData="routeData" DefaultLayout="typeof(Layouts.AuthLayout)" />
+            <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layouts.AuthLayout)">
+                <Authorizing>
+                    <SkeletonCard Lines="3" />
+                </Authorizing>
+                <NotAuthorized Context="auth">
+                    @if (auth.User.Identity?.IsAuthenticated == true)
+                    {
+                        <AccessDenied />
+                    }
+                    else
+                    {
+                        <RedirectToLogin />
+                    }
+                </NotAuthorized>
+            </AuthorizeRouteView>
             <FocusOnNavigate RouteData="routeData" Selector="h1" />
         </Found>
     </Router>

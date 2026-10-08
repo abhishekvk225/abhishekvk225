@@ -43,11 +43,9 @@ public sealed class StubDashboardApiClient(TimeProvider clock) : IDashboardApiCl
                 new("Hooli", "LIC-2025-0177", now.AddDays(26), 18_500, 25_000),
             ],
             [
-                new("a1", "License renewed", "Globex Bank · +100,000 credits", now.AddMinutes(-12), "license"),
-                new("a2", "Client suspended", "Wayne Logistics · reason: payment overdue", now.AddHours(-3), "client"),
-                new("a3", "API key revoked", "Umbrella Health · key nv_live_8f2…", now.AddHours(-7), "key"),
-                new("a4", "New client created", "Stark Retail", now.AddDays(-1), "client"),
+                new("Hooli", "LIC-2025-0177", now.AddDays(26), 1_800, 25_000),
             ],
+            [new("Active", 128), new("Suspended", 6), new("Inactive", 3)],
             [
                 new("warning", "3 licenses are close to running out of credits."),
                 new("error", "Face provider response time is above normal (p95 1.9 s)."),
@@ -82,20 +80,20 @@ public sealed class StubDashboardApiClient(TimeProvider clock) : IDashboardApiCl
             ],
             Outcomes: new OutcomeSplit(total - noMatch - failedCount, noMatch, failedCount),
             UsageTrend: [verify, identify],
-            RecentRecognitions:
+            RecentResults:
             [
-                new("r1", now.AddMinutes(-4), "Verify", "Matched", "EMP-20418"),
-                new("r2", now.AddMinutes(-9), "Identify", "NoMatch", "—"),
-                new("r3", now.AddMinutes(-21), "Enroll", "Enrolled", "EMP-20551"),
-                new("r4", now.AddMinutes(-48), "Verify", "NoFaceDetected", "EMP-20077"),
-                new("r5", now.AddHours(-2), "Verify", "Matched", "EMP-19930"),
+                new("r1", now, "Verify", "Matched", "212"),
+                new("r2", now, "Identify", "NoMatch", "9"),
+                new("r3", now.AddDays(-1), "Enroll", "Enrolled", "31"),
+                new("r4", now.AddDays(-1), "Verify", "NoFaceDetected", "4"),
             ],
             ApiUsage: new ApiUsageModel(12_480, 1.4, 640),
             Alerts:
             [
                 new("info", "Your licence renews automatically unless you tell us otherwise."),
             ],
-            Account: new AccountCardModel("Acme Corp", "Business", "Active", "ops@acme.example")));
+            PlanName: "Business",
+            LicenseMessage: "842 credits available."));
     }
 
     private static TrendSeries Series(string name, int days, DateTimeOffset now, int seed, double baseline, double amplitude)

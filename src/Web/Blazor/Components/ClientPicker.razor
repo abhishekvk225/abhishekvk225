@@ -1,0 +1,27 @@
+@using NexaVerify.Contracts.Tenancy
+@inject IClientsApiClient Clients
+
+<MudAutocomplete T="ClientListItemDto" Label="@Label" Value="Value" ValueChanged="OnValueChanged" SearchFunc="SearchAsync"
+                 ToStringFunc="@(c => c is null ? string.Empty : $"{c.Name} ({c.Code})")" Variant="Variant.Outlined" Margin="Margin.Dense"
+                 CoerceText="false" ResetValueOnEmptyText="true" MinCharacters="0" DebounceInterval="300" Clearable="true"
+                 HelperText="@HelperText" Required="Required" data-testid="client-picker" />
+
+@code {
+    [Parameter] public string Label { get; set; } = "Client";
+
+    [Parameter] public string? HelperText { get; set; }
+
+    [Parameter] public bool Required { get; set; }
+
+    [Parameter] public ClientListItemDto? Value { get; set; }
+
+    [Parameter] public EventCallback<ClientListItemDto?> ValueChanged { get; set; }
+
+    private Task OnValueChanged(ClientListItemDto? value) => ValueChanged.InvokeAsync(value);
+
+    private async Task<IEnumerable<ClientListItemDto>> SearchAsync(string? text, CancellationToken ct)
+    {
+        var result = await Clients.ListAsync(new PageRequest { Page = 1, PageSize = 10, Search = string.IsNullOrWhiteSpace(text) ? null : text.Trim() }, null, ct);
+        return result.IsSuccess ? result.Value.Items : [];
+    }
+}

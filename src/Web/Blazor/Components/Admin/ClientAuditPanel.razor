@@ -1,0 +1,54 @@
+@using NexaVerify.Contracts.Tenancy
+@inject IClientsApiClient Api
+
+@* Activity trail and sign-in history of one client. Used on the client page and the audit viewer. *@
+<MudTabs Elevation="0" Rounded="false" ApplyEffectsToContainer="true" TabPanelsClass="pt-4" aria-label="Audit views">
+    <MudTabPanel Text="Activity">
+        <MudPaper Class="nv-card" Elevation="0">
+            <DataTable @key="@("activity-" + ClientId)" T="AuditLogDto" Caption="Activity" Columns="_activityColumns" LoadData="LoadActivityAsync" PageSize="25"
+                       EmptyMessage="No activity recorded for this client yet." />
+        </MudPaper>
+    </MudTabPanel>
+    <MudTabPanel Text="Sign-ins">
+        <MudPaper Class="nv-card" Elevation="0">
+            <DataTable @key="@("logins-" + ClientId)" T="LoginHistoryDto" Caption="Sign-ins" Columns="_loginColumns" LoadData="LoadLoginsAsync" PageSize="25"
+                       EmptyMessage="No sign-ins recorded for this client yet." />
+        </MudPaper>
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    private IReadOnlyList<DataColumn<AuditLogDto>> _activityColumns = [];
+    private IReadOnlyList<DataColumn<LoginHistoryDto>> _loginColumns = [];
+
+    [Parameter, EditorRequired] public Guid ClientId { get; set; }
+
+    private static string When(DateTime value) => value.ToString("d MMM yyyy, HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+
+    protected override void OnInitialized()
+    {
+        _activityColumns =
+        [
+            DataColumn<AuditLogDto>.Text("When (UTC)", a => When(a.OccurredAt)),
+            DataColumn<AuditLogDto>.Text("What happened", a => a.Action),
+            DataColumn<AuditLogDto>.Text("About", a => $"{a.EntityType}"),
+            DataColumn<AuditLogDto>.Text("By", a => a.ActorType),
+            DataColumn<AuditLogDto>.Text("From", a => a.IpAddress),
+            DataColumn<AuditLogDto>.Text("Reference", a => a.CorrelationId),
+        ];
+        _loginColumns =
+        [
+            DataColumn<LoginHistoryDto>.Text("When (UTC)", l => When(l.OccurredAt)),
+            DataColumn<LoginHistoryDto>.Text("Result", l => l.Outcome),
+            DataColumn<LoginHistoryDto>.Text("Email used", l => l.EmailAttempted),
+            DataColumn<LoginHistoryDto>.Text("From", l => l.IpAddress),
+            DataColumn<LoginHistoryDto>.Text("Note", l => l.FailureReason),
+        ];
+    }
+
+    private Task<ApiResult<PagedResult<AuditLogDto>>> LoadActivityAsync(PageRequest page) =>
+        Api.GetActivityAsync(ClientId, new ActivityQuery { Page = page.Page, PageSize = page.PageSize });
+
+    private Task<ApiResult<PagedResult<LoginHistoryDto>>> LoadLoginsAsync(PageRequest page) =>
+        Api.GetLoginsAsync(ClientId, new ActivityQuery { Page = page.Page, PageSize = page.PageSize });
+}

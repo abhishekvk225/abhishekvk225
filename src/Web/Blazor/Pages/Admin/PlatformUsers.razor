@@ -1,0 +1,94 @@
+@page "/admin/platform-users"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.UsersPlatformManage)]
+@inject IAccessApiClient Api
+@inject IDialogService Dialogs
+@inject IAppSnackbar Snackbar
+
+<PageTitle>Platform users · Admin · NexaVerify</PageTitle>
+
+<PageHeader Title="Platform users" Subtitle="NexaVerify staff who can sign in to this console.">
+    <Actions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.PersonAdd" OnClick="CreateAsync" data-testid="new-platform-user">Add user</MudButton>
+    </Actions>
+</PageHeader>
+
+<MudPaper Class="nv-card" Elevation="0">
+    <div class="pa-4">
+        <FilterBar SearchLabel="Search users" SearchPlaceholder="Name or email" OnSearch="OnSearch" />
+    </div>
+    <DataTable @ref="_table" T="PlatformUserDto" Caption="Platform users" Columns="_columns" LoadData="p => Api.ListUsersAsync(p)" Search="@_search" PageSize="25"
+               EmptyMessage="No platform users found.">
+        <RowActions Context="user">
+            <MudIconButton Icon="@Icons.Material.Outlined.Edit" OnClick="() => EditAsync(user)" aria-label="@($"Edit {user.FullName}")" />
+        </RowActions>
+    </DataTable>
+</MudPaper>
+
+@code {
+    private DataTable<PlatformUserDto>? _table;
+    private IReadOnlyList<DataColumn<PlatformUserDto>> _columns = [];
+    private string? _search;
+
+    protected override void OnInitialized() =>
+        _columns =
+        [
+            DataColumn<PlatformUserDto>.Text("Name", u => u.FullName),
+            DataColumn<PlatformUserDto>.Text("Email", u => u.Email),
+            DataColumn<PlatformUserDto>.Text("Roles", u => string.Join(", ", u.Roles)),
+            DataColumn<PlatformUserDto>.Custom("Status", u => @<StatusChip Kind="StatusKind.User" Value="@u.Status" />),
+            DataColumn<PlatformUserDto>.Text("Last sign-in", u => u.LastLoginAt is { } at ? at.ToString("d MMM yyyy, HH:mm", System.Globalization.CultureInfo.InvariantCulture) : "Never"),
+        ];
+
+    private void OnSearch(string? text) => _search = text;
+
+    private async Task<IReadOnlyList<RoleDto>?> PlatformRolesAsync()
+    {
+        var roles = await Api.ListRolesAsync();
+        if (!roles.IsSuccess)
+        {
+            Snackbar.Error(roles.Error!);
+            return null;
+        }
+
+        return roles.Value.Where(r => r.Scope == "Platform").ToList();
+    }
+
+    private async Task CreateAsync()
+    {
+        if (await PlatformRolesAsync() is not { } roles)
+        {
+            return;
+        }
+
+        var saved = await Dialogs.ShowFormAsync(
+            "Add a platform user", new PlatformUserForm(), m => @<AccessFields User="m" Roles="roles" />,
+            async m => (await Api.CreateUserAsync(m.ToCreateRequest())).ToFormError(),
+            "Add user");
+        if (saved is not null)
+        {
+            Snackbar.Success($"{saved.FullName} was added. They must change the temporary password when they first sign in.");
+            await ReloadAsync();
+        }
+    }
+
+    private async Task EditAsync(PlatformUserDto user)
+    {
+        if (await PlatformRolesAsync() is not { } roles)
+        {
+            return;
+        }
+
+        var form = new PlatformUserForm { Id = user.Id, Email = user.Email, FullName = user.FullName, Roles = user.Roles.ToList(), IsActive = user.Status != "Inactive" };
+        var saved = await Dialogs.ShowFormAsync(
+            $"Edit {user.FullName}", form, m => @<AccessFields User="m" Roles="roles" />,
+            async m => (await Api.UpdateUserAsync(user.Id, m.ToUpdateRequest())).ToFormError(),
+            "Save changes");
+        if (saved is not null)
+        {
+            Snackbar.Success("The user was saved.");
+            await ReloadAsync();
+        }
+    }
+
+    private Task ReloadAsync() => _table is null ? Task.CompletedTask : _table.ReloadAsync();
+}

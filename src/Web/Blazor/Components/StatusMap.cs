@@ -8,6 +8,7 @@ public enum StatusKind
     License,
     ApiKey,
     Outcome,
+    User,
 }
 
 /// <summary>Visual treatment of a status: colour AND icon AND text, so colour is never the only signal.</summary>
@@ -59,6 +60,8 @@ public static class StatusMap
 
         Add(StatusKind.Client, "active", "Active", Color.Success, ok);
         Add(StatusKind.Client, "pending", "Pending", Color.Info, time);
+        Add(StatusKind.Client, "pendingactivation", "Pending", Color.Info, time);
+        Add(StatusKind.Client, "deleted", "Deleted", Color.Default, block);
         Add(StatusKind.Client, "suspended", "Suspended", Color.Warning, pause);
         Add(StatusKind.Client, "inactive", "Inactive", Color.Default, block);
 
@@ -69,6 +72,14 @@ public static class StatusMap
         Add(StatusKind.License, "expired", "Expired", Color.Error, time);
         Add(StatusKind.License, "suspended", "Suspended", Color.Warning, pause);
         Add(StatusKind.License, "cancelled", "Cancelled", Color.Default, block);
+        Add(StatusKind.License, "inactive", "Inactive", Color.Default, block);
+        Add(StatusKind.License, "revoked", "Revoked", Color.Error, block);
+
+        Add(StatusKind.User, "active", "Active", Color.Success, ok);
+        Add(StatusKind.User, "inactive", "Inactive", Color.Default, block);
+        Add(StatusKind.User, "locked", "Locked", Color.Warning, pause);
+        Add(StatusKind.User, "invited", "Invited", Color.Info, time);
+        Add(StatusKind.User, "pendingactivation", "Invited", Color.Info, time);
 
         Add(StatusKind.ApiKey, "active", "Active", Color.Success, ok);
         Add(StatusKind.ApiKey, "expired", "Expired", Color.Warning, time);

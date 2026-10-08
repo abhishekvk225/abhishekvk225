@@ -40,7 +40,7 @@ public sealed record ExpiringLicenseRow(string Client, string LicenseNumber, Dat
 
 public sealed record AlertModel(string Severity, string Message);
 
-public sealed record ActivityModel(string Id, string Title, string? Detail, DateTimeOffset At, string Kind);
+public sealed record StatusCount(string Label, long Count);
 
 public sealed record AdminDashboardModel(
     IReadOnlyList<KpiModel> Kpis,
@@ -48,30 +48,30 @@ public sealed record AdminDashboardModel(
     IReadOnlyList<TrendSeries> CreditsTrend,
     IReadOnlyList<ClientUsageRow> ClientUsage,
     IReadOnlyList<ExpiringLicenseRow> ExpiringLicenses,
-    IReadOnlyList<ActivityModel> RecentActivity,
+    IReadOnlyList<ExpiringLicenseRow> LowBalanceLicenses,
+    IReadOnlyList<StatusCount> ClientsByStatus,
     IReadOnlyList<AlertModel> Alerts);
 
 public sealed record OutcomeSplit(long Successful, long NoMatch, long Failed);
 
-public sealed record RecognitionRow(string Id, DateTimeOffset At, string Operation, string Outcome, string Reference);
+public sealed record RecognitionRow(string Id, DateTimeOffset At, string Operation, string Outcome, string Count);
 
-public sealed record ApiUsageModel(long Calls, double ErrorRatePercent, int P95LatencyMs);
-
-public sealed record AccountCardModel(string CompanyName, string Plan, string Status, string ContactEmail);
+public sealed record ApiUsageModel(long Calls, double ErrorRatePercent, int? P95LatencyMs);
 
 public sealed record ClientDashboardModel(
     long CreditsRemaining,
     long CreditsTotal,
     DateTimeOffset? LicenseExpiresAt,
+    string? PlanName,
+    string LicenseMessage,
     IReadOnlyList<KpiModel> Kpis,
     OutcomeSplit Outcomes,
     IReadOnlyList<TrendSeries> UsageTrend,
-    IReadOnlyList<RecognitionRow> RecentRecognitions,
+    IReadOnlyList<RecognitionRow> RecentResults,
     ApiUsageModel ApiUsage,
-    IReadOnlyList<AlertModel> Alerts,
-    AccountCardModel Account);
+    IReadOnlyList<AlertModel> Alerts);
 
-/// <summary>Typed client for the dashboard endpoints (docs/03 §3.3, §4, §6).</summary>
+/// <summary>Typed client for the dashboard endpoints (docs/03 sections 3.3, 4, 6).</summary>
 public interface IDashboardApiClient
 {
     Task<ApiResult<AdminDashboardModel>> GetAdminDashboardAsync(DashboardRange range, CancellationToken ct = default);

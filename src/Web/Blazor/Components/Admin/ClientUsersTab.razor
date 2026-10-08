@@ -1,0 +1,47 @@
+@using NexaVerify.Contracts.Tenancy
+@inject IClientsApiClient Api
+@inject IDialogService Dialogs
+@inject IAppSnackbar Snackbar
+
+<MudPaper Class="nv-card" Elevation="0">
+    <DataTable T="ClientUserDto" Caption="Client users" Columns="_columns" LoadData="LoadAsync" PageSize="10" EmptyMessage="This client has no users yet.">
+        <RowActions Context="user">
+            <Can Permission="@WebPermissions.ClientsResetPassword">
+                <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Outlined.LockReset" OnClick="() => ResetAsync(user)"
+                           aria-label="@($"Send a password reset link to {user.FullName}")">Reset password</MudButton>
+            </Can>
+        </RowActions>
+    </DataTable>
+</MudPaper>
+
+@code {
+    private IReadOnlyList<DataColumn<ClientUserDto>> _columns = [];
+
+    [Parameter, EditorRequired] public Guid ClientId { get; set; }
+
+    protected override void OnInitialized() =>
+        _columns =
+        [
+            DataColumn<ClientUserDto>.Text("Name", u => u.FullName),
+            DataColumn<ClientUserDto>.Text("Email", u => u.Email),
+            DataColumn<ClientUserDto>.Text("Role", u => u.IsOwner ? $"{u.Role} (owner)" : u.Role),
+            DataColumn<ClientUserDto>.Custom("Status", u => @<StatusChip Kind="StatusKind.User" Value="@u.Status" />),
+            DataColumn<ClientUserDto>.Text("Last sign-in", u => u.LastLoginAt is { } at ? at.ToString("d MMM yyyy, HH:mm", System.Globalization.CultureInfo.InvariantCulture) : "Never"),
+        ];
+
+    private Task<ApiResult<PagedResult<ClientUserDto>>> LoadAsync(PageRequest page) => Api.ListUsersAsync(ClientId, page);
+
+    private async Task ResetAsync(ClientUserDto user)
+    {
+        var confirmed = await Dialogs.ConfirmAsync(
+            "Send a password reset link?",
+            $"{user.FullName} will receive an email with a link to choose a new password. Their current password keeps working until they use it.",
+            "Send link");
+        if (confirmed is null)
+        {
+            return;
+        }
+
+        (await Api.ResetUserPasswordAsync(ClientId, user.Id)).Report(Snackbar, $"A reset link was sent to {user.Email}.");
+    }
+}

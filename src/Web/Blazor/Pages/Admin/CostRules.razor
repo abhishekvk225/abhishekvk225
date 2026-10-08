@@ -1,0 +1,74 @@
+@page "/admin/cost-rules"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.LicensesRead)]
+@inject ILicensingApiClient Api
+@inject IDialogService Dialogs
+@inject IAppSnackbar Snackbar
+
+<PageTitle>Cost rules · Admin · NexaVerify</PageTitle>
+
+<PageHeader Title="Cost rules" Subtitle="How many credits each kind of check costs, and when it is charged.">
+    <Actions>
+        <Can Permission="@WebPermissions.LicensesCostRules">
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Toll" OnClick="SetDefaultAsync" data-testid="set-default-rule">Set default price</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Inventory2" OnClick="SetPlanAsync" data-testid="set-plan-rule">Set price for a plan</MudButton>
+        </Can>
+    </Actions>
+</PageHeader>
+
+<MudPaper Class="nv-card nv-card-pad" Elevation="0">
+    <CostRuleList Result="_rules" PlanNames="_planNames" OnRetry="LoadAsync" Caption="Cost rules"
+                  EmptyMessage="No custom prices are set. Every check uses the built-in price." />
+    <MudText Typo="Typo.caption" Class="nv-muted mt-3 d-block">
+        The most specific rule wins: a client's own price first, then its plan's price, then the default. Changes apply from now on and never rewrite past charges.
+    </MudText>
+</MudPaper>
+
+@code {
+    private ApiResult<IReadOnlyList<CostRuleDto>>? _rules;
+    private IReadOnlyDictionary<Guid, string> _planNames = new Dictionary<Guid, string>();
+    private IReadOnlyList<PlanDto> _plans = [];
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _rules = null;
+        var rules = Api.ListCostRulesAsync();
+        var plans = await Api.ListPlansAsync();
+        if (plans.IsSuccess)
+        {
+            _plans = plans.Value;
+            _planNames = plans.Value.ToDictionary(p => p.Id, p => p.Name);
+        }
+
+        _rules = await rules;
+    }
+
+    private async Task SetDefaultAsync()
+    {
+        var saved = await Dialogs.ShowFormAsync(
+            "Set the default price", new CostRuleForm(), m => @<CostRuleFields Model="m" />,
+            async m => (await Api.SetDefaultCostRuleAsync(m.ToRequest())).ToFormError(),
+            "Save price");
+        if (saved is not null)
+        {
+            Snackbar.Success("The default price was saved.");
+            await LoadAsync();
+        }
+    }
+
+    private async Task SetPlanAsync()
+    {
+        var saved = await Dialogs.ShowFormAsync(
+            "Set the price for a plan", new CostRuleForm(), m => @<CostRuleFields Model="m" Plans="_plans" />,
+            async m => m.PlanId is not { } planId
+                ? new ApiError("VALIDATION_FAILED", "Choose the plan this price is for.", null, 400)
+                : (await Api.SetPlanCostRuleAsync(planId, m.ToRequest())).ToFormError(),
+            "Save price");
+        if (saved is not null)
+        {
+            Snackbar.Success("The plan price was saved.");
+            await LoadAsync();
+        }
+    }
+}

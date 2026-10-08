@@ -1,0 +1,72 @@
+@page "/admin/plans"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.LicensesRead)]
+@inject ILicensingApiClient Api
+@inject IDialogService Dialogs
+@inject IAppSnackbar Snackbar
+
+<PageTitle>Plans · Admin · NexaVerify</PageTitle>
+
+<PageHeader Title="Plans" Subtitle="Templates that decide a license's credits, length and limits.">
+    <Actions>
+        <Can Permission="@WebPermissions.PlansManage">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Add" OnClick="CreateAsync" data-testid="new-plan">New plan</MudButton>
+        </Can>
+    </Actions>
+</PageHeader>
+
+<MudPaper Class="nv-card" Elevation="0">
+    <DataTable @ref="_table" T="PlanDto" Caption="Plans" Columns="_columns" LoadData="LoadAsync" PageSize="50" PageSizeOptions="@(new[] { 50 })" EmptyMessage="No plans yet. Create one to start issuing licenses from a template.">
+        <RowActions Context="plan">
+            <Can Permission="@WebPermissions.PlansManage">
+                <MudIconButton Icon="@Icons.Material.Outlined.Edit" OnClick="() => EditAsync(plan)" aria-label="@($"Edit plan {plan.Name}")" />
+            </Can>
+        </RowActions>
+    </DataTable>
+</MudPaper>
+
+@code {
+    private DataTable<PlanDto>? _table;
+    private IReadOnlyList<DataColumn<PlanDto>> _columns = [];
+
+    protected override void OnInitialized() =>
+        _columns =
+        [
+            DataColumn<PlanDto>.Text("Plan", p => p.Name),
+            DataColumn<PlanDto>.Text("Code", p => p.Code),
+            DataColumn<PlanDto>.Text("Credits", p => UiText.Number(p.DefaultCredits), numeric: true),
+            DataColumn<PlanDto>.Text("Length", p => UiText.Plural(p.DefaultDurationDays, "day")),
+            DataColumn<PlanDto>.Text("Requests / min", p => UiText.Number(p.RateLimitPerMinute), numeric: true),
+            DataColumn<PlanDto>.Text("Users / keys", p => $"{UiText.Number(p.MaxUsers)} / {UiText.Number(p.MaxApiKeys)}"),
+            DataColumn<PlanDto>.Custom("Available", p => @<StatusChip Kind="StatusKind.Client" Value="@(p.IsActive ? "Active" : "Inactive")" />),
+        ];
+
+    private async Task<ApiResult<PagedResult<PlanDto>>> LoadAsync(PageRequest page) => (await Api.ListPlansAsync()).AsPage();
+
+    private async Task CreateAsync()
+    {
+        var saved = await Dialogs.ShowFormAsync(
+            "New plan", new PlanForm(), m => @<PlanFields Model="m" />,
+            async m => (await Api.CreatePlanAsync(m.ToRequest())).ToFormError(),
+            "Create plan");
+        if (saved is not null)
+        {
+            Snackbar.Success($"Plan {saved.Name} was created.");
+            await ReloadAsync();
+        }
+    }
+
+    private async Task EditAsync(PlanDto plan)
+    {
+        var saved = await Dialogs.ShowFormAsync(
+            $"Edit {plan.Name}", PlanForm.From(plan), m => @<PlanFields Model="m" CodeLocked="true" />,
+            async m => (await Api.UpdatePlanAsync(plan.Id, m.ToRequest())).ToFormError(),
+            "Save changes");
+        if (saved is not null)
+        {
+            Snackbar.Success($"Plan {saved.Name} was saved.");
+            await ReloadAsync();
+        }
+    }
+
+    private Task ReloadAsync() => _table is null ? Task.CompletedTask : _table.ReloadAsync();
+}

@@ -1,0 +1,253 @@
+@page "/admin/clients/new"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.ClientsCreate)]
+@inject IClientsApiClient Clients
+@inject ILicensingApiClient Licensing
+@inject IAppSnackbar Snackbar
+@inject NavigationManager Nav
+@inject CurrentUserState User
+
+<PageTitle>New client · Admin · NexaVerify</PageTitle>
+
+<PageHeader Title="New client" Subtitle="Create the company, its first administrator and, if you like, a first license."
+            Breadcrumbs="_breadcrumbs" />
+
+<MudPaper Class="nv-card nv-card-pad" Elevation="0">
+    <nav aria-label="Progress">
+        <ol class="nv-steps" data-testid="wizard-steps">
+            @for (var i = 0; i < _titles.Length; i++)
+            {
+                <li class="@(i == _step ? "nv-step-current" : i < _step ? "nv-step-done" : null)" aria-current="@(i == _step ? "step" : null)">
+                    <span class="nv-step-no" aria-hidden="true">@(i + 1)</span> @_titles[i]
+                    @if (i < _step)
+                    {
+                        <span class="nv-sr">(completed)</span>
+                    }
+                </li>
+            }
+        </ol>
+    </nav>
+
+    <EditForm EditContext="_context" OnSubmit="NextAsync" novalidate>
+        <DataAnnotationsValidator />
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-4" role="alert" data-testid="wizard-error">
+                @_error.Message
+                @if (!string.IsNullOrWhiteSpace(_error.CorrelationId))
+                {
+                    <MudText Typo="Typo.caption" Class="d-block">Reference: @_error.CorrelationId</MudText>
+                }
+            </MudAlert>
+        }
+
+        <h2 class="nv-sr" tabindex="-1">@_titles[_step]</h2>
+        @switch (_step)
+        {
+            case 0:
+                <ClientFields Model="_form" ShowCode="true" />
+                break;
+            case 1:
+                <ClientFields Model="_form" ShowCompany="false" ShowAdmin="true" />
+                break;
+            case 2:
+                <MudText Typo="Typo.body1" Class="mb-3">You can issue a first license now, or do it later from the client's page.</MudText>
+                @if (_plansResult is { IsSuccess: true })
+                {
+                    <MudSelect T="Guid?" @bind-Value="_form.InitialPlanId" Label="Plan" Variant="Variant.Outlined" Clearable="true" HelperText="Leave empty to skip the license." data-testid="wizard-plan">
+                        @foreach (var plan in _plansResult.Value.Where(p => p.IsActive))
+                        {
+                            <MudSelectItem T="Guid?" Value="@plan.Id">@plan.Name (@UiText.Number(plan.DefaultCredits) credits, @plan.DefaultDurationDays days)</MudSelectItem>
+                        }
+                    </MudSelect>
+                    @if (_form.InitialPlanId is not null)
+                    {
+                        <MudNumericField T="int?" @bind-Value="_form.InitialCredits" Label="Credits (optional)" Variant="Variant.Outlined" Min="0" Class="mt-3" HelperText="Leave empty to use the plan's credits." />
+                    }
+                }
+                else if (_plansResult is { IsSuccess: false })
+                {
+                    <ErrorState Error="_plansResult.Error" OnRetry="LoadPlansAsync" />
+                }
+                else
+                {
+                    <SkeletonCard Lines="2" />
+                }
+                break;
+            default:
+                <DetailList Items="ReviewItems" />
+                break;
+        }
+
+        <div class="d-flex justify-space-between mt-6">
+            <MudButton Variant="Variant.Text" Disabled="@(_step == 0 || _busy)" OnClick="Back" data-testid="wizard-back">Back</MudButton>
+            <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy" data-testid="wizard-next">
+                @(_step == _titles.Length - 1 ? (_busy ? "Creating…" : "Create client") : "Next")
+            </MudButton>
+        </div>
+    </EditForm>
+</MudPaper>
+
+@code {
+    private static readonly string[] _titles = ["Company", "Administrator", "First license", "Review"];
+
+    private static readonly string[][] _stepFields =
+    [
+        [nameof(ClientForm.Code), nameof(ClientForm.Name), nameof(ClientForm.LegalName), nameof(ClientForm.ContactEmail), nameof(ClientForm.ContactPhone), nameof(ClientForm.AddressLine1),
+         nameof(ClientForm.City), nameof(ClientForm.PostalCode), nameof(ClientForm.Country), nameof(ClientForm.Website), nameof(ClientForm.Industry), nameof(ClientForm.TimeZone), nameof(ClientForm.Notes)],
+        [nameof(ClientForm.AdminFullName), nameof(ClientForm.AdminEmail)],
+        [],
+        [],
+    ];
+
+    private readonly ClientForm _form = new();
+    private readonly List<BreadcrumbItem> _breadcrumbs = [new("Clients", "admin/clients"), new("New client", null, true)];
+    private EditContext _context = default!;
+    private ValidationMessageStore _store = default!;
+    private ApiResult<IReadOnlyList<PlanDto>>? _plansResult;
+    private ApiError? _error;
+    private int _step;
+    private bool _busy;
+    private bool _showServerErrors;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _context = new EditContext(_form);
+        _store = new ValidationMessageStore(_context);
+        await LoadPlansAsync();
+    }
+
+    private async Task LoadPlansAsync()
+    {
+        _plansResult = null;
+        if (!User.Has(WebPermissions.LicensesRead) || !User.Has(WebPermissions.LicensesCreate))
+        {
+            _plansResult = ApiResult<IReadOnlyList<PlanDto>>.Ok([]); // no right to issue licenses: the step just offers nothing
+            return;
+        }
+
+        _plansResult = await Licensing.ListPlansAsync();
+    }
+
+    private void Back()
+    {
+        _error = null;
+        _step = Math.Max(0, _step - 1);
+    }
+
+    private async Task NextAsync()
+    {
+        _error = null;
+        _store.Clear();
+        foreach (var field in _stepFields[_step])
+        {
+            _context.NotifyFieldChanged(_context.Field(field));
+        }
+
+        if (_stepFields[_step].Any(f => _context.GetValidationMessages(_context.Field(f)).Any()))
+        {
+            return;
+        }
+
+        if (_step < _titles.Length - 1)
+        {
+            _step++;
+            return;
+        }
+
+        await CreateAsync();
+    }
+
+    private async Task CreateAsync()
+    {
+        _busy = true;
+        try
+        {
+            var created = await Clients.CreateAsync(_form.ToCreateRequest());
+            if (!created.IsSuccess)
+            {
+                _error = created.Error;
+                MapFieldErrors(created.Error!);
+                return;
+            }
+
+            Snackbar.Success($"{created.Value.Name} was created. An invitation is on its way to {_form.AdminEmail.Trim()}.");
+
+            if (_form.InitialPlanId is { } planId)
+            {
+                var plan = _plansResult!.Value.FirstOrDefault(p => p.Id == planId);
+                var license = await Licensing.CreateAsync(created.Value.Id,
+                    new NexaVerify.Contracts.Licensing.CreateLicenseRequest(planId, plan is null ? "Initial license" : $"{plan.Name} license", _form.InitialCredits, null, null, null));
+                license.Report(Snackbar, "The first license was issued.");
+            }
+
+            Nav.NavigateTo($"admin/clients/{created.Value.Id}");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // Server field errors (e.g. duplicate code) send the user back to the step that holds the field.
+    private void MapFieldErrors(ApiError error)
+    {
+        if (error.FieldErrors is null)
+        {
+            return;
+        }
+
+        var properties = typeof(ClientForm).GetProperties().ToDictionary(p => p.Name, p => p.Name, StringComparer.OrdinalIgnoreCase);
+        foreach (var (field, messages) in error.FieldErrors)
+        {
+            if (!properties.TryGetValue(field, out var name))
+            {
+                continue;
+            }
+
+            foreach (var message in messages)
+            {
+                _store.Add(_context.Field(name), message);
+            }
+
+            var step = Array.FindIndex(_stepFields, fields => fields.Contains(name));
+            if (step >= 0)
+            {
+                _step = Math.Min(_step, step);
+            }
+        }
+
+        // The fields of the earlier step are created anew when we go back, so tell them to show these messages once they exist.
+        _showServerErrors = true;
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (_showServerErrors)
+        {
+            _showServerErrors = false;
+            _context.NotifyValidationStateChanged();
+        }
+    }
+
+    private IReadOnlyList<DetailItem> ReviewItems =>
+    [
+        new("Company", _form.Name),
+        new("Code", _form.Code),
+        new("Contact email", _form.ContactEmail),
+        new("Time zone", _form.TimeZone),
+        new("Administrator", $"{_form.AdminFullName} ({_form.AdminEmail})"),
+        new("First license", PlanSummary()),
+    ];
+
+    private string PlanSummary()
+    {
+        if (_form.InitialPlanId is not { } id)
+        {
+            return "None for now";
+        }
+
+        var plan = _plansResult?.IsSuccess == true ? _plansResult.Value.FirstOrDefault(p => p.Id == id) : null;
+        var credits = _form.InitialCredits ?? plan?.DefaultCredits;
+        return plan is null ? "Selected plan" : $"{plan.Name}: {UiText.Number(credits ?? 0)} credits for {plan.DefaultDurationDays} days";
+    }
+}

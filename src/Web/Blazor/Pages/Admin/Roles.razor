@@ -1,0 +1,101 @@
+@page "/admin/roles"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.RolesManage)]
+@inject IAccessApiClient Api
+@inject IDialogService Dialogs
+@inject IAppSnackbar Snackbar
+
+<PageTitle>Roles &amp; permissions · Admin · NexaVerify</PageTitle>
+
+<PageHeader Title="Roles &amp; permissions" Subtitle="What each role is allowed to do.">
+    <Actions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Add" OnClick="CreateAsync" data-testid="new-role">New role</MudButton>
+    </Actions>
+</PageHeader>
+
+<PageState T="AccessData" Result="_result" OnRetry="LoadAsync" IsEmpty="@(d => d.Roles.Count == 0)" EmptyTitle="No roles" EmptyMessage="No roles are defined yet.">
+    <ChildContent Context="data">
+        <MudTabs Elevation="0" Rounded="false" ApplyEffectsToContainer="true" TabPanelsClass="pt-4" aria-label="Role scopes">
+            @foreach (var scope in new[] { "Platform", "Client" })
+            {
+                var roles = data.Roles.Where(r => r.Scope == scope).ToList();
+                var permissions = data.Permissions.Where(p => scope == "Platform" ? p.Scope != PermissionScopeKind.Client : p.Scope != PermissionScopeKind.Platform).ToList();
+                <MudTabPanel Text="@(scope == "Platform" ? "Platform staff" : "Client users")">
+                    <MudPaper Class="nv-card nv-card-pad mb-4" Elevation="0">
+                        <ul class="nv-role-list" data-testid="@($"roles-{scope}")">
+                            @foreach (var role in roles)
+                            {
+                                <li>
+                                    <div style="min-width: 0;">
+                                        <strong>@role.Name</strong>
+                                        @if (role.IsSystem)
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ml-2" tabindex="-1">Built in</MudChip>
+                                        }
+                                        <MudText Typo="Typo.body2" Class="nv-muted">@(role.Description ?? "No description") · @UiText.Plural(role.Permissions.Count, "permission")</MudText>
+                                    </div>
+                                    <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Edit" OnClick="() => EditAsync(role, data)"
+                                               aria-label="@($"Edit role {role.Name}")">Edit</MudButton>
+                                </li>
+                            }
+                        </ul>
+                    </MudPaper>
+                    <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+                        <PermissionMatrix Roles="roles" Permissions="permissions" Caption="@($"Permissions granted by each {scope.ToLowerInvariant()} role")" />
+                    </MudPaper>
+                </MudTabPanel>
+            }
+        </MudTabs>
+    </ChildContent>
+</PageState>
+
+@code {
+    public sealed record AccessData(IReadOnlyList<RoleDto> Roles, IReadOnlyList<PermissionDto> Permissions);
+
+    private ApiResult<AccessData>? _result;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _result = null;
+        var rolesTask = Api.ListRolesAsync();
+        var permissions = await Api.ListPermissionsAsync();
+        var roles = await rolesTask;
+        _result = !roles.IsSuccess ? ApiResult<AccessData>.Fail(roles.Error!)
+            : !permissions.IsSuccess ? ApiResult<AccessData>.Fail(permissions.Error!)
+            : ApiResult<AccessData>.Ok(new AccessData(roles.Value, permissions.Value));
+    }
+
+    private async Task CreateAsync()
+    {
+        if (_result is not { IsSuccess: true })
+        {
+            return;
+        }
+
+        var data = _result.Value;
+        var saved = await Dialogs.ShowFormAsync(
+            "New role", new RoleForm(), m => @<AccessFields Role="m" Permissions="data.Permissions" />,
+            async m => (await Api.CreateRoleAsync(m.ToCreateRequest())).ToFormError(),
+            "Create role");
+        if (saved is not null)
+        {
+            Snackbar.Success($"Role {saved.Name} was created.");
+            await LoadAsync();
+        }
+    }
+
+    private async Task EditAsync(RoleDto role, AccessData data)
+    {
+        var form = new RoleForm { Id = role.Id, Name = role.Name, Description = role.Description, Scope = role.Scope, Permissions = role.Permissions.ToList() };
+        var saved = await Dialogs.ShowFormAsync(
+            $"Edit role {role.Name}", form, m => @<AccessFields Role="m" Permissions="data.Permissions" />,
+            async m => (await Api.UpdateRoleAsync(role.Id, m.ToUpdateRequest())).ToFormError(),
+            "Save changes");
+        if (saved is not null)
+        {
+            Snackbar.Success($"Role {role.Name} was saved. The change applies without anyone signing in again.");
+            await LoadAsync();
+        }
+    }
+}

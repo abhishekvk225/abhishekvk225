@@ -1,8 +1,9 @@
 @page "/client"
-@layout ClientLayout
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.DashboardClient)]
 @implements IDisposable
 @inject IDashboardApiClient Api
 @inject DashboardRangeState Range
+@inject CurrentUserState User
 
 <PageTitle>Dashboard · NexaVerify</PageTitle>
 
@@ -23,12 +24,13 @@
             <MudItem xs="12" lg="4">
                 <MudPaper Class="nv-card nv-card-pad" Elevation="0" Style="height: 100%;">
                     <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Your account</MudText>
-                    <MudText Typo="Typo.subtitle1">@model.Account.CompanyName</MudText>
-                    <MudText Typo="Typo.body2" Class="nv-muted mb-2">@model.Account.ContactEmail</MudText>
-                    <div class="d-flex align-center flex-wrap" style="gap: var(--nv-space-2);">
-                        <StatusChip Kind="StatusKind.Client" Value="@model.Account.Status" />
-                        <MudText Typo="Typo.body2">@model.Account.Plan plan</MudText>
-                    </div>
+                    <MudText Typo="Typo.subtitle1">@(User.ClientName ?? "Your company")</MudText>
+                    <MudText Typo="Typo.body2" Class="nv-muted mb-2">@User.Email</MudText>
+                    @if (!string.IsNullOrWhiteSpace(model.PlanName))
+                    {
+                        <MudText Typo="Typo.body2">@model.PlanName plan</MudText>
+                    }
+                    <MudText Typo="Typo.body2" Class="nv-muted mt-1" data-testid="license-message">@model.LicenseMessage</MudText>
                 </MudPaper>
             </MudItem>
 
@@ -54,9 +56,9 @@
 
             <MudItem xs="12" lg="8">
                 <MudPaper Class="nv-card nv-card-pad" Elevation="0">
-                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Recent checks</MudText>
-                    <DataTable T="RecognitionRow" Caption="Recent checks" Columns="_recentColumns" LoadData="@(_ => Task.FromResult(InMemory(model.RecentRecognitions)))" PageSize="10" Dense="true"
-                               EmptyMessage="Checks you run will show up here." />
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Recent results</MudText>
+                    <DataTable T="RecognitionRow" Caption="Recent results" Columns="_recentColumns" LoadData="@(_ => Task.FromResult(InMemory(model.RecentResults)))" PageSize="10" Dense="true"
+                               EmptyMessage="Results of your checks will show up here." />
                 </MudPaper>
             </MudItem>
             <MudItem xs="12" lg="4">
@@ -66,7 +68,7 @@
                         <dl class="ma-0" style="display:grid; grid-template-columns: 1fr auto; gap: var(--nv-space-2);">
                             <dt>Calls</dt><dd class="ma-0 text-right">@UiText.Number(model.ApiUsage.Calls)</dd>
                             <dt>Errors</dt><dd class="ma-0 text-right">@model.ApiUsage.ErrorRatePercent.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)%</dd>
-                            <dt>Typical response time</dt><dd class="ma-0 text-right">@model.ApiUsage.P95LatencyMs ms</dd>
+                            <dt>Typical response time</dt><dd class="ma-0 text-right">@(model.ApiUsage.P95LatencyMs is { } ms ? $"{ms} ms" : "—")</dd>
                         </dl>
                     </MudPaper>
                     <MudPaper Class="nv-card nv-card-pad" Elevation="0">
@@ -88,10 +90,10 @@
     {
         _recentColumns =
         [
-            DataColumn<RecognitionRow>.Text("When", r => r.At.ToString("d MMM, HH:mm", System.Globalization.CultureInfo.InvariantCulture)),
+            DataColumn<RecognitionRow>.Text("Day", r => r.At.ToString("d MMM", System.Globalization.CultureInfo.InvariantCulture)),
             DataColumn<RecognitionRow>.Text("Type", r => r.Operation),
             DataColumn<RecognitionRow>.Custom("Result", r => @<StatusChip Kind="StatusKind.Outcome" Value="@r.Outcome" />),
-            DataColumn<RecognitionRow>.Text("Reference", r => r.Reference),
+            DataColumn<RecognitionRow>.Text("Checks", r => r.Count, numeric: true),
         ];
         Range.Changed += OnRangeChanged;
         await LoadAsync();

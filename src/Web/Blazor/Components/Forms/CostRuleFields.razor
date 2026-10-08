@@ -1,0 +1,31 @@
+<div class="d-flex flex-column" style="gap: var(--nv-space-3);">
+    @if (Plans is not null)
+    {
+        <MudSelect T="Guid?" @bind-Value="Model.PlanId" Label="Plan" Variant="Variant.Outlined" Required="true" RequiredError="Choose a plan.">
+            @foreach (var plan in Plans)
+            {
+                <MudSelectItem T="Guid?" Value="@plan.Id">@plan.Name</MudSelectItem>
+            }
+        </MudSelect>
+    }
+    <MudSelect T="string" @bind-Value="Model.Operation" For="() => Model.Operation" Label="Operation" Variant="Variant.Outlined">
+        @foreach (var operation in CostRuleOptions.Operations)
+        {
+            <MudSelectItem T="string" Value="@operation">@operation</MudSelectItem>
+        }
+    </MudSelect>
+    <MudNumericField T="int" @bind-Value="Model.Credits" For="() => Model.Credits" Label="Credits per use" Variant="Variant.Outlined" Min="0" Max="1000" />
+    <MudSelect T="string" @bind-Value="Model.ChargePolicy" For="() => Model.ChargePolicy" Label="When to charge" Variant="Variant.Outlined">
+        @foreach (var (value, label) in CostRuleOptions.Policies)
+        {
+            <MudSelectItem T="string" Value="@value">@label</MudSelectItem>
+        }
+    </MudSelect>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CostRuleForm Model { get; set; } = default!;
+
+    /// <summary>When set, the rule is for one of these plans; when null it is the platform default.</summary>
+    [Parameter] public IReadOnlyList<NexaVerify.Contracts.Licensing.PlanDto>? Plans { get; set; }
+}

@@ -24,7 +24,7 @@ public abstract class UiTestBase : BunitContext, IAsyncLifetime
         Services.AddSingleton<TimeProvider>(Clock);
         Services.AddSingleton<FakeClipboard>();
         Services.AddSingleton<IClipboardService>(sp => sp.GetRequiredService<FakeClipboard>());
-        Services.AddSingleton<IAppSnackbar, AppSnackbar>();
+        Services.AddScoped<IAppSnackbar, AppSnackbar>();
     }
 
     // MudBlazor registers async-only disposables; dispose the container asynchronously (xUnit then skips the failing sync path).

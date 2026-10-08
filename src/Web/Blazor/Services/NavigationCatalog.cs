@@ -13,24 +13,24 @@ public static class NavigationCatalog
         ]),
         new("Clients",
         [
-            new("Clients", "admin/clients", Icons.Material.Outlined.Business, WebPermissions.ClientsRead, Implemented: false),
+            new("Clients", "admin/clients", Icons.Material.Outlined.Business, WebPermissions.ClientsRead),
         ]),
         new("Licensing",
         [
-            new("Licenses", "admin/licenses", Icons.Material.Outlined.VpnKey, WebPermissions.LicensesRead, Implemented: false),
-            new("Plans", "admin/plans", Icons.Material.Outlined.Inventory2, WebPermissions.PlansManage, Implemented: false),
-            new("Cost rules", "admin/cost-rules", Icons.Material.Outlined.Toll, WebPermissions.LicensesCostRules, Implemented: false),
+            new("Licenses", "admin/licenses", Icons.Material.Outlined.VpnKey, WebPermissions.LicensesRead),
+            new("Plans", "admin/plans", Icons.Material.Outlined.Inventory2, WebPermissions.LicensesRead),
+            new("Cost rules", "admin/cost-rules", Icons.Material.Outlined.Toll, WebPermissions.LicensesRead),
         ]),
         new("Insights",
         [
-            new("Reports", "admin/reports", Icons.Material.Outlined.Assessment, WebPermissions.ReportsRead, Implemented: false),
-            new("Audit logs", "admin/audit", Icons.Material.Outlined.History, WebPermissions.AuditRead, Implemented: false),
+            new("Reports", "admin/reports", Icons.Material.Outlined.Assessment, WebPermissions.ReportsRead),
+            new("Audit logs", "admin/audit", Icons.Material.Outlined.History, WebPermissions.AuditRead),
         ]),
         new("System",
         [
             new("Settings", "admin/settings", Icons.Material.Outlined.Settings, WebPermissions.SystemConfigure, Implemented: false),
-            new("Roles & permissions", "admin/roles", Icons.Material.Outlined.AdminPanelSettings, WebPermissions.RolesManage, Implemented: false),
-            new("Platform users", "admin/platform-users", Icons.Material.Outlined.Group, WebPermissions.UsersPlatformManage, Implemented: false),
+            new("Roles & permissions", "admin/roles", Icons.Material.Outlined.AdminPanelSettings, WebPermissions.RolesManage),
+            new("Platform users", "admin/platform-users", Icons.Material.Outlined.Group, WebPermissions.UsersPlatformManage),
             new("Health", "admin/health", Icons.Material.Outlined.MonitorHeart, WebPermissions.SystemConfigure, Implemented: false),
         ]),
     ];

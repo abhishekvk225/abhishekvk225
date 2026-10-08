@@ -1,0 +1,74 @@
+<div class="d-flex flex-column" style="gap: var(--nv-space-3);">
+    @if (ShowCompany)
+    {
+        <MudGrid Spacing="2">
+            @if (ShowCode)
+            {
+                <MudItem xs="12" sm="4">
+                    <MudTextField T="string" @bind-Value="Model.Code" For="() => Model.Code" Label="Client code" Variant="Variant.Outlined" Immediate="true"
+                                  HelperText="Short and unique, e.g. ACME" MaxLength="30" />
+                </MudItem>
+            }
+            <MudItem xs="12" sm="@(ShowCode ? 8 : 12)">
+                <MudTextField T="string" @bind-Value="Model.Name" For="() => Model.Name" Label="Company name" Variant="Variant.Outlined" Immediate="true" MaxLength="150" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField T="string" @bind-Value="Model.LegalName" For="() => Model.LegalName" Label="Legal name (optional)" Variant="Variant.Outlined" Immediate="true" MaxLength="200" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField T="string" @bind-Value="Model.ContactEmail" For="() => Model.ContactEmail" Label="Contact email" InputType="InputType.Email" Variant="Variant.Outlined" Immediate="true" MaxLength="256" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField T="string" @bind-Value="Model.ContactPhone" For="() => Model.ContactPhone" Label="Phone (optional)" InputType="InputType.Telephone" Variant="Variant.Outlined" Immediate="true" MaxLength="40" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField T="string" @bind-Value="Model.Website" For="() => Model.Website" Label="Website (optional)" InputType="InputType.Url" Variant="Variant.Outlined" Immediate="true" MaxLength="200" HelperText="https://…" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField T="string" @bind-Value="Model.AddressLine1" For="() => Model.AddressLine1" Label="Address (optional)" Variant="Variant.Outlined" Immediate="true" MaxLength="150" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField T="string" @bind-Value="Model.City" For="() => Model.City" Label="City (optional)" Variant="Variant.Outlined" Immediate="true" MaxLength="100" />
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudTextField T="string" @bind-Value="Model.PostalCode" For="() => Model.PostalCode" Label="Postcode" Variant="Variant.Outlined" Immediate="true" MaxLength="20" />
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudTextField T="string" @bind-Value="Model.Country" For="() => Model.Country" Label="Country code" Variant="Variant.Outlined" Immediate="true" MaxLength="2" HelperText="e.g. GB" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField T="string" @bind-Value="Model.Industry" For="() => Model.Industry" Label="Industry (optional)" Variant="Variant.Outlined" Immediate="true" MaxLength="100" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField T="string" @bind-Value="Model.TimeZone" For="() => Model.TimeZone" Label="Time zone" Variant="Variant.Outlined" Immediate="true" MaxLength="64" HelperText="e.g. Europe/London or UTC" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField T="string" @bind-Value="Model.Notes" For="() => Model.Notes" Label="Internal notes (optional)" Variant="Variant.Outlined" Immediate="true" Lines="3" MaxLength="1000" />
+            </MudItem>
+        </MudGrid>
+    }
+
+    @if (ShowAdmin)
+    {
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6">
+                <MudTextField T="string" @bind-Value="Model.AdminFullName" For="() => Model.AdminFullName" Label="Administrator's full name" Variant="Variant.Outlined" Immediate="true" MaxLength="150" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField T="string" @bind-Value="Model.AdminEmail" For="() => Model.AdminEmail" Label="Administrator's email" InputType="InputType.Email" Variant="Variant.Outlined" Immediate="true" MaxLength="256"
+                              HelperText="They receive an invitation to choose a password." />
+            </MudItem>
+        </MudGrid>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ClientForm Model { get; set; } = default!;
+
+    [Parameter] public bool ShowCompany { get; set; } = true;
+
+    [Parameter] public bool ShowAdmin { get; set; }
+
+    /// <summary>The client code is chosen once, at creation.</summary>
+    [Parameter] public bool ShowCode { get; set; }
+}

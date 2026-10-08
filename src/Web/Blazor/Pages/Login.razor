@@ -1,88 +1,74 @@
 @page "/login"
 @layout AuthLayout
-@inject IAuthApiClient Auth
-@inject CurrentUserState User
-@inject NavigationManager Nav
+@using NexaVerify.Web.Security
 @inject IHostEnvironment Env
+@inject NavigationManager Nav
 
 <PageTitle>Sign in · NexaVerify</PageTitle>
 
-<MudText Typo="Typo.h2" HtmlTag="h1">Welcome back</MudText>
-<MudText Typo="Typo.body1" Class="nv-muted mb-5">Sign in to manage your face recognition account.</MudText>
+@* Static server-rendered page: a plain HTML form that posts to /auth/login (antiforgery-protected). Only a normal HTTP response can
+   set the session cookie, and the browser never receives a token. *@
+<h1 class="mud-typography mud-typography-h2">Welcome back</h1>
+<p class="mud-typography mud-typography-body1 nv-muted nv-form-lead">Sign in to manage your face recognition account.</p>
 
-<EditForm Model="_model" OnValidSubmit="SubmitAsync" novalidate>
-    <DataAnnotationsValidator />
+@if (!string.IsNullOrEmpty(Message))
+{
+    <div class="nv-alert nv-alert-error" role="alert" data-testid="login-error">
+        <span>@Message</span>
+        @if (Reference is not null)
+        {
+            <span class="nv-alert-ref">Reference: @Reference</span>
+        }
+    </div>
+}
+else if (SignedOut == "1")
+{
+    <div class="nv-alert nv-alert-info" role="status" data-testid="login-signed-out">You have been signed out.</div>
+}
 
-    @if (_error is not null)
+<form method="post" action="/auth/login" class="nv-form" novalidate data-testid="login-form">
+    <AntiforgeryToken />
+    @if (ReturnUrlValue is not null)
     {
-        <MudAlert Severity="Severity.Error" Dense="true" Class="mb-4" role="alert" data-testid="login-error">
-            @_error.Message
-            @if (!string.IsNullOrWhiteSpace(_error.CorrelationId))
-            {
-                <MudText Typo="Typo.caption" Class="d-block">Reference: @_error.CorrelationId</MudText>
-            }
-        </MudAlert>
+        <input type="hidden" name="returnUrl" value="@ReturnUrlValue" />
     }
 
-    <MudTextField T="string" @bind-Value="_model.Email" For="() => _model.Email" Label="Email address" InputType="InputType.Email"
-                  Variant="Variant.Outlined" Immediate="true" Class="mb-3" AutoFocus="true" Disabled="_busy" autocomplete="username" />
-
-    <MudTextField T="string" @bind-Value="_model.Password" For="() => _model.Password" Label="Password" InputType="@(_showPassword ? InputType.Text : InputType.Password)"
-                  Variant="Variant.Outlined" Immediate="true" Disabled="_busy" autocomplete="current-password"
-                  Adornment="Adornment.End" AdornmentIcon="@(_showPassword ? Icons.Material.Outlined.VisibilityOff : Icons.Material.Outlined.Visibility)"
-                  OnAdornmentClick="() => _showPassword = !_showPassword" AdornmentAriaLabel="@(_showPassword ? "Hide password" : "Show password")" />
-
-    <div class="d-flex justify-end mt-1 mb-4">
-        <MudLink Href="forgot-password" Typo="Typo.body2">Forgot your password?</MudLink>
+    <div class="nv-field">
+        <label for="login-email" class="nv-label">Email address</label>
+        <input id="login-email" name="email" type="email" class="nv-input" autocomplete="username" required maxlength="256" autofocus />
     </div>
 
-    <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Size="Size.Large" Disabled="_busy" data-testid="login-submit">
-        @if (_busy)
-        {
-            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
-            <span>Signing in…</span>
-        }
-        else
-        {
-            <span>Sign in</span>
-        }
-    </MudButton>
-</EditForm>
+    <div class="nv-field">
+        <label for="login-password" class="nv-label">Password</label>
+        <input id="login-password" name="password" type="password" class="nv-input" autocomplete="current-password" required maxlength="256" />
+    </div>
+
+    <div class="nv-form-row">
+        <a href="forgot-password" class="nv-link">Forgot your password?</a>
+    </div>
+
+    <button type="submit" class="nv-btn nv-btn-primary" data-testid="login-submit">Sign in</button>
+</form>
 
 @if (Env.IsDevelopment())
 {
-    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mt-5" data-testid="demo-hint">
-        Preview build: any password works. Use an email containing "admin" for the admin console, "fail&#64;…" to see the error state, anything else for the client portal.
-    </MudAlert>
+    <p class="nv-muted nv-dev-hint" data-testid="dev-hint">Development build: sign in with a user of the API configured in Api:BaseUrl.</p>
 }
 
 @code {
-    private readonly LoginModel _model = new();
-    private ApiError? _error;
-    private bool _busy;
-    private bool _showPassword;
+    [SupplyParameterFromQuery(Name = "error")] public string? Error { get; set; }
 
-    private async Task SubmitAsync()
-    {
-        _busy = true;
-        _error = null;
-        try
-        {
-            var result = await Auth.LoginAsync(_model);
-            if (!result.IsSuccess)
-            {
-                _error = result.Error;
-                _model.Password = string.Empty;
-                return;
-            }
+    [SupplyParameterFromQuery(Name = "ref")] public string? Ref { get; set; }
 
-            var user = result.Value;
-            User.SignIn(user.DisplayName, user.Email, user.RoleName, user.ClientName, user.Permissions);
-            Nav.NavigateTo(user.Portal == Portal.Admin ? "admin" : "client");
-        }
-        finally
-        {
-            _busy = false;
-        }
-    }
+    [SupplyParameterFromQuery(Name = "returnUrl")] public string? ReturnUrlQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "signedOut")] public string? SignedOut { get; set; }
+
+    private string? Message => string.IsNullOrEmpty(Error) ? null : NullIfEmpty(LoginErrors.MessageFor(Error));
+
+    private string? Reference => AuthEndpoints.SanitiseReference(Ref);
+
+    private string? ReturnUrlValue => ReturnUrl.IsSafe(ReturnUrlQuery) ? ReturnUrlQuery : null;
+
+    private static string? NullIfEmpty(string value) => value.Length == 0 ? null : value;
 }

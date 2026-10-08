@@ -1,3 +1,4 @@
+@using Microsoft.AspNetCore.Components.Authorization
 @inherits LayoutComponentBase
 @inject CurrentUserState User
 
@@ -6,5 +7,13 @@
 </PortalShell>
 
 @code {
-    protected override void OnInitialized() => User.SignInDemo(Portal.Admin); // UI-1 stub: real session arrives with the BFF wiring
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is not null)
+        {
+            User.Load((await AuthState).User);
+        }
+    }
 }

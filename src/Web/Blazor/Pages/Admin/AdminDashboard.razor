@@ -1,5 +1,5 @@
 @page "/admin"
-@layout AdminLayout
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.DashboardAdmin)]
 @implements IDisposable
 @inject IDashboardApiClient Api
 @inject DashboardRangeState Range
@@ -7,7 +7,7 @@
 
 <PageTitle>Dashboard · Admin · NexaVerify</PageTitle>
 
-<PageHeader Title="Dashboard" Subtitle="Platform health, usage and licences at a glance.">
+<PageHeader Title="Dashboard" Subtitle="Platform health, usage and licenses at a glance.">
     <Actions><RangeSelector /></Actions>
 </PageHeader>
 
@@ -23,15 +23,15 @@
             }
 
             <MudItem xs="12" lg="8">
-                <ChartCard Title="Recognition requests" Subtitle="@($"Last {Range.Days} days")" IsEmpty="model.RequestsTrend.Count == 0">
-                    <ChildContent><SimpleChart Kind="ChartKind.Line" Series="model.RequestsTrend" Description="@($"Line chart of successful and failed recognition requests over the last {Range.Days} days.")" /></ChildContent>
-                    <TableContent><SeriesTable Series="model.RequestsTrend" Caption="Recognition requests per day" /></TableContent>
+                <ChartCard Title="API requests" Subtitle="@($"Last {Range.Days} days")" IsEmpty="model.RequestsTrend.Count == 0">
+                    <ChildContent><SimpleChart Kind="ChartKind.Line" Series="model.RequestsTrend" Description="@($"Line chart of successful and failed API requests over the last {Range.Days} days.")" /></ChildContent>
+                    <TableContent><SeriesTable Series="model.RequestsTrend" Caption="API requests per day" /></TableContent>
                 </ChartCard>
             </MudItem>
             <MudItem xs="12" lg="4">
-                <ChartCard Title="Client-wise usage" Subtitle="Top clients by requests" IsEmpty="model.ClientUsage.Count == 0">
-                    <ChildContent><SimpleChart Kind="ChartKind.Bar" Series="ClientSeries(model)" Description="Bar chart of requests per client." /></ChildContent>
-                    <TableContent><SeriesTable Series="ClientSeries(model)" LabelHeader="Client" Caption="Requests per client" /></TableContent>
+                <ChartCard Title="Client-wise usage" Subtitle="Top clients by billed operations" IsEmpty="model.ClientUsage.Count == 0">
+                    <ChildContent><SimpleChart Kind="ChartKind.Bar" Series="ClientSeries(model)" Description="Bar chart of billed operations per client." /></ChildContent>
+                    <TableContent><SeriesTable Series="ClientSeries(model)" LabelHeader="Client" Caption="Billed operations per client" /></TableContent>
                 </ChartCard>
             </MudItem>
 
@@ -43,22 +43,30 @@
             </MudItem>
             <MudItem xs="12" lg="6">
                 <MudPaper Class="nv-card nv-card-pad" Elevation="0">
-                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Licences expiring soon</MudText>
-                    <DataTable T="ExpiringLicenseRow" Caption="Licences expiring soon" Columns="_expiringColumns" LoadData="@(_ => Task.FromResult(InMemory(model.ExpiringLicenses)))" PageSize="10" Dense="true"
-                               EmptyMessage="No licences are close to expiring." />
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Licenses expiring soon</MudText>
+                    <DataTable T="ExpiringLicenseRow" Caption="Licenses expiring soon" Columns="_expiringColumns" LoadData="@(_ => Task.FromResult(InMemory(model.ExpiringLicenses)))" PageSize="10" Dense="true"
+                               EmptyMessage="No licenses are close to expiring." />
                 </MudPaper>
             </MudItem>
 
             <MudItem xs="12" lg="7">
                 <MudPaper Class="nv-card nv-card-pad" Elevation="0">
-                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-2">Recent activity</MudText>
-                    <ActivityFeed Items="Activity(model)" />
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Licenses running low on credits</MudText>
+                    <DataTable T="ExpiringLicenseRow" Caption="Licenses running low on credits" Columns="_lowColumns" LoadData="@(_ => Task.FromResult(InMemory(model.LowBalanceLicenses)))" PageSize="10" Dense="true"
+                               EmptyMessage="No license is close to running out of credits." />
                 </MudPaper>
             </MudItem>
             <MudItem xs="12" lg="5">
                 <MudPaper Class="nv-card nv-card-pad" Elevation="0">
-                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">System alerts</MudText>
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Needs attention</MudText>
                     <AlertList Alerts="model.Alerts" />
+                    <MudText Typo="Typo.h6" HtmlTag="h3" Class="mt-4 mb-2">Clients by status</MudText>
+                    <ul class="ma-0 pa-0" style="list-style:none;display:grid;gap:var(--nv-space-2);" data-testid="clients-by-status">
+                        @foreach (var status in model.ClientsByStatus)
+                        {
+                            <li class="d-flex align-center justify-space-between"><StatusChip Kind="StatusKind.Client" Value="@status.Label" /><span>@UiText.Number(status.Count)</span></li>
+                        }
+                    </ul>
                 </MudPaper>
             </MudItem>
         </MudGrid>
@@ -68,6 +76,7 @@
 @code {
     private ApiResult<AdminDashboardModel>? _result;
     private IReadOnlyList<DataColumn<ExpiringLicenseRow>> _expiringColumns = [];
+    private IReadOnlyList<DataColumn<ExpiringLicenseRow>> _lowColumns = [];
     private int _version;
 
     protected override async Task OnInitializedAsync()
@@ -75,9 +84,15 @@
         _expiringColumns =
         [
             DataColumn<ExpiringLicenseRow>.Text("Client", r => r.Client),
-            DataColumn<ExpiringLicenseRow>.Text("Licence", r => r.LicenseNumber),
+            DataColumn<ExpiringLicenseRow>.Text("License", r => r.LicenseNumber),
             DataColumn<ExpiringLicenseRow>.Text("Credits left", r => $"{UiText.Number(r.Remaining)} / {UiText.Number(r.Total)}", numeric: true),
             DataColumn<ExpiringLicenseRow>.Custom("Expires", r => @<span>@UiText.Plural(Math.Max(0, (int)(r.ExpiresAt - Clock.GetUtcNow()).TotalDays), "day")</span>),
+        ];
+        _lowColumns =
+        [
+            DataColumn<ExpiringLicenseRow>.Text("Client", r => r.Client),
+            DataColumn<ExpiringLicenseRow>.Text("License", r => r.LicenseNumber),
+            DataColumn<ExpiringLicenseRow>.Text("Credits left", r => $"{UiText.Number(r.Remaining)} / {UiText.Number(r.Total)}", numeric: true),
         ];
         Range.Changed += OnRangeChanged;
         await LoadAsync();
@@ -102,15 +117,6 @@
 
     private static IReadOnlyList<TrendSeries> ClientSeries(AdminDashboardModel m) =>
         [new TrendSeries("Requests", m.ClientUsage.Select(c => new TrendPoint(c.Client, c.Requests)).ToList())];
-
-    private static IReadOnlyList<ActivityItem> Activity(AdminDashboardModel m) =>
-        m.RecentActivity.Select(a => new ActivityItem(a.Id, a.Title, a.Detail, a.At, a.Kind switch
-        {
-            "license" => Icons.Material.Outlined.VpnKey,
-            "client" => Icons.Material.Outlined.Business,
-            "key" => Icons.Material.Outlined.Key,
-            _ => Icons.Material.Outlined.History,
-        })).ToList();
 
     public void Dispose() => Range.Changed -= OnRangeChanged;
 }

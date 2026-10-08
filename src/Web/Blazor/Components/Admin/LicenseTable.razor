@@ -1,0 +1,55 @@
+@using NexaVerify.Contracts.Licensing
+@inject ILicensingApiClient Api
+
+@* One license list used by the Licenses page and the client page. Filters are owned by the caller; changing @key reloads. *@
+<DataTable @ref="_table" T="LicenseListItemDto" Caption="@Caption" Columns="_columns" LoadData="LoadAsync" Search="@Search" PageSize="@PageSize" DefaultSort="expiresAt:asc"
+           EmptyMessage="@EmptyMessage">
+    <RowActions Context="license">
+        <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="@($"admin/licenses/{license.Id}")" aria-label="@($"Open license {license.Name}")" />
+    </RowActions>
+</DataTable>
+
+@code {
+    private DataTable<LicenseListItemDto>? _table;
+    private IReadOnlyList<DataColumn<LicenseListItemDto>> _columns = [];
+
+    [Parameter] public string Caption { get; set; } = "Licenses";
+
+    [Parameter] public string? Search { get; set; }
+
+    [Parameter] public string? Status { get; set; }
+
+    [Parameter] public Guid? ClientId { get; set; }
+
+    [Parameter] public int? ExpiringInDays { get; set; }
+
+    [Parameter] public bool ShowClient { get; set; } = true;
+
+    [Parameter] public int PageSize { get; set; } = 25;
+
+    [Parameter] public string EmptyMessage { get; set; } = "No licenses match.";
+
+    public Task ReloadAsync() => _table is null ? Task.CompletedTask : _table.ReloadAsync();
+
+    protected override void OnInitialized()
+    {
+        var columns = new List<DataColumn<LicenseListItemDto>>();
+        if (ShowClient)
+        {
+            columns.Add(DataColumn<LicenseListItemDto>.Custom("Client", l => @<MudLink Href="@($"admin/clients/{l.ClientId}")" Underline="Underline.Hover">@l.ClientName</MudLink>));
+        }
+
+        columns.AddRange(
+        [
+            DataColumn<LicenseListItemDto>.Custom("License", l => @<MudLink Href="@($"admin/licenses/{l.Id}")" Underline="Underline.Hover">@l.Name</MudLink>),
+            DataColumn<LicenseListItemDto>.Text("Plan", l => l.PlanName),
+            DataColumn<LicenseListItemDto>.Custom("Status", l => @<StatusChip Kind="StatusKind.License" Value="@l.EffectiveStatus" />),
+            DataColumn<LicenseListItemDto>.Text("Credits left", l => $"{UiText.Number(l.RemainingCredits)} / {UiText.Number(l.TotalCredits)}", numeric: true),
+            DataColumn<LicenseListItemDto>.Text("Expires", l => $"{l.ExpiresAt.ToString("d MMM yyyy", System.Globalization.CultureInfo.InvariantCulture)} ({UiText.Plural(Math.Max(0, l.DaysRemaining), "day")})", "expiresAt"),
+        ]);
+        _columns = columns;
+    }
+
+    private Task<ApiResult<PagedResult<LicenseListItemDto>>> LoadAsync(PageRequest page) =>
+        Api.ListAsync(page, Status, ClientId, ExpiringInDays);
+}

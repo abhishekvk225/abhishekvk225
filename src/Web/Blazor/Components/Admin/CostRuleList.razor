@@ -1,0 +1,52 @@
+@using NexaVerify.Contracts.Licensing
+
+@* Read-only list of cost rules with an optional edit action. Rules are listed as the API returns them (most specific first). *@
+<PageState T="IReadOnlyList<CostRuleDto>" Result="Result" OnRetry="OnRetry" IsEmpty="@(r => r.Count == 0)" EmptyTitle="No rules yet"
+           EmptyMessage="@EmptyMessage">
+    <ChildContent Context="rules">
+        <div class="nv-table-wrap">
+            <table class="nv-table nv-dense" aria-label="@Caption">
+                <thead>
+                    <tr>
+                        <th scope="col">Applies to</th>
+                        <th scope="col">Operation</th>
+                        <th scope="col" style="text-align:right">Credits</th>
+                        <th scope="col">When charged</th>
+                        <th scope="col">Since</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var rule in rules)
+                    {
+                        <tr>
+                            <td>@ScopeLabel(rule)</td>
+                            <td>@rule.Operation</td>
+                            <td style="text-align:right;font-variant-numeric:tabular-nums">@UiText.Number(rule.Credits)</td>
+                            <td>@CostRuleOptions.PolicyLabel(rule.ChargePolicy)</td>
+                            <td>@rule.EffectiveFrom.ToString("d MMM yyyy", System.Globalization.CultureInfo.InvariantCulture)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </ChildContent>
+</PageState>
+
+@code {
+    [Parameter] public ApiResult<IReadOnlyList<CostRuleDto>>? Result { get; set; }
+
+    [Parameter] public IReadOnlyDictionary<Guid, string>? PlanNames { get; set; }
+
+    [Parameter] public EventCallback OnRetry { get; set; }
+
+    [Parameter] public string Caption { get; set; } = "Cost rules";
+
+    [Parameter] public string EmptyMessage { get; set; } = "Everything uses the built-in prices.";
+
+    private string ScopeLabel(CostRuleDto rule) => rule switch
+    {
+        { PlanId: { } plan } => PlanNames is not null && PlanNames.TryGetValue(plan, out var name) ? $"Plan: {name}" : "A plan",
+        { ClientId: not null } => "This client only",
+        _ => "Everyone (default)",
+    };
+}

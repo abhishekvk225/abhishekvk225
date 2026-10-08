@@ -1,0 +1,10 @@
+@inject NavigationManager Nav
+
+@code {
+    /// <summary>Sends an anonymous visitor to the sign-in page, remembering where they wanted to go (validated again server-side).</summary>
+    protected override void OnInitialized()
+    {
+        var target = "/" + Nav.ToBaseRelativePath(Nav.Uri);
+        Nav.NavigateTo($"/login?returnUrl={Uri.EscapeDataString(target)}", forceLoad: true);
+    }
+}

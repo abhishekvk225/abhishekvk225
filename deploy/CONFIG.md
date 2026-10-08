@@ -66,6 +66,26 @@ Layering: `appsettings.json` (safe defaults, **no secrets**) → `appsettings.{E
 
 Alerts are de-duplicated by a unique `(subject, type, bucket)` row (`licensing.LicenseAlerts`), so restarts and several API nodes cannot send one twice; a renewal or top-up changes the bucket so the next crossing alerts again. The job runs on every node that hosts the API; split it onto a worker later without code change.
 
+## Blazor portal (`src/Web/Blazor`, backend-for-frontend)
+The portal is a separate deployable. The browser only ever holds an opaque, HttpOnly, `SameSite=Strict`, `Secure` session cookie; the JWT and refresh token stay on the portal server (docs/ui-notes.md, "M8a: BFF and session design").
+| Key | Default | Notes |
+|---|---|---|
+| `Api:BaseUrl` | *(required; `https://localhost:7101` in Development)* | Address of the NexaVerify API (with or without a trailing `/api/v1`). Must be absolute **https** outside Development/Testing/UiDemo and must not carry credentials; the portal refuses to start otherwise. |
+| `Api:TimeoutSeconds` | 30 | Per call to the API. A timeout is shown to users as "can't reach the service", never as a raw exception. |
+| `Session:CookieName` | `nv.session` | Opaque session cookie. A `__Host-` prefixed name works behind HTTPS (needs `Secure`, path `/`). |
+| `Session:IdleTimeoutMinutes` | 30 | Sliding window: no portal activity for this long ends the session. An open circuit notices within 30 s. |
+| `Session:AbsoluteTimeoutHours` | 12 | Hard limit from sign-in, however active the user is. Keep it at or below the refresh-token lifetime (`Auth:RefreshTokenDays`). |
+| `Session:RefreshSkewSeconds` | 30 | Access tokens are refreshed this many seconds before they expire. |
+| `Security:Cookies:RequireSecure` | `true` (`false` in Development) | Session and antiforgery cookies are `Secure`-only. |
+| `Security:Cookies:SameSite` | `Strict` | |
+| `Security:Headers:*` | see appsettings | CSP with per-request nonce, Permissions-Policy etc. (unchanged). |
+| `DataProtection:KeyPath` | *(unset = per-machine default)* | Directory for the Data Protection key ring that encrypts session payloads, the cookie ticket and antiforgery tokens. **Set it (shared, persistent, access-restricted) for containers and for more than one node**, otherwise every restart or other node invalidates all sessions. |
+| `ForwardedHeaders:Enabled/KnownProxies/KnownNetworks/ForwardLimit` | disabled | Same rules as the API: required behind a TLS-terminating proxy, startup fails without a trust list. Needed so the portal sees the real client address (it forwards it to the API on sign-in for rate limiting). |
+| `Ui:UseStubClients` | `false` | Design-review stubs that accept **any password**. Allowed only in Development or `UiDemo`; the portal refuses to start with it anywhere else. |
+
+Multi-node notes: the session store is `IDistributedCache` (in-memory by default = single node or sticky sessions). For several portal nodes register a shared cache (Redis/SQL) and share `DataProtection:KeyPath`; the single-flight token refresh is per process, so keep a session on one node (sticky) or accept that two nodes refreshing at the same instant look like token reuse to the API and end that session.
+On the API side: add the portal's address to `ForwardedHeaders:KnownProxies` so the end user's address (sent as `X-Forwarded-For` on sign-in) drives the per-IP auth limits, otherwise all sign-ins share the portal's IP bucket. Set `Auth:PasswordResetUrlTemplate` to the portal's `/reset-password?email={email}&token={token}`.
+
 ## Development-only switches (the API refuses to start in Production with any of these on)
 `Jwt:AllowEphemeralKey`, `Encryption:AllowEphemeralKey`, `Email:LogBodies` (logs reset links!).
 

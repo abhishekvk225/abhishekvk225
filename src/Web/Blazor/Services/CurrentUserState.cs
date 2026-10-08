@@ -1,3 +1,6 @@
+using System.Security.Claims;
+using NexaVerify.Web.Security;
+
 namespace NexaVerify.Web.Services;
 
 public enum Portal
@@ -7,7 +10,8 @@ public enum Portal
 }
 
 /// <summary>
-/// Scoped holder for the signed-in user as the UI sees it. UI-1 uses <see cref="SignInDemo"/>; the BFF will populate it from the session.
+/// Scoped view of the signed-in user for components (display name, role, permissions to trim menus and actions).
+/// Filled from the authenticated principal by the layouts; it holds no tokens and is never the source of truth for access.
 /// </summary>
 public sealed class CurrentUserState
 {
@@ -27,6 +31,8 @@ public sealed class CurrentUserState
 
     public bool Has(string permission) => _permissions.Contains(permission);
 
+    public bool HasAny(params string[] permissions) => permissions.Any(_permissions.Contains);
+
     public void SignIn(string displayName, string email, string roleName, string? clientName, IEnumerable<string> permissions)
     {
         DisplayName = displayName;
@@ -37,6 +43,23 @@ public sealed class CurrentUserState
         IsSignedIn = true;
     }
 
+    /// <summary>Loads the user from the portal principal (claims built from the server-side session).</summary>
+    public void Load(ClaimsPrincipal principal)
+    {
+        if (principal.Identity?.IsAuthenticated != true)
+        {
+            SignOut();
+            return;
+        }
+
+        SignIn(
+            principal.FindFirst(PortalClaims.DisplayName)?.Value ?? principal.Identity.Name ?? "Signed in",
+            principal.FindFirst(ClaimTypes.Name)?.Value ?? string.Empty,
+            principal.FindFirst(PortalClaims.RoleName)?.Value ?? string.Empty,
+            principal.FindFirst(PortalClaims.ClientName)?.Value,
+            principal.FindAll(PortalClaims.Permission).Select(c => c.Value));
+    }
+
     public void SignOut()
     {
         DisplayName = "Guest";
@@ -45,23 +68,5 @@ public sealed class CurrentUserState
         ClientName = null;
         _permissions = new HashSet<string>(StringComparer.Ordinal);
         IsSignedIn = false;
-    }
-
-    /// <summary>Signs in a fake user for the portal when nobody is signed in (dev/stub only).</summary>
-    public void SignInDemo(Portal portal)
-    {
-        if (IsSignedIn && (portal == Portal.Admin) == Has(WebPermissions.DashboardAdmin))
-        {
-            return;
-        }
-
-        if (portal == Portal.Admin)
-        {
-            SignIn("Priya Raman", "priya@nexaverify.example", "Super Admin", null, WebPermissions.SuperAdminDefaults);
-        }
-        else
-        {
-            SignIn("Alex Morgan", "alex@acme.example", "Client Admin", "Acme Corp", WebPermissions.ClientAdminDefaults);
-        }
     }
 }

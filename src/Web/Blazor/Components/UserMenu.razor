@@ -1,5 +1,4 @@
 @inject CurrentUserState User
-@inject IAuthApiClient Auth
 @inject NavigationManager Nav
 
 <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" aria-label="Account menu" data-testid="user-menu">
@@ -14,7 +13,7 @@
         </div>
         <MudDivider />
         <MudMenuItem Icon="@Icons.Material.Outlined.Person" Disabled="true">My profile</MudMenuItem>
-        <MudMenuItem Icon="@Icons.Material.Outlined.Password" Disabled="true">Change password</MudMenuItem>
+        <MudMenuItem Icon="@Icons.Material.Outlined.Password" Href="change-password">Change password</MudMenuItem>
         <MudMenuItem Icon="@Icons.Material.Outlined.Logout" OnClick="SignOutAsync">Sign out</MudMenuItem>
     </ChildContent>
 </MudMenu>
@@ -34,10 +33,11 @@
         }
     }
 
-    private async Task SignOutAsync()
+    // Clearing the cookie needs a normal HTTP response, so hand over to the sign-out endpoint: it ends the server-side
+    // session and revokes the refresh token at the API.
+    private void SignOutAsync()
     {
-        await Auth.LogoutAsync();
         User.SignOut();
-        Nav.NavigateTo("login");
+        Nav.NavigateTo("/auth/signed-out", forceLoad: true);
     }
 }

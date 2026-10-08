@@ -1,0 +1,53 @@
+@using NexaVerify.Contracts.Identity
+
+@* Read-only grid: which role grants which permission. State is conveyed by icon AND text, never colour alone. *@
+<div class="nv-table-wrap" tabindex="0" role="region" aria-label="@Caption">
+    <table class="nv-matrix" data-testid="permission-matrix">
+        <caption class="nv-sr">@Caption</caption>
+        <thead>
+            <tr>
+                <th scope="col">Permission</th>
+                @foreach (var role in Roles)
+                {
+                    <th scope="col">@role.Name</th>
+                }
+            </tr>
+        </thead>
+        @foreach (var group in Permissions.GroupBy(p => p.Group))
+        {
+            <tbody>
+                <tr><th scope="rowgroup" colspan="@(Roles.Count + 1)">@group.Key</th></tr>
+                @foreach (var permission in group)
+                {
+                    <tr>
+                        <th scope="row" style="font-weight: 400;">@permission.Description</th>
+                        @foreach (var role in Roles)
+                        {
+                            var granted = role.Permissions.Contains(permission.Key, StringComparer.Ordinal);
+                            <td data-granted="@(granted ? "true" : "false")">
+                                @if (granted)
+                                {
+                                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" aria-hidden="true" />
+                                    <span class="nv-sr">Granted</span>
+                                }
+                                else
+                                {
+                                    <span aria-hidden="true" class="nv-muted">–</span>
+                                    <span class="nv-sr">Not granted</span>
+                                }
+                            </td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        }
+    </table>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<RoleDto> Roles { get; set; } = [];
+
+    [Parameter, EditorRequired] public IReadOnlyList<PermissionDto> Permissions { get; set; } = [];
+
+    [Parameter] public string Caption { get; set; } = "Permissions granted by each role";
+}

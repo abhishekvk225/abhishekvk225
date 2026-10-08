@@ -13,7 +13,11 @@
             <MudIconButton Icon="@Icons.Material.Outlined.ContentCopy" Size="Size.Small" aria-label="Copy reference" OnClick="CopyAsync" />
         </div>
     }
-    @if (OnRetry.HasDelegate)
+    @if (IsSessionProblem)
+    {
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/login" data-testid="sign-in-again">Sign in again</MudButton>
+    }
+    else if (OnRetry.HasDelegate)
     {
         <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Refresh" OnClick="OnRetry">Try again</MudButton>
     }
@@ -27,6 +31,8 @@
     [Parameter] public ApiError? Error { get; set; }
 
     [Parameter] public EventCallback OnRetry { get; set; }
+
+    private bool IsSessionProblem => Error?.Code is "SESSION_EXPIRED" or "UNAUTHENTICATED" or "TOKEN_EXPIRED";
 
     private Task CopyAsync() => Error?.CorrelationId is { } id ? Clipboard.CopyAsync(id) : Task.CompletedTask;
 }

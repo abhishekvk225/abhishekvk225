@@ -13,10 +13,10 @@
     <link rel="stylesheet" href="_content/MudBlazor/MudBlazor.min.css" />
     <link rel="stylesheet" href="app.css" />
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
-    <HeadOutlet @rendermode="InteractiveMode" />
+    <HeadOutlet @rendermode="PageRenderMode" />
 </head>
 <body>
-    <Routes @rendermode="InteractiveMode" />
+    <Routes @rendermode="PageRenderMode" />
 
     <div id="blazor-error-ui" role="alert">
         An unexpected error occurred.
@@ -34,7 +34,16 @@
     // Interactive Server without prerendering: the shell needs browser APIs (theme, storage) before it can render correctly.
     private static readonly IComponentRenderMode InteractiveMode = new InteractiveServerRenderMode(prerender: false);
 
+    // The sign-in page is static server-rendered: it is a plain HTML form posting to /auth/login, because only a normal HTTP
+    // response can set the session cookie (a SignalR circuit cannot). Everything else is interactive.
+    private static readonly string[] StaticPaths = ["/login"];
+
     [CascadingParameter] private HttpContext? HttpContext { get; set; }
+
+    private IComponentRenderMode? PageRenderMode =>
+        HttpContext is { } http && StaticPaths.Any(p => http.Request.Path.StartsWithSegments(p, StringComparison.OrdinalIgnoreCase))
+            ? null
+            : InteractiveMode;
 
     private string Nonce => HttpContext.GetCspNonce();
 }

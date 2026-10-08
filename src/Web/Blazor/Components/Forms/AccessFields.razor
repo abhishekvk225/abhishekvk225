@@ -1,0 +1,79 @@
+@using NexaVerify.Contracts.Identity
+
+@* Platform user and role forms. Role/permission checkboxes come from the API's own catalogue. *@
+@if (User is not null)
+{
+    <div class="d-flex flex-column" style="gap: var(--nv-space-3);">
+        <MudTextField T="string" @bind-Value="User.Email" For="() => User.Email" Label="Email address" InputType="InputType.Email" Variant="Variant.Outlined" Immediate="true"
+                      Disabled="User.Id is not null" MaxLength="256" />
+        <MudTextField T="string" @bind-Value="User.FullName" For="() => User.FullName" Label="Full name" Variant="Variant.Outlined" Immediate="true" MaxLength="150" />
+        @if (User.Id is null)
+        {
+            <MudTextField T="string" @bind-Value="User.TemporaryPassword" For="() => User.TemporaryPassword" Label="Temporary password" InputType="InputType.Password" Variant="Variant.Outlined" Immediate="true"
+                          HelperText="At least 12 characters. They must change it when they first sign in." autocomplete="new-password" />
+        }
+        else
+        {
+            <MudSwitch T="bool" @bind-Value="User.IsActive" Label="Account is active" Color="Color.Primary" />
+        }
+        <fieldset class="nv-fieldset">
+            <legend class="mud-typography mud-typography-subtitle2">Roles</legend>
+            @foreach (var role in Roles)
+            {
+                var name = role.Name;
+                <MudCheckBox T="bool" Value="User.Roles.Contains(name)" ValueChanged="@(on => User.Roles = Toggle(User.Roles, name, on))" Label="@role.Name" Color="Color.Primary" />
+            }
+        </fieldset>
+        <ValidationMessage For="() => User.Roles" />
+    </div>
+}
+else if (Role is not null)
+{
+    <div class="d-flex flex-column" style="gap: var(--nv-space-3);">
+        <MudTextField T="string" @bind-Value="Role.Name" For="() => Role.Name" Label="Role name" Variant="Variant.Outlined" Immediate="true" Disabled="Role.Id is not null" MaxLength="60" />
+        <MudTextField T="string" @bind-Value="Role.Description" For="() => Role.Description" Label="Description (optional)" Variant="Variant.Outlined" Immediate="true" MaxLength="300" />
+        @if (Role.Id is null)
+        {
+            <MudSelect T="string" @bind-Value="Role.Scope" Label="Who is it for?" Variant="Variant.Outlined" HelperText="Platform roles are for NexaVerify staff, client roles for a client's own users.">
+                <MudSelectItem T="string" Value="@("Platform")">Platform staff</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Client")">Client users</MudSelectItem>
+            </MudSelect>
+        }
+        @foreach (var group in Permissions.Where(p => Role.Scope == "Platform" ? p.Scope != PermissionScopeKind.Client : p.Scope != PermissionScopeKind.Platform).GroupBy(p => p.Group))
+        {
+            <fieldset class="nv-fieldset">
+                <legend class="mud-typography mud-typography-subtitle2">@group.Key</legend>
+                @foreach (var permission in group)
+                {
+                    var key = permission.Key;
+                    <MudCheckBox T="bool" Value="Role.Permissions.Contains(key)" ValueChanged="@(on => Role.Permissions = Toggle(Role.Permissions, key, on))" Label="@permission.Description" Color="Color.Primary" />
+                }
+            </fieldset>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public PlatformUserForm? User { get; set; }
+
+    [Parameter] public RoleForm? Role { get; set; }
+
+    [Parameter] public IReadOnlyList<RoleDto> Roles { get; set; } = [];
+
+    [Parameter] public IReadOnlyList<PermissionDto> Permissions { get; set; } = [];
+
+    private static IReadOnlyCollection<string> Toggle(IReadOnlyCollection<string> current, string value, bool on)
+    {
+        var set = new HashSet<string>(current, StringComparer.Ordinal);
+        if (on)
+        {
+            set.Add(value);
+        }
+        else
+        {
+            set.Remove(value);
+        }
+
+        return set.ToList();
+    }
+}

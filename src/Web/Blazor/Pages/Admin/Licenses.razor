@@ -1,0 +1,76 @@
+@page "/admin/licenses"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.LicensesRead)]
+@inject ILicensingApiClient Api
+@inject IDialogService Dialogs
+@inject IAppSnackbar Snackbar
+
+<PageTitle>Licenses · Admin · NexaVerify</PageTitle>
+
+<PageHeader Title="Licenses" Subtitle="Credit allowances issued to clients.">
+    <Actions>
+        <Can Permission="@WebPermissions.LicensesCreate">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Add" OnClick="IssueAsync" data-testid="issue-license">Issue license</MudButton>
+        </Can>
+    </Actions>
+</PageHeader>
+
+<MudPaper Class="nv-card" Elevation="0">
+    <div class="pa-4">
+        <FilterBar SearchLabel="Search licenses" SearchPlaceholder="Client or license name" OnSearch="OnSearch" ExtraFiltersActive="@(_status is not null || _expiring)" OnReset="ResetFilters">
+            <Filters>
+                <MudSelect T="string" Value="_status" ValueChanged="OnStatus" Label="Status" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Style="min-width: 180px;">
+                    @foreach (var status in new[] { "Active", "Draft", "Inactive", "Suspended", "Expired", "Revoked" })
+                    {
+                        <MudSelectItem T="string" Value="@status">@status</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudSwitch T="bool" Value="_expiring" ValueChanged="OnExpiring" Label="Ending within 30 days" Color="Color.Primary" />
+            </Filters>
+        </FilterBar>
+    </div>
+    <LicenseTable @key="@($"{_status}|{_expiring}|{_version}")" Search="@_search" Status="@_status" ExpiringInDays="@(_expiring ? 30 : null)" />
+</MudPaper>
+
+@code {
+    private string? _search;
+    private string? _status;
+    private bool _expiring;
+    private int _version;
+
+    private void OnSearch(string? text) => _search = text;
+
+    private void OnStatus(string? status) => _status = status;
+
+    private void OnExpiring(bool on) => _expiring = on;
+
+    private void ResetFilters()
+    {
+        _status = null;
+        _expiring = false;
+    }
+
+    private async Task IssueAsync()
+    {
+        var plans = await Api.ListPlansAsync();
+        var saved = await Dialogs.ShowFormAsync(
+            "Issue a license",
+            new IssueLicenseForm(),
+            m => @<LicenseFields Model="m" ShowClientPicker="true" Plans="@(plans.IsSuccess ? plans.Value.Where(p => p.IsActive).ToList() : [])" />,
+            async m =>
+            {
+                if (m.ClientId is not { } clientId)
+                {
+                    return new ApiError("VALIDATION_FAILED", "Choose the client this license is for.", null, 400);
+                }
+
+                var result = await Api.CreateAsync(clientId, m.ToRequest());
+                return result.ToFormError();
+            },
+            "Issue license");
+        if (saved is not null)
+        {
+            Snackbar.Success("The license was issued.");
+            _version++; // reload the list so the new license shows up
+        }
+    }
+}

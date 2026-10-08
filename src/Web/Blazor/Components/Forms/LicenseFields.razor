@@ -1,0 +1,38 @@
+@using NexaVerify.Contracts.Licensing
+
+@* Fields for issuing a license. Plan defaults (credits, period) are applied by the API when left empty. *@
+<div class="d-flex flex-column" style="gap: var(--nv-space-3);">
+    @if (ShowClientPicker)
+    {
+        <ClientPicker Label="Client" Required="true" Value="_client" ValueChanged="OnClientChanged" />
+    }
+    <MudTextField T="string" @bind-Value="Model.Name" For="() => Model.Name" Label="License name" Variant="Variant.Outlined" Immediate="true" MaxLength="150" HelperText="e.g. Annual 2026" />
+    <MudSelect T="Guid?" @bind-Value="Model.PlanId" Label="Plan (optional)" Variant="Variant.Outlined" Clearable="true" HelperText="Credits and length default from the plan.">
+        @foreach (var plan in Plans)
+        {
+            <MudSelectItem T="Guid?" Value="@plan.Id">@plan.Name</MudSelectItem>
+        }
+    </MudSelect>
+    <MudNumericField T="int?" @bind-Value="Model.TotalCredits" For="() => Model.TotalCredits" Label="Credits (optional)" Variant="Variant.Outlined" Min="0" HelperText="Leave empty to use the plan's credits." />
+    <MudGrid Spacing="2">
+        <MudItem xs="12" sm="6"><MudDatePicker Label="Starts (optional)" @bind-Date="Model.StartsAt" Variant="Variant.Outlined" Editable="true" /></MudItem>
+        <MudItem xs="12" sm="6"><MudDatePicker Label="Expires (optional)" @bind-Date="Model.ExpiresAt" Variant="Variant.Outlined" Editable="true" /></MudItem>
+    </MudGrid>
+    <MudTextField T="string" @bind-Value="Model.Notes" For="() => Model.Notes" Label="Internal notes (optional)" Variant="Variant.Outlined" Immediate="true" Lines="3" MaxLength="1000" />
+</div>
+
+@code {
+    private NexaVerify.Contracts.Tenancy.ClientListItemDto? _client;
+
+    [Parameter, EditorRequired] public IssueLicenseForm Model { get; set; } = default!;
+
+    [Parameter] public IReadOnlyList<PlanDto> Plans { get; set; } = [];
+
+    [Parameter] public bool ShowClientPicker { get; set; }
+
+    private void OnClientChanged(NexaVerify.Contracts.Tenancy.ClientListItemDto? client)
+    {
+        _client = client;
+        Model.ClientId = client?.Id;
+    }
+}

@@ -1,0 +1,53 @@
+@using NexaVerify.Contracts.Tenancy
+
+<MudPaper Class="nv-card nv-card-pad" Elevation="0">
+    <MudGrid Spacing="4">
+        <MudItem xs="12" md="6">
+            <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Company</MudText>
+            <DetailList Items="CompanyItems" />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Account</MudText>
+            <DetailList Items="AccountItems" />
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public ClientDto Client { get; set; } = default!;
+
+    private static string Date(DateTime? value) =>
+        value is null ? string.Empty : value.Value.ToString("d MMM yyyy, HH:mm", System.Globalization.CultureInfo.InvariantCulture) + " UTC";
+
+    private static string? Join(params string?[] parts) =>
+        string.Join(", ", parts.Where(p => !string.IsNullOrWhiteSpace(p))) is { Length: > 0 } text ? text : null;
+
+    private IReadOnlyList<DetailItem> CompanyItems =>
+    [
+        new("Name", Client.Name),
+        new("Legal name", Client.LegalName),
+        new("Code", Client.Code),
+        new("Contact email", Client.ContactEmail),
+        new("Phone", Client.ContactPhone),
+        new("Website", Client.Website),
+        new("Industry", Client.Industry),
+        new("Address", Join(Client.AddressLine1, Client.AddressLine2, Client.City, Client.State, Client.PostalCode, Client.Country)),
+        new("Time zone", Client.TimeZone),
+    ];
+
+    private IReadOnlyList<DetailItem> AccountItems =>
+    [
+        new("Status", Content: builder =>
+        {
+            builder.OpenComponent<StatusChip>(0);
+            builder.AddAttribute(1, nameof(StatusChip.Kind), StatusKind.Client);
+            builder.AddAttribute(2, nameof(StatusChip.Value), Client.Status);
+            builder.CloseComponent();
+        }),
+        new("Status reason", Client.StatusReason),
+        new("Status changed", Date(Client.StatusChangedAt)),
+        new("Created", Date(Client.CreatedAt)),
+        new("Last updated", Date(Client.UpdatedAt)),
+        new("Internal notes", Client.Notes),
+    ];
+}

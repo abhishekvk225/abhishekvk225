@@ -1,0 +1,26 @@
+<MudGrid Spacing="2">
+    <MudItem xs="12" sm="4">
+        <MudTextField T="string" @bind-Value="Model.Code" For="() => Model.Code" Label="Code" Variant="Variant.Outlined" Immediate="true" MaxLength="30" Disabled="CodeLocked" />
+    </MudItem>
+    <MudItem xs="12" sm="8">
+        <MudTextField T="string" @bind-Value="Model.Name" For="() => Model.Name" Label="Plan name" Variant="Variant.Outlined" Immediate="true" MaxLength="100" />
+    </MudItem>
+    <MudItem xs="12">
+        <MudTextField T="string" @bind-Value="Model.Description" For="() => Model.Description" Label="Description (optional)" Variant="Variant.Outlined" Immediate="true" Lines="2" MaxLength="500" />
+    </MudItem>
+    <MudItem xs="12" sm="6"><MudNumericField T="int" @bind-Value="Model.DefaultCredits" For="() => Model.DefaultCredits" Label="Credits included" Variant="Variant.Outlined" Min="0" /></MudItem>
+    <MudItem xs="12" sm="6"><MudNumericField T="int" @bind-Value="Model.DefaultDurationDays" For="() => Model.DefaultDurationDays" Label="Length in days" Variant="Variant.Outlined" Min="1" /></MudItem>
+    <MudItem xs="12" sm="6"><MudNumericField T="int" @bind-Value="Model.RateLimitPerMinute" For="() => Model.RateLimitPerMinute" Label="Requests per minute" Variant="Variant.Outlined" Min="1" /></MudItem>
+    <MudItem xs="12" sm="6"><MudNumericField T="int?" @bind-Value="Model.DailyQuota" For="() => Model.DailyQuota" Label="Daily quota (optional)" Variant="Variant.Outlined" Min="1" HelperText="Empty = no daily limit" /></MudItem>
+    <MudItem xs="12" sm="6"><MudNumericField T="int?" @bind-Value="Model.MaxFaceProfiles" For="() => Model.MaxFaceProfiles" Label="Face profile limit (optional)" Variant="Variant.Outlined" Min="1" HelperText="Empty = no limit" /></MudItem>
+    <MudItem xs="6" sm="3"><MudNumericField T="int" @bind-Value="Model.MaxApiKeys" For="() => Model.MaxApiKeys" Label="API keys" Variant="Variant.Outlined" Min="0" /></MudItem>
+    <MudItem xs="6" sm="3"><MudNumericField T="int" @bind-Value="Model.MaxUsers" For="() => Model.MaxUsers" Label="Users" Variant="Variant.Outlined" Min="1" /></MudItem>
+    <MudItem xs="12"><MudSwitch T="bool" @bind-Value="Model.IsActive" Label="Available for new licenses" Color="Color.Primary" /></MudItem>
+</MudGrid>
+
+@code {
+    [Parameter, EditorRequired] public PlanForm Model { get; set; } = default!;
+
+    /// <summary>The code identifies the plan in reports; it is kept stable when editing.</summary>
+    [Parameter] public bool CodeLocked { get; set; }
+}

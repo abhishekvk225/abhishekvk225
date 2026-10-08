@@ -1,0 +1,41 @@
+@* The small license forms in one place: renew, adjust credits and rename. Only the matching model is set. *@
+@if (Renew is not null)
+{
+    <div class="d-flex flex-column" style="gap: var(--nv-space-3);">
+        <MudDatePicker Label="New expiry date" @bind-Date="Renew.ExpiresAt" Variant="Variant.Outlined" Editable="true" Required="true" RequiredError="Choose the new expiry date." />
+        <MudNumericField T="int" @bind-Value="Renew.AdditionalCredits" For="() => Renew.AdditionalCredits" Label="Credits to add" Variant="Variant.Outlined" Min="0"
+                         HelperText="0 only extends the expiry date." />
+        <MudTextField T="string" @bind-Value="Renew.Reason" For="() => Renew.Reason" Label="Note (optional)" Variant="Variant.Outlined" Immediate="true" Lines="2" MaxLength="500" />
+    </div>
+}
+else if (Adjust is not null)
+{
+    <div class="d-flex flex-column" style="gap: var(--nv-space-3);">
+        <MudAlert Severity="Severity.Warning" Dense="true" Variant="Variant.Outlined">
+            This changes the credit balance and is recorded in the ledger. Use a positive number to add credits, a negative number to remove them.
+        </MudAlert>
+        <MudNumericField T="int" @bind-Value="Adjust.Credits" For="() => Adjust.Credits" Label="Credits (+/-)" Variant="Variant.Outlined" />
+        <MudTextField T="string" @bind-Value="Adjust.Reason" For="() => Adjust.Reason" Label="Reason (recorded in the audit log)" Variant="Variant.Outlined" Immediate="true" Lines="3" MaxLength="500" />
+    </div>
+}
+else if (Rename is not null)
+{
+    <div class="d-flex flex-column" style="gap: var(--nv-space-3);">
+        <MudTextField T="string" @bind-Value="Rename.Name" For="() => Rename.Name" Label="License name" Variant="Variant.Outlined" Immediate="true" MaxLength="150" />
+        <MudTextField T="string" @bind-Value="Rename.Notes" For="() => Rename.Notes" Label="Internal notes (optional)" Variant="Variant.Outlined" Immediate="true" Lines="3" MaxLength="1000" />
+    </div>
+}
+else if (Refund is not null)
+{
+    <MudTextField T="string" @bind-Value="Refund.Reason" For="() => Refund.Reason" Label="Reason (recorded in the audit log)" Variant="Variant.Outlined" Immediate="true" Lines="3" MaxLength="500" />
+}
+
+@code {
+    [Parameter] public RenewLicenseForm? Renew { get; set; }
+
+    [Parameter] public AdjustLicenseForm? Adjust { get; set; }
+
+    [Parameter] public LicenseNameForm? Rename { get; set; }
+
+    [Parameter] public RefundForm? Refund { get; set; }
+}
