@@ -1,0 +1,172 @@
+@page "/client/api-keys"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.ApiKeysRead)]
+@inject IApiKeysApiClient Api
+@inject IDialogService Dialogs
+@inject IAppSnackbar Snackbar
+
+<PageTitle>API keys · NexaVerify</PageTitle>
+
+<PageHeader Title="API keys" Subtitle="Keys let your own software use NexaVerify. Keep them secret, like a password.">
+    <Actions>
+        <MudButton Variant="Variant.Outlined" Href="client/api-docs" StartIcon="@Icons.Material.Outlined.MenuBook">API guide</MudButton>
+        <Can Permission="@WebPermissions.ApiKeysManage">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Add" OnClick="CreateAsync" data-testid="create-key">Create key</MudButton>
+        </Can>
+    </Actions>
+</PageHeader>
+
+<MudPaper Class="nv-card" Elevation="0">
+    <DataTable @ref="_table" T="ApiKeyDto" Caption="API keys" Columns="_columns" LoadPage="LoadAsync" PageSize="25" PageSizeOptions="@([25, 50, 100])"
+               EmptyMessage="You have no API keys yet. Create one to connect your software.">
+        <RowActions Context="key">
+            <MudButton Size="Size.Small" Variant="Variant.Text" Href="@($"client/api-logs?keyId={key.Id}")" aria-label="@($"View calls made with {key.Name}")">Calls</MudButton>
+            <Can Permission="@WebPermissions.ApiKeysManage">
+                @if (key.EffectiveStatus is "Active")
+                {
+                    <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => EditAsync(key)" aria-label="@($"Edit {key.Name}")" data-testid="edit-key">Edit</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => RegenerateAsync(key)" aria-label="@($"Replace {key.Name}")" data-testid="regenerate-key">Replace</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" OnClick="() => RevokeAsync(key)" aria-label="@($"Revoke {key.Name}")" data-testid="revoke-key">Revoke</MudButton>
+                }
+            </Can>
+        </RowActions>
+    </DataTable>
+</MudPaper>
+
+@code {
+    private DataTable<ApiKeyDto>? _table;
+    private IReadOnlyList<DataColumn<ApiKeyDto>> _columns = [];
+    private Dictionary<Guid, TopApiKeyDto> _usage = [];
+
+    protected override void OnInitialized() =>
+        _columns =
+        [
+            DataColumn<ApiKeyDto>.Text("Name", k => k.Name),
+            DataColumn<ApiKeyDto>.Text("Key starts with", k => k.Prefix),
+            DataColumn<ApiKeyDto>.Custom("Status", k => @<StatusChip Kind="StatusKind.ApiKey" Value="@k.EffectiveStatus" />),
+            DataColumn<ApiKeyDto>.Text("Can do", k => UiText.Plural(k.Scopes.Count, "thing")),
+            DataColumn<ApiKeyDto>.Text("Last used", k => k.LastUsedAt?.ToString("d MMM yyyy, HH:mm", System.Globalization.CultureInfo.InvariantCulture) ?? "Never"),
+            DataColumn<ApiKeyDto>.Text("Expires", k => k.ExpiresAt?.ToString("d MMM yyyy", System.Globalization.CultureInfo.InvariantCulture) ?? "Never"),
+            DataColumn<ApiKeyDto>.Text("Calls (30 days)", k => _usage.TryGetValue(k.Id, out var u) ? UiText.Number(u.Requests) : "0", numeric: true),
+        ];
+
+    private async Task<ApiResult<PagedResult<ApiKeyDto>>> LoadAsync(PageRequest _, CancellationToken ct)
+    {
+        var keys = await Api.ListAsync(ct);
+        if (keys.IsSuccess)
+        {
+            var usage = await Api.GetKeyUsageAsync(30); // optional: a user without dashboard access just sees 0
+            _usage = usage.IsSuccess ? usage.Value.ToDictionary(u => u.ApiKeyId) : [];
+        }
+
+        return keys.AsPage();
+    }
+
+    private async Task<IReadOnlyList<ApiScopeDto>?> LoadScopesAsync()
+    {
+        var scopes = await Api.ScopesAsync();
+        if (!scopes.IsSuccess)
+        {
+            Snackbar.Error(scopes.Error!);
+            return null;
+        }
+
+        // Only face recognition operations may be given to a key.
+        return scopes.Value.Where(s => s.Key.StartsWith("faces.", StringComparison.Ordinal)).ToList();
+    }
+
+    private async Task CreateAsync()
+    {
+        if (await LoadScopesAsync() is not { } scopes)
+        {
+            return;
+        }
+
+        string? raw = null;
+        var saved = await Dialogs.ShowFormAsync(
+            "Create an API key", new ApiKeyForm(), m => @<ApiKeyFields Model="m" Scopes="scopes" />,
+            async m =>
+            {
+                var result = await Api.CreateAsync(m.ToCreate());
+                if (result.IsSuccess)
+                {
+                    raw = result.Value.RawKey;
+                }
+
+                return result.ToFormError();
+            },
+            "Create key");
+        if (saved is not null)
+        {
+            await RevealAsync("Your new API key", raw, "Copy this key now and keep it somewhere safe. For your security it is shown only once and cannot be shown again.");
+            raw = null;
+            await ReloadAsync();
+        }
+    }
+
+    private async Task EditAsync(ApiKeyDto key)
+    {
+        if (await LoadScopesAsync() is not { } scopes)
+        {
+            return;
+        }
+
+        var saved = await Dialogs.ShowFormAsync(
+            "Edit API key", ApiKeyForm.From(key), m => @<ApiKeyFields Model="m" Scopes="scopes" />,
+            async m => (await Api.UpdateAsync(key.Id, m.ToUpdate())).ToFormError(),
+            "Save changes");
+        if (saved is not null)
+        {
+            Snackbar.Success("The key was updated.");
+            await ReloadAsync();
+        }
+    }
+
+    private async Task RegenerateAsync(ApiKeyDto key)
+    {
+        string? raw = null;
+        var saved = await Dialogs.ShowFormAsync(
+            $"Replace {key.Name}", new RegenerateKeyForm(),
+            m => @<div class="nv-form">
+                <MudText Typo="Typo.body2">We create a new key with the same settings. The old key keeps working for the time below, so you can update your software without a break.</MudText>
+                <MudNumericField T="int" @bind-Value="m.GraceMinutes" For="() => m.GraceMinutes" Label="Keep the old key working for (minutes)" Variant="Variant.Outlined" Min="0" Max="10080"
+                                 HelperText="0 stops the old key straight away. The most is 10,080 (7 days)." />
+            </div>,
+            async m =>
+            {
+                var result = await Api.RegenerateAsync(key.Id, m.GraceMinutes);
+                if (result.IsSuccess)
+                {
+                    raw = result.Value.RawKey;
+                }
+
+                return result.ToFormError();
+            },
+            "Create replacement");
+        if (saved is not null)
+        {
+            await RevealAsync("Your replacement API key", raw, "Copy this key now and keep it somewhere safe. It is shown only once.");
+            raw = null;
+            await ReloadAsync();
+        }
+    }
+
+    private async Task RevokeAsync(ApiKeyDto key)
+    {
+        var confirmed = await Dialogs.ConfirmAsync(
+            $"Revoke {key.Name}?", "Software using this key stops working straight away. This cannot be undone.", "Revoke key", destructive: true, requireReason: true);
+        if (confirmed is not null && (await Api.RevokeAsync(key.Id, confirmed.Reason ?? string.Empty)).Report(Snackbar, "The key was revoked."))
+        {
+            await ReloadAsync();
+        }
+    }
+
+    private async Task RevealAsync(string title, string? raw, string description)
+    {
+        if (raw is not null)
+        {
+            await Dialogs.RevealSecretAsync(title, raw, description);
+        }
+    }
+
+    private Task ReloadAsync() => _table is null ? Task.CompletedTask : _table.ReloadAsync();
+}

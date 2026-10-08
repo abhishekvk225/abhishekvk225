@@ -1,0 +1,117 @@
+@page "/client/identify"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.FacesIdentify)]
+@inject IFacesApiClient Api
+@inject IAppSnackbar Snackbar
+
+<PageTitle>Find a person · NexaVerify</PageTitle>
+
+<PageHeader Title="Find a person" Subtitle="Who is this? Upload a photo and we look for the closest matches among the people you registered." />
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" lg="7">
+        <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+            <EditForm Model="_form" OnValidSubmit="SubmitAsync" novalidate>
+                <DataAnnotationsValidator />
+                <div class="nv-form">
+                    <MudNumericField T="int?" @bind-Value="_form.TopK" For="() => _form.TopK" Label="How many matches to show" Variant="Variant.Outlined" Min="1" Max="20" Disabled="_busy" data-testid="identify-topk" />
+                    <div>
+                        <MudText Typo="Typo.subtitle2" HtmlTag="h2" Class="mb-2">Photo</MudText>
+                        <FacePhotoInput @bind-Image="_image" />
+                        @if (_photoProblem is not null)
+                        {
+                            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2" role="alert" data-testid="photo-problem">@_photoProblem</MudAlert>
+                        }
+                    </div>
+                    @if (_error is not null)
+                    {
+                        <ErrorState Error="_error" />
+                    }
+                    <div>
+                        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_busy || _image is null)" data-testid="identify-submit">
+                            @(_busy ? "Searching…" : "Find")
+                        </MudButton>
+                    </div>
+                </div>
+            </EditForm>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" lg="5">
+        <div aria-live="polite" data-testid="identify-result">
+            @if (_result is not null)
+            {
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+                    <div class="d-flex align-center mb-3" style="gap: var(--nv-space-3);">
+                        <StatusChip Kind="StatusKind.Outcome" Value="@_result.Outcome" />
+                        <MudText Typo="Typo.h5" HtmlTag="p" data-testid="identify-verdict">@(_result.Matches.Count > 0 ? "We found a likely match." : "No one matched this photo.")</MudText>
+                    </div>
+                    @if (_result.Matches.Count > 0)
+                    {
+                        <div class="nv-table-wrap">
+                            <table class="nv-table nv-dense" aria-label="Closest matches" data-testid="identify-matches">
+                                <thead><tr><th scope="col">Reference</th><th scope="col" style="text-align:right">Similarity score</th><th scope="col"><span class="nv-sr">Open</span></th></tr></thead>
+                                <tbody>
+                                    @foreach (var match in _result.Matches)
+                                    {
+                                        <tr>
+                                            <td>@match.ExternalRef</td>
+                                            <td style="text-align:right">@match.Score.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture)</td>
+                                            <td style="text-align:right"><MudLink Href="@($"client/profiles/{match.ProfileId}")" Underline="Underline.Hover" aria-label="@($"Open {match.ExternalRef}")">Open</MudLink></td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    <MudText Typo="Typo.caption" Class="nv-muted d-block mt-2">Needed to count as a match: @_result.Threshold.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture)</MudText>
+                    <div class="mt-3"><ChargeSummary Credits="_result.Credits" ElapsedMs="_elapsedMs" /></div>
+                </MudPaper>
+            }
+        </div>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private readonly IdentifyForm _form = new();
+    private CapturedImage? _image;
+    private bool _busy;
+    private string? _photoProblem;
+    private ApiError? _error;
+    private IdentifyFaceResponse? _result;
+    private long _elapsedMs;
+
+    private async Task SubmitAsync()
+    {
+        _photoProblem = PhotoGuard.Check(_image);
+        if (_photoProblem is not null)
+        {
+            return;
+        }
+
+        var image = _image!;
+        _busy = true;
+        _error = null;
+        _result = null;
+        try
+        {
+            var started = System.Diagnostics.Stopwatch.GetTimestamp();
+            var result = await Api.IdentifyAsync(_form.ToRequest(), image, PhotoGuard.NewIdempotencyKey());
+            _elapsedMs = (long)System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            if (result.IsSuccess)
+            {
+                _result = result.Value;
+            }
+            else
+            {
+                _error = result.Error;
+                Snackbar.Error(result.Error!);
+            }
+        }
+        finally
+        {
+            PhotoGuard.Forget(image);
+            _image = null;
+            _busy = false;
+        }
+    }
+}

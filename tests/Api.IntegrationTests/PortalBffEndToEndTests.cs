@@ -8,9 +8,12 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NexaVerify.Api.IntegrationTests.Support;
+using NexaVerify.Contracts.Api;
 using NexaVerify.Contracts.Dashboards;
 using NexaVerify.Contracts.Identity;
+using NexaVerify.Contracts.Faces;
 using NexaVerify.TestSupport;
+using WebApp::NexaVerify.Web.Components;
 using WebApp::NexaVerify.Web.Security;
 using WebApp::NexaVerify.Web.Services;
 
@@ -295,6 +298,134 @@ public class PortalBffEndToEndTests : IAsyncLifetime
         denied.IsSuccess.ShouldBeFalse();
         denied.Error!.Code.ShouldBe("SESSION_EXPIRED");
         (await store.GetAsync(sid)).ShouldBeNull("reuse detection signs the user out");
+    }
+
+    /// <summary>The portal acts for the session of one signed-in user; the typed clients get their gateway through this.</summary>
+    private sealed class FixedSessionId(string id) : ICurrentSession
+    {
+        public Task<string?> GetSessionIdAsync() => Task.FromResult<string?>(id);
+    }
+
+    [Fact]
+    public async Task A_client_admin_creates_a_key_enrolls_and_identifies_through_the_portal_and_no_credential_reaches_the_browser()
+    {
+        var platform = await _api.SuperAdminAsync();
+        var adminEmail = "ada@pbff-client.test";
+        var (client, _) = await _api.OnboardClientAsync(platform.AccessToken, "PBFFC", adminEmail);
+        await _api.SeedLicenseAsync(client.Id, 100);
+        var browser = Browser();
+        var leaks = new List<string>();
+
+        // 1. sign in as the client administrator: lands in the client portal, shell loads, admin-only BFF routes are closed to them
+        var login = await SignInAsync(browser, adminEmail, AuthApp.StrongPassword);
+        Rel(login.Headers.Location).ShouldBe("/client");
+        Collect(leaks, login);
+        var shell = await browser.GetAsync("/client");
+        shell.StatusCode.ShouldBe(HttpStatusCode.OK);
+        Collect(leaks, shell, await shell.Content.ReadAsStringAsync());
+        (await browser.GetAsync("/admin")).StatusCode.ShouldNotBe(HttpStatusCode.OK, "client users cannot open the platform console");
+        (await browser.GetAsync("/bff/reports/usage.csv")).StatusCode.ShouldNotBe(HttpStatusCode.OK, "the platform report is not for clients");
+
+        var sessionId = SessionIdOf(browser);
+        string accessToken, refreshToken, rawKey;
+        await using (var scope = _portal.Services.CreateAsyncScope())
+        {
+            var session = (await scope.ServiceProvider.GetRequiredService<ISessionStore>().GetAsync(sessionId))!;
+            accessToken = session.AccessToken;
+            refreshToken = session.RefreshToken;
+            session.Portal.ShouldBe("client");
+
+            var gateway = new ApiGateway(scope.ServiceProvider.GetRequiredService<IHttpClientFactory>(), new FixedSessionId(sessionId));
+            var keys = new ApiKeysApiClient(gateway);
+            var faces = new FacesApiClient(gateway);
+
+            // 2. create an API key through the portal's typed client: the raw key is in this one response only
+            var scopes = await keys.ScopesAsync();
+            scopes.IsSuccess.ShouldBeTrue(scopes.Error?.Message);
+            scopes.Value.ShouldAllBe(s => s.Key.StartsWith("faces.", StringComparison.Ordinal), "keys can only carry face recognition scopes");
+            var created = await keys.CreateAsync(new CreateApiKeyRequest("Portal test key", ["faces.enroll", "faces.identify", "faces.read"], null, 120, null));
+            created.IsSuccess.ShouldBeTrue(created.Error?.Message);
+            rawKey = created.Value.RawKey;
+            rawKey.ShouldNotBeNullOrWhiteSpace();
+            created.Value.Key.Prefix.ShouldNotBe(rawKey, "only a short prefix is stored and listed");
+
+            // 3. the secret cannot be retrieved again, by any read the portal can make
+            var list = await gateway.GetAsync<System.Text.Json.JsonElement>("client/api-keys", default, new ApiCallOptions { SessionId = sessionId });
+            list.IsSuccess.ShouldBeTrue();
+            list.Value.GetRawText().ShouldNotContain(rawKey);
+            list.Value.GetRawText().ShouldNotContain("rawKey", Case.Insensitive);
+            var one = await gateway.GetAsync<System.Text.Json.JsonElement>($"client/api-keys/{created.Value.Key.Id}", default, new ApiCallOptions { SessionId = sessionId });
+            one.Value.GetRawText().ShouldNotContain(rawKey);
+            (await keys.ListAsync()).Value.Single().Prefix.ShouldBe(created.Value.Key.Prefix);
+
+            // ... and the key really works for integrators
+            var direct = new HttpRequestMessage(HttpMethod.Get, "/api/v1/faces/balance");
+            direct.Headers.Add("X-Api-Key", rawKey);
+            (await _api.Client.SendAsync(direct)).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+            // 4. enroll and identify through the portal: multipart upload, idempotency key, credits charged, answer matches
+            var enrollKey = PhotoGuard.NewIdempotencyKey();
+            var enrolled = await faces.EnrollAsync(
+                new EnrollFaceRequest("EMP-7", "Eve Example", null, "FORM-7"), new CapturedImage(TestImages.Person(7), "image/jpeg", "eve.jpg"), enrollKey);
+            enrolled.IsSuccess.ShouldBeTrue(enrolled.Error?.Message);
+            enrolled.Value.ProfileCreated.ShouldBeTrue();
+            enrolled.Value.Credits.Charged.ShouldBeGreaterThan(0);
+            var replay = await faces.EnrollAsync(
+                new EnrollFaceRequest("EMP-7", "Eve Example", null, "FORM-7"), new CapturedImage(TestImages.Person(7), "image/jpeg", "eve.jpg"), enrollKey);
+            replay.Value.RequestId.ShouldBe(enrolled.Value.RequestId, "the same idempotency key is never charged twice");
+
+            var identified = await faces.IdentifyAsync(new IdentifyFaceRequest(3), new CapturedImage(TestImages.Person(7, variation: 3), "image/jpeg", "visitor.jpg"), PhotoGuard.NewIdempotencyKey());
+            identified.IsSuccess.ShouldBeTrue(identified.Error?.Message);
+            identified.Value.Matches.Single().ExternalRef.ShouldBe("EMP-7");
+            var stranger = await faces.IdentifyAsync(new IdentifyFaceRequest(3), new CapturedImage(TestImages.Person(99), "image/jpeg", "stranger.jpg"), PhotoGuard.NewIdempotencyKey());
+            stranger.Value.Matches.ShouldBeEmpty();
+
+            // an oversized or non-image upload never gets past the API either
+            var notImage = await faces.VerifyAsync(new VerifyFaceRequest(null, "EMP-7"), new CapturedImage("hello"u8.ToArray(), "image/jpeg", "x.jpg"), PhotoGuard.NewIdempotencyKey());
+            notImage.IsSuccess.ShouldBeFalse();
+
+            // history and balance reflect what happened
+            var history = await faces.GetHistoryAsync(new RecognitionHistoryQuery());
+            history.Value.Items.Select(i => i.Operation).ShouldContain("Identify");
+            var balance = await new ClientLicenseApiClient(gateway).GetSummaryAsync();
+            balance.Value.RemainingCredits.ShouldBeLessThan(100);
+
+            // keys can be revoked from the portal as well
+            (await keys.RevokeAsync(created.Value.Key.Id, "end of test")).IsSuccess.ShouldBeTrue();
+            var revoked = new HttpRequestMessage(HttpMethod.Get, "/api/v1/faces/balance");
+            revoked.Headers.Add("X-Api-Key", rawKey);
+            (await _api.Client.SendAsync(revoked)).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        }
+
+        // 5. the client's own usage CSV is relayed through the BFF (headers right, bad dates refused, anonymous visitors turned away)
+        var csv = await browser.GetAsync("/bff/client/reports/usage.csv?from=2026-01-01&to=2026-01-31");
+        csv.StatusCode.ShouldBe(HttpStatusCode.OK, await csv.Content.ReadAsStringAsync());
+        csv.Content.Headers.ContentType!.MediaType.ShouldBe("text/csv");
+        csv.Content.Headers.ContentDisposition!.DispositionType.ShouldBe("attachment");
+        Collect(leaks, csv, await csv.Content.ReadAsStringAsync());
+        (await browser.GetAsync("/bff/client/reports/usage.csv?from=nope")).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await Browser().GetAsync("/bff/client/reports/usage.csv")).StatusCode.ShouldBe(HttpStatusCode.Redirect);
+
+        // 6. sign out; the session is gone
+        var signedOut = await browser.GetAsync("/auth/signed-out");
+        signedOut.StatusCode.ShouldBe(HttpStatusCode.Redirect);
+        Collect(leaks, signedOut);
+        await using (var scope = _portal.Services.CreateAsyncScope())
+        {
+            (await scope.ServiceProvider.GetRequiredService<ISessionStore>().GetAsync(sessionId)).ShouldBeNull();
+        }
+
+        (await browser.GetAsync("/bff/client/reports/usage.csv")).StatusCode.ShouldBe(HttpStatusCode.Redirect);
+
+        // nothing the browser received contained a token, the one-time API key or any JWT
+        foreach (var seen in leaks)
+        {
+            seen.ShouldNotContain(accessToken);
+            seen.ShouldNotContain(refreshToken);
+            seen.ShouldNotContain(rawKey);
+            seen.ShouldNotContain("eyJ");
+            seen.ShouldNotContain("nxv_live_");
+        }
     }
 
     [Fact]

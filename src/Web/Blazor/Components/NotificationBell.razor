@@ -1,0 +1,119 @@
+@implements IAsyncDisposable
+@using NexaVerify.Contracts.Dashboards
+@inject INotificationsApiClient Api
+@inject NotificationState State
+@inject CurrentUserState User
+@inject TimeProvider Clock
+
+@if (User.Has(WebPermissions.NotificationsRead))
+{
+    <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" aria-label="Notifications" data-testid="notifications">
+        <ActivatorContent>
+            <MudBadge Content="@State.UnreadCount" Visible="@(State.UnreadCount > 0)" Color="Color.Error" Overlap="true" Class="mx-1" data-testid="unread-badge">
+                <MudIconButton Icon="@Icons.Material.Outlined.Notifications" Color="Color.Default"
+                               aria-label="@(State.UnreadCount > 0 ? $"Notifications, {State.UnreadCount} unread" : "Notifications")" />
+            </MudBadge>
+        </ActivatorContent>
+        <ChildContent>
+            <div class="pa-3" style="min-width: 280px; max-width: 360px;" data-testid="notification-menu">
+                <MudText Typo="Typo.subtitle2" HtmlTag="h2">Notifications</MudText>
+                @if (_latest.Count == 0)
+                {
+                    <MudText Class="nv-muted" Typo="Typo.body2">Nothing new. Alerts about your credits and webhooks will show up here.</MudText>
+                }
+                else
+                {
+                    <ul class="nv-feed">
+                        @foreach (var item in _latest)
+                        {
+                            <li>
+                                <div style="min-width: 0;">
+                                    <MudText Typo="Typo.body2" Class="@(item.IsRead ? null : "nv-unread")">@item.Title</MudText>
+                                    <MudText Typo="Typo.caption" Class="nv-muted">@UiText.Relative(new DateTimeOffset(DateTime.SpecifyKind(item.CreatedAt, DateTimeKind.Utc)), Clock.GetUtcNow())</MudText>
+                                </div>
+                            </li>
+                        }
+                    </ul>
+                }
+                <MudLink Href="client/notifications" Underline="Underline.Hover">See all notifications</MudLink>
+            </div>
+        </ChildContent>
+    </MudMenu>
+}
+
+@code {
+    /// <summary>Gentle polling: once a minute is plenty for credit and webhook alerts.</summary>
+    public static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(60);
+
+    private readonly CancellationTokenSource _stop = new();
+    private IReadOnlyList<NotificationDto> _latest = [];
+    private PeriodicTimer? _timer;
+    private Task? _loop;
+
+    protected override async Task OnInitializedAsync()
+    {
+        State.Changed += OnStateChanged;
+        if (!User.Has(WebPermissions.NotificationsRead))
+        {
+            return;
+        }
+
+        await RefreshAsync();
+        _timer = new PeriodicTimer(PollInterval, Clock);
+        _loop = PollAsync(_timer, _stop.Token);
+    }
+
+    private async Task PollAsync(PeriodicTimer timer, CancellationToken ct)
+    {
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                await RefreshAsync();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Disposed: stop quietly.
+        }
+        catch (ObjectDisposedException)
+        {
+            // Circuit gone while a refresh was in flight.
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        var feed = await Api.ListAsync(new NotificationListQuery { Page = 1, PageSize = 5 }, _stop.Token);
+        if (feed.IsSuccess)
+        {
+            _latest = feed.Value.Notifications.Items;
+            State.Set(feed.Value.UnreadCount);
+        }
+
+        // A failed poll keeps what the user already sees; the next tick tries again.
+    }
+
+    private void OnStateChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public async ValueTask DisposeAsync()
+    {
+        State.Changed -= OnStateChanged;
+        await _stop.CancelAsync();
+        _timer?.Dispose();
+        if (_loop is not null)
+        {
+            try
+            {
+                await _loop;
+            }
+            catch (OperationCanceledException)
+            {
+                // expected
+            }
+        }
+
+        _stop.Dispose();
+    }
+}

@@ -5,21 +5,7 @@
     <MudAppBar Elevation="0" Class="nv-appbar" Style="border-bottom: 1px solid var(--mud-palette-lines-default);">
         <MudIconButton Icon="@Icons.Material.Outlined.Menu" Color="Color.Inherit" Edge="Edge.Start" aria-label="Toggle navigation menu" OnClick="() => _drawerOpen = !_drawerOpen" Class="d-md-none" />
         <MudSpacer />
-        <MudTooltip Text="Notifications">
-            <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" aria-label="Notifications" data-testid="notifications">
-                <ActivatorContent>
-                    <MudBadge Content="3" Color="Color.Error" Overlap="true" Class="mx-1">
-                        <MudIconButton Icon="@Icons.Material.Outlined.Notifications" Color="Color.Default" aria-label="Notifications, 3 unread" />
-                    </MudBadge>
-                </ActivatorContent>
-                <ChildContent>
-                    <div class="pa-4" style="min-width: 260px;">
-                        <MudText Typo="Typo.subtitle2">Notifications</MudText>
-                        <MudText Class="nv-muted" Typo="Typo.body2">Alerts about your account will appear here. (Preview)</MudText>
-                    </div>
-                </ChildContent>
-            </MudMenu>
-        </MudTooltip>
+        @Bell
         <ThemeMenu />
         <UserMenu />
     </MudAppBar>
@@ -69,6 +55,9 @@
     [Parameter, EditorRequired] public string PortalLabel { get; set; } = string.Empty;
 
     [Parameter] public string HomeHref { get; set; } = "/";
+
+    /// <summary>The notification bell (client portal only; the platform console has no notification feed yet).</summary>
+    [Parameter] public RenderFragment? Bell { get; set; }
 
     [Parameter] public RenderFragment? ChildContent { get; set; }
 

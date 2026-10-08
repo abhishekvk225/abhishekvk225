@@ -1,0 +1,84 @@
+@page "/client/history"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.FacesHistory)]
+@inject IFacesApiClient Api
+@inject IDialogService Dialogs
+
+<PageTitle>Face check history · NexaVerify</PageTitle>
+
+<PageHeader Title="Face check history" Subtitle="Every registration and check, with its result and cost. Photos are never kept." />
+
+<MudPaper Class="nv-card" Elevation="0">
+    <div class="pa-4 d-flex flex-wrap align-center" style="gap: var(--nv-space-3);" role="group" aria-label="Filters">
+        <MudSelect T="string" @bind-Value="_operation" Label="What" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Style="min-width: 150px;" data-testid="filter-operation">
+            @foreach (var op in Operations)
+            {
+                <MudSelectItem T="string" Value="@op">@op</MudSelectItem>
+            }
+        </MudSelect>
+        <MudSelect T="string" @bind-Value="_outcome" Label="Result" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Style="min-width: 190px;" data-testid="filter-outcome">
+            @foreach (var outcome in Outcomes)
+            {
+                <MudSelectItem T="string" Value="@outcome">@StatusMap.Resolve(StatusKind.Outcome, outcome).Label</MudSelectItem>
+            }
+        </MudSelect>
+        <MudDatePicker Label="From" @bind-Date="_from" Variant="Variant.Outlined" Margin="Margin.Dense" Editable="true" MaxDate="_to" />
+        <MudDatePicker Label="To" @bind-Date="_to" Variant="Variant.Outlined" Margin="Margin.Dense" Editable="true" MinDate="_from" />
+        <MudButton Variant="Variant.Outlined" OnClick="Apply" data-testid="apply-filters">Apply</MudButton>
+        <MudButton Variant="Variant.Text" OnClick="Clear">Clear filters</MudButton>
+    </div>
+    <DataTable @key="_version" T="RecognitionRequestDto" Caption="Face check history" Columns="_columns" DefaultSort="createdAt:desc"
+               LoadPage="(p, ct) => Api.GetHistoryAsync(new RecognitionHistoryQuery { Page = p.Page, PageSize = p.PageSize, Operation = _applied.Operation, Outcome = _applied.Outcome, From = _applied.From, To = _applied.To }, ct)"
+               EmptyMessage="Nothing matches these filters yet.">
+        <RowActions Context="row">
+            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => ShowAsync(row)" aria-label="@($"Details of {row.Operation} at {row.CreatedAt:HH:mm}")">Details</MudButton>
+        </RowActions>
+    </DataTable>
+</MudPaper>
+
+@code {
+    private static readonly string[] Operations = ["Enroll", "Verify", "Identify", "Detect"];
+    private static readonly string[] Outcomes = ["Enrolled", "Matched", "NoMatch", "NoFaceDetected", "MultipleFaces", "LowQuality", "ProviderError", "Rejected"];
+
+    private sealed record Applied(string? Operation, string? Outcome, DateTime? From, DateTime? To);
+
+    private IReadOnlyList<DataColumn<RecognitionRequestDto>> _columns = [];
+    private string? _operation;
+    private string? _outcome;
+    private DateTime? _from;
+    private DateTime? _to;
+    private Applied _applied = new(null, null, null, null);
+    private int _version;
+
+    protected override void OnInitialized() =>
+        _columns =
+        [
+            DataColumn<RecognitionRequestDto>.Text("When (UTC)", r => r.CreatedAt.ToString("d MMM yyyy, HH:mm", System.Globalization.CultureInfo.InvariantCulture), "createdAt"),
+            DataColumn<RecognitionRequestDto>.Text("What", r => r.Operation),
+            DataColumn<RecognitionRequestDto>.Custom("Result", r => @<StatusChip Kind="StatusKind.Outcome" Value="@r.Outcome" />),
+            DataColumn<RecognitionRequestDto>.Text("Best score", r => r.BestScore?.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture), numeric: true),
+            DataColumn<RecognitionRequestDto>.Text("Credits", r => UiText.Number(r.CreditsCharged), numeric: true),
+            DataColumn<RecognitionRequestDto>.Text("Took", r => $"{UiText.Number(r.LatencyMs)} ms", numeric: true),
+            DataColumn<RecognitionRequestDto>.Text("From", r => r.Source),
+        ];
+
+    private void Apply()
+    {
+        _applied = new Applied(_operation, _outcome, Utc(_from), Utc(_to?.Date.AddDays(1).AddTicks(-1)));
+        _version++;
+    }
+
+    private static DateTime? Utc(DateTime? value) => value is { } v ? DateTime.SpecifyKind(v, DateTimeKind.Utc) : null;
+
+    private void Clear()
+    {
+        _operation = _outcome = null;
+        _from = _to = null;
+        Apply();
+    }
+
+    private Task ShowAsync(RecognitionRequestDto row)
+    {
+        var parameters = new DialogParameters<RecognitionDetailDialog> { { x => x.RequestId, row.Id } };
+        return Dialogs.ShowAsync<RecognitionDetailDialog>("Check details", parameters, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true });
+    }
+}

@@ -1,0 +1,98 @@
+@page "/client/api-logs"
+@* The API guards this endpoint with apikeys.read (not apilogs.read), so the page asks for the same permission the API enforces. *@
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.ApiKeysRead)]
+@inject IApiKeysApiClient Api
+
+<PageTitle>API calls · NexaVerify</PageTitle>
+
+<PageHeader Title="API calls" Subtitle="Every call your software made, with its result. Photos and personal data are never recorded here." />
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <MudPaper Class="nv-card" Elevation="0">
+            <div class="pa-4 d-flex flex-wrap align-center" style="gap: var(--nv-space-3);" role="group" aria-label="Filters">
+                <MudSelect T="string" @bind-Value="_statusClass" Label="Result" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Style="min-width: 190px;" data-testid="filter-status">
+                    <MudSelectItem T="string" Value="@("Success")">Worked (2xx)</MudSelectItem>
+                    <MudSelectItem T="string" Value="@("ClientError")">Your request was wrong (4xx)</MudSelectItem>
+                    <MudSelectItem T="string" Value="@("ServerError")">Problem on our side (5xx)</MudSelectItem>
+                </MudSelect>
+                <MudSelect T="Guid?" @bind-Value="_keyId" Label="API key" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Style="min-width: 200px;" data-testid="filter-key">
+                    @foreach (var key in _keys)
+                    {
+                        <MudSelectItem T="Guid?" Value="@key.Id">@key.Name</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudDatePicker Label="From" @bind-Date="_from" Variant="Variant.Outlined" Margin="Margin.Dense" Editable="true" MaxDate="_to" />
+                <MudDatePicker Label="To" @bind-Date="_to" Variant="Variant.Outlined" Margin="Margin.Dense" Editable="true" MinDate="_from" />
+                <MudButton Variant="Variant.Outlined" OnClick="Apply" data-testid="apply-filters">Apply</MudButton>
+                <MudButton Variant="Variant.Text" OnClick="Clear">Clear filters</MudButton>
+            </div>
+            <DataTable @key="_version" T="ApiRequestLogDto" Caption="API calls" Columns="_columns" DefaultSort="createdAt:desc"
+                       LoadPage="(p, ct) => Api.GetLogsAsync(new ApiLogQuery { Page = p.Page, PageSize = p.PageSize, ApiKeyId = _applied.KeyId, StatusClass = _applied.StatusClass, From = _applied.From, To = _applied.To }, ct)"
+                       EmptyMessage="No calls match these filters." />
+        </MudPaper>
+    </MudItem>
+    <Can Permission="@WebPermissions.UsageRead">
+        <MudItem xs="12" lg="6">
+            <UsageCsvCard DownloadPath="bff/client/reports/usage.csv" Description="Your daily usage and credits, ready for Excel." />
+        </MudItem>
+    </Can>
+</MudGrid>
+
+@code {
+    private sealed record Applied(Guid? KeyId, string? StatusClass, DateTime? From, DateTime? To);
+
+    private IReadOnlyList<DataColumn<ApiRequestLogDto>> _columns = [];
+    private IReadOnlyList<ApiKeyDto> _keys = [];
+    private string? _statusClass;
+    private Guid? _keyId;
+    private DateTime? _from;
+    private DateTime? _to;
+    private Applied _applied = new(null, null, null, null);
+    private int _version;
+
+    /// <summary>Opened from an API key's "Calls" link.</summary>
+    [SupplyParameterFromQuery(Name = "keyId")] public Guid? KeyIdFromQuery { get; set; }
+
+    protected override void OnInitialized() =>
+        _columns =
+        [
+            DataColumn<ApiRequestLogDto>.Text("When (UTC)", l => l.CreatedAt.ToString("d MMM yyyy, HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture), "createdAt"),
+            DataColumn<ApiRequestLogDto>.Text("Call", l => $"{l.Method} {l.Route}"),
+            DataColumn<ApiRequestLogDto>.Text("Result", l => l.StatusCode.ToString(System.Globalization.CultureInfo.InvariantCulture), numeric: true),
+            DataColumn<ApiRequestLogDto>.Text("Key", l => KeyName(l.ApiKeyId)),
+            DataColumn<ApiRequestLogDto>.Text("Took", l => $"{UiText.Number(l.DurationMs)} ms", numeric: true),
+            DataColumn<ApiRequestLogDto>.Text("From address", l => l.IpAddress),
+            DataColumn<ApiRequestLogDto>.Text("Problem", l => l.ErrorCode),
+            DataColumn<ApiRequestLogDto>.Text("Reference", l => l.CorrelationId),
+        ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var keys = await Api.ListAsync();
+        _keys = keys.IsSuccess ? keys.Value : [];
+        if (KeyIdFromQuery is { } fromQuery)
+        {
+            _keyId = fromQuery;
+            Apply();
+        }
+    }
+
+    private string? KeyName(Guid? id) => id is null ? null : _keys.FirstOrDefault(k => k.Id == id)?.Name ?? "Removed key";
+
+    private static DateTime? Utc(DateTime? value) => value is { } v ? DateTime.SpecifyKind(v, DateTimeKind.Utc) : null;
+
+    private void Apply()
+    {
+        _applied = new Applied(_keyId, _statusClass, Utc(_from), Utc(_to?.Date.AddDays(1).AddTicks(-1)));
+        _version++;
+    }
+
+    private void Clear()
+    {
+        _keyId = null;
+        _statusClass = null;
+        _from = _to = null;
+        Apply();
+    }
+}

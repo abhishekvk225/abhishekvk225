@@ -39,6 +39,9 @@ public sealed record ApiCallOptions
     /// <summary>Operations that legitimately take long (a full ledger scan) wait for <c>Api:LongRunningTimeoutSeconds</c> instead of <c>Api:TimeoutSeconds</c>.</summary>
     public bool LongRunning { get; init; }
 
+    /// <summary>Extra request headers (for example <c>Idempotency-Key</c>). Never used for credentials.</summary>
+    public IReadOnlyDictionary<string, string>? Headers { get; init; }
+
     public static ApiCallOptions None { get; } = new() { Anonymous = true };
 }
 
@@ -151,9 +154,22 @@ public sealed class ApiGateway(
         options ??= new ApiCallOptions();
         var effectiveIp = options.ClientIp ?? clientAddress?.Value;
         using var request = new HttpRequestMessage(method, path.TrimStart('/'));
-        if (body is not null)
+        if (body is HttpContent content)
+        {
+            // Multipart uploads: the caller built the content; it is disposed with the request.
+            request.Content = content;
+        }
+        else if (body is not null)
         {
             request.Content = JsonContent.Create(body, body.GetType(), options: Json);
+        }
+
+        if (options.Headers is not null)
+        {
+            foreach (var (name, value) in options.Headers)
+            {
+                request.Headers.TryAddWithoutValidation(name, value);
+            }
         }
 
         if (!string.IsNullOrEmpty(effectiveIp))

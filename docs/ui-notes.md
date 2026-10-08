@@ -54,3 +54,13 @@ Design review without an API: `Ui:UseStubClients=true` (Development or `UiDemo` 
 **Admin screens:** Dashboard (real `GET /admin/dashboard?days=`), Clients (list, search, status filter, paging; create wizard; detail with Overview / Users / Settings / License / Audit tabs; suspend, deactivate, reactivate with a recorded reason; password reset), Licenses (list and filters, issue; detail with renew, adjust, suspend, activate, revoke (type REVOKE), refund, ledger table and per-license integrity check), Plans, Cost rules, Platform users, Roles and permissions (matrix), Audit logs (per client), Reports (CSV through the BFF; platform ledger verification with result). Not built: Settings and Health (no API yet). Client-portal screens other than the dashboard are M8b.
 
 Known gaps and API wishes: see "M8a" in docs/STATUS.md.
+
+## M8b: client portal
+
+Pages under `Pages/Client/*` (all `[Authorize(Policy = "perm:<key>")]` plus the folder-level `ClientPortal` policy; actions are hidden with `<Can>`): `/client/license[/{id}]`, `/client/enroll`, `/client/verify`, `/client/identify`, `/client/profiles[/{id}]`, `/client/history`, `/client/api-keys`, `/client/api-logs`, `/client/webhooks[/{id}]`, `/client/notifications`, `/client/users`, `/client/settings`, `/client/activity`, `/client/api-docs` (open to every client user).
+
+- **Typed clients** (`Services/Api/ClientApiClients.cs`) sit on `IApiGateway`; multipart uploads pass an `HttpContent` and an `Idempotency-Key` header through `ApiCallOptions.Headers`. The bearer handler buffers the body so a token refresh can replay it.
+- **Secrets** (API key, webhook signing secret) live in a local variable only between the API response and `SecretRevealDialog`; they are never put in component state, URLs or snackbars.
+- **Downloads:** `GET /bff/client/reports/usage.csv` (cookie + `usage.read` + client portal) relays the API's CSV; the admin route stays platform-only.
+- **Notifications:** `NotificationBell` polls every 60 s with a `PeriodicTimer` (cancelled on dispose); a failed poll keeps the last count. `NotificationState` shares the unread count with the notifications page.
+- **Photos:** `FacePhotoInput` wraps `FaceCapture` (camera or upload, size and magic-byte checks); pages run `PhotoGuard.Check` again before sending and `PhotoGuard.Forget` afterwards.

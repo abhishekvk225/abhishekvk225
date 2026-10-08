@@ -1,0 +1,159 @@
+@page "/client/settings"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.ClientProfileRead)]
+@using System.Text.Json
+@inject IClientAccountApiClient Api
+@inject IDialogService Dialogs
+@inject IAppSnackbar Snackbar
+@inject CurrentUserState User
+
+<PageTitle>Settings · NexaVerify</PageTitle>
+
+<PageHeader Title="Settings" Subtitle="Your company details, how face checks behave and who can connect." />
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" lg="6">
+        <MudPaper Class="nv-card nv-card-pad" Elevation="0" Style="height: 100%;" data-testid="account-card">
+            <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Your account</MudText>
+            <DetailList Items="AccountItems()" />
+            <MudButton Variant="Variant.Outlined" Class="mt-3" StartIcon="@Icons.Material.Outlined.Password" Href="change-password" data-enhance-nav="false" data-testid="change-password-link">Change my password</MudButton>
+            <Can Permission="@WebPermissions.AuditReadClient">
+                <MudButton Variant="Variant.Text" Class="mt-3" Href="client/activity">Where I signed in</MudButton>
+            </Can>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" lg="6">
+        <PageState T="ClientDto" Result="_profile" OnRetry="LoadProfileAsync">
+            <Loading><SkeletonCard Lines="4" /></Loading>
+            <ChildContent Context="client">
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0" Style="height: 100%;" data-testid="company-card">
+                    <div class="d-flex flex-wrap align-center justify-space-between mb-3" style="gap: var(--nv-space-3);">
+                        <MudText Typo="Typo.h5" HtmlTag="h2">Company</MudText>
+                        <Can Permission="@WebPermissions.ClientProfileUpdate">
+                            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Edit" OnClick="() => EditProfileAsync(client)" data-testid="edit-company">Edit</MudButton>
+                        </Can>
+                    </div>
+                    <DetailList Items="CompanyItems(client)" />
+                </MudPaper>
+            </ChildContent>
+        </PageState>
+    </MudItem>
+
+    <MudItem xs="12">
+        <PageState T="IReadOnlyList<SettingDto>" Result="_settings" OnRetry="LoadSettingsAsync">
+            <Loading><SkeletonCard Lines="4" /></Loading>
+            <ChildContent Context="all">
+                <MudGrid Spacing="3">
+                    @foreach (var card in Cards(all))
+                    {
+                        <MudItem xs="12" lg="6">
+                            <SettingsGroupCard Title="@card.Title" Intro="@card.Intro" Settings="card.Settings" CanEdit="card.CanEdit" OnSave="card.Save" />
+                        </MudItem>
+                    }
+                </MudGrid>
+            </ChildContent>
+        </PageState>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private sealed record Card(string Title, string? Intro, IReadOnlyList<SettingDto> Settings, bool CanEdit, Func<UpdateSettingsRequest, Task<ApiError?>>? Save);
+
+    private ApiResult<ClientDto>? _profile;
+    private ApiResult<IReadOnlyList<SettingDto>>? _settings;
+
+    protected override async Task OnInitializedAsync() => await Task.WhenAll(LoadProfileAsync(), LoadSettingsAsync());
+
+    private async Task LoadProfileAsync()
+    {
+        _profile = null;
+        _profile = await Api.GetProfileAsync();
+    }
+
+    private async Task LoadSettingsAsync()
+    {
+        _settings = null;
+        _settings = await Api.GetSettingsAsync();
+    }
+
+    private IReadOnlyList<DetailItem> AccountItems() =>
+    [
+        new("Name", User.DisplayName),
+        new("Email", User.Email),
+        new("Role", User.RoleName),
+    ];
+
+    private static IReadOnlyList<DetailItem> CompanyItems(ClientDto c) =>
+    [
+        new("Company", c.Name),
+        new("Legal name", c.LegalName),
+        new("Contact email", c.ContactEmail),
+        new("Phone", c.ContactPhone),
+        new("Address", string.Join(", ", new[] { c.AddressLine1, c.AddressLine2, c.City, c.State, c.PostalCode, c.Country }.Where(p => !string.IsNullOrWhiteSpace(p)))),
+        new("Website", c.Website),
+        new("Time zone", c.TimeZone),
+    ];
+
+    private IEnumerable<Card> Cards(IReadOnlyList<SettingDto> all)
+    {
+        (string Group, string Title, string? Intro)[] groups =
+        [
+            ("Recognition", "Face recognition", "How strict matching is and how long faces are kept."),
+            ("Notifications", "Notifications", "When we warn you about credits and licenses."),
+            ("Integration", "Connections", "Limit which addresses may use your API keys."),
+            ("Security", "Security", "Password and sign-in rules for your team."),
+        ];
+
+        foreach (var (group, title, intro) in groups)
+        {
+            var settings = all.Where(s => s.Group == group).ToList();
+            if (settings.Count == 0)
+            {
+                continue;
+            }
+
+            var area = SettingGroups.For(group);
+            yield return new Card(title, intro, settings, area is not null && User.Has(area.Permission), area is null ? null : r => SaveAsync(area.Route, r));
+        }
+
+        var limits = all.Where(s => s.Group is "API" or "Limits").ToList();
+        if (limits.Count > 0)
+        {
+            yield return new Card("Limits of your plan", "Set by NexaVerify. Contact your account manager if you need more.", limits, false, null);
+        }
+    }
+
+    private async Task<ApiError?> SaveAsync(string route, UpdateSettingsRequest request)
+    {
+        var result = await Api.UpdateSettingsAsync(route, request);
+        if (!result.IsSuccess)
+        {
+            return result.Error;
+        }
+
+        Snackbar.Success("Your settings were saved.");
+        await LoadSettingsAsync();
+        return null;
+    }
+
+    private async Task EditProfileAsync(ClientDto client)
+    {
+        var saved = await Dialogs.ShowFormAsync(
+            "Edit company details", CompanyProfileForm.From(client), m => @<CompanyProfileFields Model="m" />,
+            async m =>
+            {
+                var result = await Api.UpdateProfileAsync(m.ToRequest());
+                if (result.IsSuccess)
+                {
+                    _profile = result;
+                }
+
+                return result.ToFormError();
+            },
+            "Save changes");
+        if (saved is not null)
+        {
+            Snackbar.Success("Company details saved.");
+        }
+    }
+}

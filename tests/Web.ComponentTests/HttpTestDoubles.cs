@@ -7,7 +7,19 @@ using NexaVerify.Web.Security;
 
 namespace NexaVerify.Web.ComponentTests;
 
-public sealed record SeenRequest(HttpMethod Method, string Path, string? Authorization, string? Body, string? ForwardedFor = null);
+public sealed record SeenRequest(HttpMethod Method, string Path, string? Authorization, string? Body, string? SessionOption)
+{
+    /// <summary>The <c>X-Forwarded-For</c> header the portal sent (the person's address).</summary>
+    public string? ForwardedFor => Headers.GetValueOrDefault("X-Forwarded-For");
+
+    /// <summary>Request headers other than Authorization (name to value), and the body's content type, as the API would see them.</summary>
+    public IReadOnlyDictionary<string, string> Headers { get; init; } = new Dictionary<string, string>();
+
+    public string? ContentType { get; init; }
+
+    /// <summary>The raw body bytes (multipart uploads are not valid text).</summary>
+    public byte[]? BodyBytes { get; init; }
+}
 
 /// <summary>Stands in for the API: records what arrived and answers from a script.</summary>
 public sealed class ScriptedApi : HttpMessageHandler
@@ -35,9 +47,14 @@ public sealed class ScriptedApi : HttpMessageHandler
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        var body = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
-        var seen = new SeenRequest(request.Method, request.RequestUri!.PathAndQuery, request.Headers.Authorization?.ToString(), body,
-            request.Headers.TryGetValues("X-Forwarded-For", out var forwarded) ? forwarded.Single() : null);
+        var bytes = request.Content is null ? null : await request.Content.ReadAsByteArrayAsync(cancellationToken);
+        var body = bytes is null ? null : Encoding.UTF8.GetString(bytes);
+        var seen = new SeenRequest(request.Method, request.RequestUri!.PathAndQuery, request.Headers.Authorization?.ToString(), body, null)
+        {
+            Headers = request.Headers.Where(h => h.Key != "Authorization").ToDictionary(h => h.Key, h => string.Join(",", h.Value), StringComparer.OrdinalIgnoreCase),
+            ContentType = request.Content?.Headers.ContentType?.ToString(),
+            BodyBytes = bytes,
+        };
         lock (_gate)
         {
             _seen.Add(seen);

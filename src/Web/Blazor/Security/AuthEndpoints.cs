@@ -162,11 +162,15 @@ public static class DownloadEndpoints
 {
     public static void MapPortalDownloads(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/bff/reports/usage.csv", UsageCsvAsync)
+        app.MapGet("/bff/reports/usage.csv", (HttpContext http, IApiGateway api, string? from, string? to) => RelayCsvAsync(http, api, from, to, "admin/reports/usage.csv"))
             .RequireAuthorization(Policies.Permission(WebPermissions.ReportsRead), Policies.PlatformPortal);
+
+        // The client portal's own usage export: the API derives the client from the credential, the portal only relays the file.
+        app.MapGet("/bff/client/reports/usage.csv", (HttpContext http, IApiGateway api, string? from, string? to) => RelayCsvAsync(http, api, from, to, "client/reports/usage.csv"))
+            .RequireAuthorization(Policies.Permission(WebPermissions.UsageRead), Policies.ClientPortal);
     }
 
-    private static async Task UsageCsvAsync(HttpContext http, IApiGateway api, string? from, string? to)
+    private static async Task RelayCsvAsync(HttpContext http, IApiGateway api, string? from, string? to, string apiPath)
     {
         var query = new List<string>();
         foreach (var (name, value) in new[] { ("from", from), ("to", to) })
@@ -187,7 +191,7 @@ public static class DownloadEndpoints
         }
 
         var sessionId = http.User.FindFirst(PortalClaims.SessionId)?.Value;
-        var path = "admin/reports/usage.csv" + (query.Count > 0 ? "?" + string.Join('&', query) : string.Empty);
+        var path = apiPath + (query.Count > 0 ? "?" + string.Join('&', query) : string.Empty);
         var result = await api.OpenStreamAsync(path, http.RequestAborted, new ApiCallOptions { SessionId = sessionId });
         if (!result.IsSuccess)
         {

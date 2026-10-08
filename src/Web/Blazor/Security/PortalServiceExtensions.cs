@@ -79,6 +79,12 @@ public static class PortalServiceExtensions
         services.AddScoped<IClientsApiClient, ClientsApiClient>();
         services.AddScoped<ILicensingApiClient, LicensingApiClient>();
         services.AddScoped<IAccessApiClient, AccessApiClient>();
+        services.AddScoped<IClientLicenseApiClient, ClientLicenseApiClient>();
+        services.AddScoped<IFacesApiClient, FacesApiClient>();
+        services.AddScoped<IApiKeysApiClient, ApiKeysApiClient>();
+        services.AddScoped<IWebhooksApiClient, WebhooksApiClient>();
+        services.AddScoped<IClientAccountApiClient, ClientAccountApiClient>();
+        services.AddScoped<INotificationsApiClient, NotificationsApiClient>();
 
         var cookieName = sessionOptions.EffectiveCookieName(cookieSecurity.RequireSecure);
         services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)

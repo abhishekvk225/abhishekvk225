@@ -9,6 +9,9 @@ public enum StatusKind
     ApiKey,
     Outcome,
     User,
+    Webhook,
+    Delivery,
+    Notification,
 }
 
 /// <summary>Visual treatment of a status: colour AND icon AND text, so colour is never the only signal.</summary>
@@ -78,12 +81,25 @@ public static class StatusMap
         Add(StatusKind.User, "active", "Active", Color.Success, ok);
         Add(StatusKind.User, "inactive", "Inactive", Color.Default, block);
         Add(StatusKind.User, "locked", "Locked", Color.Warning, pause);
+        Add(StatusKind.User, "disabled", "Disabled", Color.Default, block);
         Add(StatusKind.User, "invited", "Invited", Color.Info, time);
         Add(StatusKind.User, "pendingactivation", "Invited", Color.Info, time);
 
         Add(StatusKind.ApiKey, "active", "Active", Color.Success, ok);
         Add(StatusKind.ApiKey, "expired", "Expired", Color.Warning, time);
         Add(StatusKind.ApiKey, "revoked", "Revoked", Color.Error, block);
+
+        Add(StatusKind.Webhook, "active", "On", Color.Success, ok);
+        Add(StatusKind.Webhook, "disabled", "Off", Color.Default, pause);
+
+        Add(StatusKind.Delivery, "pending", "Waiting", Color.Info, time);
+        Add(StatusKind.Delivery, "delivered", "Delivered", Color.Success, ok);
+        Add(StatusKind.Delivery, "abandoned", "Gave up", Color.Error, err);
+
+        Add(StatusKind.Notification, "info", "Info", Color.Info, Icons.Material.Outlined.Info);
+        Add(StatusKind.Notification, "warning", "Warning", Color.Warning, warn);
+        Add(StatusKind.Notification, "critical", "Urgent", Color.Error, err);
+        Add(StatusKind.Notification, "error", "Urgent", Color.Error, err);
 
         Add(StatusKind.Outcome, "enrolled", "Enrolled", Color.Success, Icons.Material.Outlined.PersonAdd);
         Add(StatusKind.Outcome, "matched", "Match", Color.Success, ok);

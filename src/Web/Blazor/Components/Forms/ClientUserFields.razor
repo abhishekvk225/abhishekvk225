@@ -1,0 +1,20 @@
+@* Invite / edit one of the client's own users. The client controllers expose the two built-in roles only. *@
+<div class="nv-form" data-testid="client-user-fields">
+    <MudTextField T="string" @bind-Value="Model.Email" For="() => Model.Email" Label="Email address" InputType="InputType.Email" Variant="Variant.Outlined" Immediate="true"
+                  Disabled="Model.Id is not null" MaxLength="256" HelperText="@(Model.Id is null ? "We email them a link to choose their password." : null)" />
+    <MudTextField T="string" @bind-Value="Model.FullName" For="() => Model.FullName" Label="Full name" Variant="Variant.Outlined" Immediate="true" MaxLength="150" />
+    <MudTextField T="string" @bind-Value="Model.JobTitle" For="() => Model.JobTitle" Label="Job title (optional)" Variant="Variant.Outlined" Immediate="true" MaxLength="100" />
+    <MudSelect T="string" @bind-Value="Model.Role" For="() => Model.Role" Label="Role" Variant="Variant.Outlined"
+               HelperText="Administrators manage keys, webhooks, people and settings. Team members can run face checks and see results.">
+        <MudSelectItem T="string" Value="@("ClientUser")">Team member</MudSelectItem>
+        <MudSelectItem T="string" Value="@("ClientAdmin")">Administrator</MudSelectItem>
+    </MudSelect>
+    @if (Model.Id is not null)
+    {
+        <MudSwitch T="bool" @bind-Value="Model.IsActive" Label="Can sign in" Color="Color.Primary" />
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public InviteUserForm Model { get; set; } = default!;
+}
