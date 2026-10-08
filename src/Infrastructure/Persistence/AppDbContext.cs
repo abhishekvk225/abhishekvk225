@@ -77,6 +77,10 @@ public class AppDbContext : DbContext, IUnitOfWork
 
     public DbSet<LicenseTransaction> LicenseTransactions => Set<LicenseTransaction>();
 
+    public DbSet<Domain.Api.ApiKey> ApiKeys => Set<Domain.Api.ApiKey>();
+
+    public DbSet<Domain.Api.ApiRequestLog> ApiRequestLogs => Set<Domain.Api.ApiRequestLog>();
+
     public DbSet<Domain.Faces.FaceProfile> FaceProfiles => Set<Domain.Faces.FaceProfile>();
 
     public DbSet<Domain.Faces.FaceTemplate> FaceTemplates => Set<Domain.Faces.FaceTemplate>();

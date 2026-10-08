@@ -131,6 +131,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors(CorsAllowListOptions.PolicyName);
 app.UseAuthentication();
+app.UseMiddleware<ApiUsageMiddleware>();
 app.UseAuthorization();
 app.UseMiddleware<RequestContextLoggingMiddleware>();
 

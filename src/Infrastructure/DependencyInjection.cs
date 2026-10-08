@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using NexaVerify.Application.Abstractions;
 using NexaVerify.Application.Identity;
 using NexaVerify.Application.Persistence;
+using NexaVerify.Application.Api;
 using NexaVerify.Application.Auditing;
 using NexaVerify.Application.Faces;
 using NexaVerify.Infrastructure.Faces;
@@ -135,6 +136,15 @@ public static class DependencyInjection
         services.AddScoped<IEmbeddingCodec, EmbeddingCodec>();
         services.AddScoped<ITemplateIndex, TemplateIndex>();
         services.AddHostedService<FaceRetentionSweeper>();
+
+        services.AddScoped<IApiKeyRepository, ApiKeyRepository>();
+        services.AddScoped<IApiLogRepository, ApiLogRepository>();
+        services.AddScoped<IApiKeyAuthenticator, ApiKeyAuthenticator>();
+        services.AddSingleton<IApiUsageLimiter, ApiUsageLimiter>();
+        services.AddOptions<ApiLogOptions>().Bind(configuration.GetSection(ApiLogOptions.SectionName));
+        services.AddSingleton<ApiRequestLogWriter>();
+        services.AddSingleton<IApiRequestLogSink>(sp => sp.GetRequiredService<ApiRequestLogWriter>());
+        services.AddHostedService(sp => sp.GetRequiredService<ApiRequestLogWriter>());
 
         return services;
     }

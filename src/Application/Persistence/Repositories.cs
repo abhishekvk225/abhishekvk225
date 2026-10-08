@@ -309,3 +309,24 @@ public interface IRecognitionRepository
 
     void Add(Domain.Faces.RecognitionRequest request);
 }
+
+public interface IApiKeyRepository
+{
+    Task<Domain.Api.ApiKey?> GetAsync(Guid id, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<Domain.Api.ApiKey>> ListAsync(CancellationToken cancellationToken);
+
+    Task<int> CountActiveAsync(DateTime now, CancellationToken cancellationToken);
+
+    Task<bool> PrefixExistsAsync(string prefix, CancellationToken cancellationToken);
+
+    void Add(Domain.Api.ApiKey key);
+
+    void SetExpectedVersion(Domain.Api.ApiKey key, byte[] rowVersion);
+}
+
+public interface IApiLogRepository
+{
+    Task<(IReadOnlyList<Domain.Api.ApiRequestLog> Items, int Total)> ListAsync(
+        Guid? apiKeyId, string? statusClass, DateTime? from, DateTime? to, int skip, int take, CancellationToken cancellationToken);
+}

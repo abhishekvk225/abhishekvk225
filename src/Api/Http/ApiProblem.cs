@@ -9,6 +9,8 @@ namespace NexaVerify.Api.Http;
 /// <summary>Single place that turns application errors into RFC 7807 responses (stable <c>code</c> + <c>correlationId</c>).</summary>
 public static class ApiProblem
 {
+    public const string ErrorCodeItem = "nexa.error.code";
+
     public static int StatusFor(ErrorType type) => type switch
     {
         ErrorType.Validation => StatusCodes.Status400BadRequest,
@@ -53,6 +55,7 @@ public static class ApiProblem
         problem.Instance = null; // never echo raw URLs: they may contain identifiers
         problem.Extensions["code"] = code;
         problem.Extensions["correlationId"] = CorrelationIdMiddleware.GetCorrelationId(http);
+        http.Items[ErrorCodeItem] = code; // read back by request logging
         return problem;
     }
 

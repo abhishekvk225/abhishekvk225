@@ -53,7 +53,13 @@ public static class ServiceCollectionExtensions
 
     public static IServiceCollection AddApiAuthorization(this IServiceCollection services)
     {
-        services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
+        // Integrators send X-Api-Key; portal users send a bearer token. The policy scheme picks one per request (API key wins if both are present).
+        services.AddAuthentication(ApiKeyAuthenticationHandler.PolicyScheme)
+            .AddPolicyScheme(ApiKeyAuthenticationHandler.PolicyScheme, "API key or bearer token", options =>
+                options.ForwardDefaultSelector = context =>
+                    context.Request.Headers.ContainsKey(HttpHeaderNames.ApiKey) ? ApiKeyAuthenticationHandler.SchemeName : JwtBearerDefaults.AuthenticationScheme)
+            .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(ApiKeyAuthenticationHandler.SchemeName, _ => { })
+            .AddJwtBearer();
         services.AddSingleton<IConfigureOptions<JwtBearerOptions>, JwtBearerSetup>();
 
         services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();

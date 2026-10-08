@@ -11,6 +11,8 @@ public static class NexaClaims
     public const string MustChangePassword = "mcp";
     public const string PlatformActor = "platform";
     public const string ApiKeyActor = "apikey";
+    public const string Scope = "scope";
+    public const string RateLimitPerMinute = "rpm";
 }
 
 public static class HttpHeaderNames

@@ -103,7 +103,10 @@ public sealed class PermissionAuthorizationHandler : AuthorizationHandler<Permis
             return;
         }
 
-        var granted = await _permissions.GetPermissionsAsync(_user.Roles, CancellationToken.None);
+        // An API key holds exactly the scopes it was issued with; everyone else holds what their roles grant.
+        IReadOnlySet<string> granted = _user.ActorType == ActorType.ApiKey
+            ? context.User.FindAll(NexaClaims.Scope).Select(c => c.Value).ToHashSet(StringComparer.Ordinal)
+            : await _permissions.GetPermissionsAsync(_user.Roles, CancellationToken.None);
         if (granted.Contains(requirement.Permission))
         {
             context.Succeed(requirement);
