@@ -270,7 +270,7 @@ public class ApiDocsPageTests : ClientPageTestBase
 
         cut.FindAll("pre").Count.ShouldBeGreaterThan(5);
         cut.FindAll("pre *:not(code)").ShouldBeEmpty("code samples have no child markup");
-        cut.Markup.ShouldNotContain("nv_live_", Case.Sensitive);
+        cut.Markup.ShouldNotContain("nxv_live_", Case.Sensitive);
         cut.Markup.ShouldNotContain("whsec_", Case.Sensitive);
         cut.Markup.ShouldContain("YOUR_API_KEY");
     }
