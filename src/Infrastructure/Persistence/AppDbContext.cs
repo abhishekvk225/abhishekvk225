@@ -77,6 +77,14 @@ public class AppDbContext : DbContext, IUnitOfWork
 
     public DbSet<LicenseTransaction> LicenseTransactions => Set<LicenseTransaction>();
 
+    public DbSet<Domain.Faces.FaceProfile> FaceProfiles => Set<Domain.Faces.FaceProfile>();
+
+    public DbSet<Domain.Faces.FaceTemplate> FaceTemplates => Set<Domain.Faces.FaceTemplate>();
+
+    public DbSet<Domain.Faces.RecognitionRequest> RecognitionRequests => Set<Domain.Faces.RecognitionRequest>();
+
+    public DbSet<Domain.Faces.MatchResult> MatchResults => Set<Domain.Faces.MatchResult>();
+
     // Read by the compiled query filters at query time (EF re-evaluates them per context instance).
     private bool FilterIsPlatform => _tenant.IsPlatform;
 

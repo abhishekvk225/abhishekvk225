@@ -118,6 +118,9 @@ public interface IClientRepository
 
     void Add(Domain.Tenancy.Client client);
 
+    /// <summary>Ids of all clients that are not deleted (platform scope), for per-tenant background jobs.</summary>
+    Task<IReadOnlyList<Guid>> ListIdsAsync(CancellationToken cancellationToken);
+
     /// <summary>Makes the save fail with a concurrency conflict if the row changed since <paramref name="rowVersion"/> was read.</summary>
     void SetExpectedVersion(Domain.Tenancy.Client client, byte[] rowVersion);
 }
@@ -257,3 +260,52 @@ public interface IMeteringStore
 }
 
 public sealed record LicenseAvailability(Domain.Licensing.LicenseStatus Status, bool InPeriod, bool Ended, int Remaining);
+
+public sealed record FaceProfileListRow(Domain.Faces.FaceProfile Profile, int TemplateCount);
+
+/// <summary>Biometric data store. Every query is already limited to the calling client (strict tenant isolation).</summary>
+public interface IFaceRepository
+{
+    Task<Domain.Faces.FaceProfile?> GetProfileAsync(Guid id, CancellationToken cancellationToken);
+
+    Task<Domain.Faces.FaceProfile?> GetProfileByExternalRefAsync(string externalRef, CancellationToken cancellationToken);
+
+    Task<int> CountProfilesAsync(CancellationToken cancellationToken);
+
+    Task<(IReadOnlyList<FaceProfileListRow> Items, int Total)> ListProfilesAsync(
+        string? search, Domain.Faces.FaceProfileStatus? status, int skip, int take, CancellationToken cancellationToken);
+
+    /// <summary>Tracked, oldest first.</summary>
+    Task<IReadOnlyList<Domain.Faces.FaceTemplate>> GetTemplatesAsync(Guid profileId, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<Domain.Faces.FaceTemplate>> GetActiveTemplatesAsync(Guid profileId, string provider, string modelVersion, CancellationToken cancellationToken);
+
+    Task<bool> ImageHashExistsAsync(byte[] sha256, CancellationToken cancellationToken);
+
+    Task<HashSet<Guid>> ExistingTemplateIdsAsync(IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken);
+
+    Task<Dictionary<Guid, string>> GetExternalRefsAsync(IReadOnlyCollection<Guid> profileIds, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<Guid>> GetDueForRetentionAsync(DateTime now, int take, CancellationToken cancellationToken);
+
+    void Add(Domain.Faces.FaceProfile profile);
+
+    void Add(Domain.Faces.FaceTemplate template);
+
+    void Remove(Domain.Faces.FaceProfile profile);
+
+    void Remove(Domain.Faces.FaceTemplate template);
+}
+
+public interface IRecognitionRepository
+{
+    Task<Domain.Faces.RecognitionRequest?> FindByIdempotencyKeyAsync(string key, CancellationToken cancellationToken);
+
+    Task<Domain.Faces.RecognitionRequest?> GetAsync(Guid id, CancellationToken cancellationToken);
+
+    Task<(IReadOnlyList<Domain.Faces.RecognitionRequest> Items, int Total)> ListAsync(
+        Domain.Licensing.MeteredOperation? operation, Domain.Faces.RecognitionOutcome? outcome, Guid? profileId, DateTime? from, DateTime? to,
+        int skip, int take, CancellationToken cancellationToken);
+
+    void Add(Domain.Faces.RecognitionRequest request);
+}

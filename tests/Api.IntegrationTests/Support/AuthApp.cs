@@ -59,7 +59,7 @@ public sealed class AuthApp : IAsyncDisposable
 
     public HttpClient Client { get; }
 
-    public static async Task<AuthApp> CreateAsync(SqlServerFixture fixture, IReadOnlyDictionary<string, string>? settings = null)
+    public static async Task<AuthApp> CreateAsync(SqlServerFixture fixture, IReadOnlyDictionary<string, string>? settings = null, Action<IServiceCollection>? configure = null)
     {
         var connectionString = await fixture.CreateDatabaseAsync();
         await DatabaseBootstrap.MigrateAsync(connectionString);
@@ -70,7 +70,11 @@ public sealed class AuthApp : IAsyncDisposable
             ConnectionString = connectionString,
             UseTestAuth = false,
             Settings = settings ?? new Dictionary<string, string>(),
-            ConfigureServices = services => services.AddSingleton<IEmailOutbox>(emails),
+            ConfigureServices = services =>
+            {
+                services.AddSingleton<IEmailOutbox>(emails);
+                configure?.Invoke(services);
+            },
         };
         return new AuthApp(factory, connectionString, emails);
     }
@@ -161,6 +165,47 @@ public sealed class AuthApp : IAsyncDisposable
         using var bound = clientId is { } id ? tenant.BeginTenant(id) : tenant.BeginPlatform("test: service access");
         return await action(scope.ServiceProvider);
     }
+
+    /// <summary>Posts a multipart form with an <c>image</c> part and the given text fields (the face API's wire format).</summary>
+    public async Task<HttpResponseMessage> PostFormAsync(string path, byte[]? image, IReadOnlyDictionary<string, string>? fields, string token, string? idempotencyKey = null, string imageType = "image/jpeg")
+    {
+        var form = new MultipartFormDataContent();
+        foreach (var (key, value) in fields ?? new Dictionary<string, string>())
+        {
+            form.Add(new StringContent(value), key);
+        }
+
+        if (image is not null)
+        {
+            var part = new ByteArrayContent(image);
+            part.Headers.ContentType = new MediaTypeHeaderValue(imageType);
+            form.Add(part, "image", "upload.bin");
+        }
+
+        var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = form };
+        if (idempotencyKey is not null)
+        {
+            request.Headers.Add("Idempotency-Key", idempotencyKey);
+        }
+
+        return await SendAsync(request, token);
+    }
+
+    /// <summary>Inserts an active license directly, with its Grant ledger row.</summary>
+    public Task<Guid> SeedLicenseAsync(Guid clientId, int credits, DateTime? startsAt = null, DateTime? expiresAt = null) =>
+        WithServicesAsync(null, async sp =>
+        {
+            var db = sp.GetRequiredService<AppDbContext>();
+            var license = NexaVerify.Domain.Licensing.License.Create(
+                clientId, "Seeded " + Guid.NewGuid().ToString("N")[..6], null, NexaVerify.Application.Licensing.LicenseKeyGenerator.Generate(), credits,
+                startsAt ?? DateTime.UtcNow.AddDays(-1), expiresAt ?? DateTime.UtcNow.AddDays(60));
+            db.Licenses.Add(license);
+            await db.SaveChangesAsync();
+            await sp.GetRequiredService<NexaVerify.Application.Licensing.LedgerWriter>()
+                .AppendAsync(license, NexaVerify.Domain.Licensing.LedgerEntryType.Grant, credits, 0, default, reason: "seed");
+            await db.SaveChangesAsync();
+            return license.Id;
+        });
 
     public Task<HttpResponseMessage> DeleteAsync(string path, string? token = null) =>
         SendAsync(new HttpRequestMessage(HttpMethod.Delete, path), token);

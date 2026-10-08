@@ -21,6 +21,9 @@ internal sealed class ClientRepository : IClientRepository
 
     public void Add(Client client) => _db.Clients.Add(client);
 
+    public async Task<IReadOnlyList<Guid>> ListIdsAsync(CancellationToken cancellationToken) =>
+        await _db.Clients.AsNoTracking().Where(c => c.Status != ClientStatus.Deleted).Select(c => c.Id).ToListAsync(cancellationToken);
+
     public void SetExpectedVersion(Client client, byte[] rowVersion) =>
         _db.Entry(client).Property(c => c.RowVersion).OriginalValue = rowVersion;
 }

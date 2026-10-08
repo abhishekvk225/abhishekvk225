@@ -7,6 +7,8 @@ using NexaVerify.Application.Abstractions;
 using NexaVerify.Application.Identity;
 using NexaVerify.Application.Persistence;
 using NexaVerify.Application.Auditing;
+using NexaVerify.Application.Faces;
+using NexaVerify.Infrastructure.Faces;
 using NexaVerify.Infrastructure.Auditing;
 using NexaVerify.Infrastructure.Background;
 using NexaVerify.Infrastructure.Platform;
@@ -122,6 +124,17 @@ public static class DependencyInjection
         services.AddScoped<IMeteringStore, MeteringStore>();
         services.AddScoped<LicensingSeeder>();
         services.AddHostedService<LicenseExpirySweeper>();
+
+        services.AddScoped<IFaceRepository, FaceRepository>();
+        services.AddScoped<IRecognitionRepository, RecognitionRepository>();
+        services.AddOptions<FaceEngineOptions>().Bind(configuration.GetSection(FaceEngineOptions.Section)).ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<FaceEngineOptions>, FaceEngineOptionsValidator>());
+        services.AddSingleton<IFaceEngine, MockFaceEngine>();
+        services.AddSingleton<IImageProcessor, SkiaImageProcessor>();
+        services.AddSingleton<TemplateIndexStore>();
+        services.AddScoped<IEmbeddingCodec, EmbeddingCodec>();
+        services.AddScoped<ITemplateIndex, TemplateIndex>();
+        services.AddHostedService<FaceRetentionSweeper>();
 
         return services;
     }

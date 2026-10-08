@@ -24,6 +24,13 @@ Layering: `appsettings.json` (safe defaults, **no secrets**) → `appsettings.{E
 | `Database:RequireLeastPrivilege` | `false` (`true` in Production) | Readiness fails if the API's DB login is sysadmin/db_owner/can alter security policies. |
 | `Database:CommandTimeoutSeconds` | 30 | |
 
+## Face recognition
+| Key | Default | Notes |
+|---|---|---|
+| `FaceEngine:Provider` | `mock` | Only `mock` ships today. The mock engine recognises nothing (thumbnail comparison), so **Production refuses to start with it** unless `FaceEngine:AllowMockInProduction=true` (demo deployments only). A real provider (ONNX/ArcFace, cloud) plugs in behind `IFaceEngine`. |
+| Image rules | fixed | JPEG/PNG/WebP by magic bytes, ≤ 5 MB, ≤ 25 megapixels, ≥ 64 px, re-encoded as JPEG (metadata stripped), at most 4 images decoded concurrently per node. |
+| Per-client settings | catalogue | `face.matchThreshold`, `face.maxFacesPerImage`, `face.minQuality`, `face.retentionDays`, `face.identifyTopK`, `limits.maxProfiles` (see the settings API). Retention is enforced hourly by a background sweeper. |
+
 ## Identity
 | Key | Default | Notes |
 |---|---|---|

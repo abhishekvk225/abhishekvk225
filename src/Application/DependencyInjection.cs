@@ -2,6 +2,7 @@ using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using NexaVerify.Application.Faces;
 using NexaVerify.Application.Identity;
 using NexaVerify.Application.Licensing;
 using NexaVerify.Application.Tenancy;
@@ -28,6 +29,10 @@ public static class DependencyInjection
         services.AddScoped<ILicenseMeteringService, LicenseMeteringService>();
         services.AddScoped<LedgerWriter>();
         services.AddScoped<ILicenseService, LicenseService>();
+        services.AddScoped<IFaceRecognitionService, Faces.FaceRecognitionService>();
+        services.AddScoped<IFaceProfileService, Faces.FaceProfileService>();
+        services.AddScoped<IRecognitionHistoryService, Faces.RecognitionHistoryService>();
+        services.AddScoped<IFaceRetentionProcessor, Faces.FaceRetentionProcessor>();
         services.AddScoped<IPlanService, PlanService>();
         services.AddScoped<ICostRuleService, CostRuleService>();
         services.AddScoped<IClientLicenseService, ClientLicenseService>();

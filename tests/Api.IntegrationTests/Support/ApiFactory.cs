@@ -30,6 +30,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
             // Production refuses ephemeral keys: give the test host real ones.
             using var signing = System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
             builder.UseSetting("Jwt:SigningKeyPem", signing.ExportPkcs8PrivateKeyPem());
+            builder.UseSetting("FaceEngine:AllowMockInProduction", "true"); // the guard itself is unit-tested
             builder.UseSetting("Encryption:MasterKeyBase64", Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)));
         }
         else
