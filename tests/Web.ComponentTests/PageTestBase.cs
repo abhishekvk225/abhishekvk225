@@ -290,6 +290,19 @@ public abstract class PageTestBase : UiTestBase
         Services.AddSingleton<ILicensingApiClient>(Licensing);
         Services.AddSingleton<IAccessApiClient>(Access);
         Services.AddSingleton<IDashboardApiClient>(Dashboard);
+        ClientLicense = new FakeClientLicenseApi();
+        Faces = new FakeFacesApi();
+        ApiKeys = new FakeApiKeysApi();
+        Webhooks = new FakeWebhooksApi();
+        Account = new FakeAccountApi();
+        Notifications = new FakeNotificationsApi();
+        Services.AddSingleton<IClientLicenseApiClient>(ClientLicense);
+        Services.AddSingleton<IFacesApiClient>(Faces);
+        Services.AddSingleton<IApiKeysApiClient>(ApiKeys);
+        Services.AddSingleton<IWebhooksApiClient>(Webhooks);
+        Services.AddSingleton<IClientAccountApiClient>(Account);
+        Services.AddSingleton<INotificationsApiClient>(Notifications);
+        Services.AddScoped<NotificationState>();
         Services.AddScoped<DashboardRangeState>();
         Services.AddSingleton<CurrentUserState>();
         Environment = new FakeEnv("Production");
@@ -298,6 +311,18 @@ public abstract class PageTestBase : UiTestBase
     }
 
     protected FakeEnv Environment { get; }
+
+    protected FakeClientLicenseApi ClientLicense { get; }
+
+    protected FakeFacesApi Faces { get; }
+
+    protected FakeApiKeysApi ApiKeys { get; }
+
+    protected FakeWebhooksApi Webhooks { get; }
+
+    protected FakeAccountApi Account { get; }
+
+    protected FakeNotificationsApi Notifications { get; }
 
     protected FakeClientsApi Clients { get; }
 
@@ -311,6 +336,10 @@ public abstract class PageTestBase : UiTestBase
 
     protected void SignInAs(params string[] permissions) =>
         User.SignIn("Ada Admin", "ada@nexaverify.test", "SuperAdmin", null, permissions);
+
+    /// <summary>A client administrator: every client-scope permission.</summary>
+    protected void SignInAsClientAdmin() =>
+        User.SignIn("Una Admin", "una@acme.test", "ClientAdmin", "Acme Corp", WebPermissions.ClientAdminDefaults);
 
     protected void SignInAsEverything() => SignInAs(WebPermissions.SuperAdminDefaults.Append(WebPermissions.LicensesVerifyLedger).ToArray());
 
