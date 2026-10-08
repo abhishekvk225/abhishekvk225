@@ -61,7 +61,10 @@ public sealed class FakeFacesApi : IFacesApiClient
         return Profiles(query);
     }
 
-    public Task<ApiResult<FaceProfileDto>> GetProfileAsync(Guid id, CancellationToken ct = default) => Profile();
+    /// <summary>Optional per-id answer (receives the token), for stale-result tests.</summary>
+    public Func<Guid, CancellationToken, Task<ApiResult<FaceProfileDto>>>? ProfileById { get; set; }
+
+    public Task<ApiResult<FaceProfileDto>> GetProfileAsync(Guid id, CancellationToken ct = default) => ProfileById?.Invoke(id, ct) ?? Profile();
 
     public Task<ApiResult<bool>> EraseProfileAsync(Guid id, CancellationToken ct = default)
     {
@@ -174,7 +177,10 @@ public sealed class FakeWebhooksApi : IWebhooksApiClient
 
     public Task<ApiResult<IReadOnlyList<WebhookEndpointDto>>> ListAsync(CancellationToken ct = default) => Endpoints();
 
-    public Task<ApiResult<WebhookEndpointDto>> GetAsync(Guid id, CancellationToken ct = default) => Ok.Of(ClientSample.Hook());
+    /// <summary>Optional per-id answer (receives the token), for stale-result tests.</summary>
+    public Func<Guid, CancellationToken, Task<ApiResult<WebhookEndpointDto>>>? HookById { get; set; }
+
+    public Task<ApiResult<WebhookEndpointDto>> GetAsync(Guid id, CancellationToken ct = default) => HookById?.Invoke(id, ct) ?? Ok.Of(ClientSample.Hook());
 
     public Task<ApiResult<IReadOnlyList<WebhookEventDto>>> EventsAsync(CancellationToken ct = default) =>
         Ok.Of<IReadOnlyList<WebhookEventDto>>([new WebhookEventDto("recognition.completed", "A check finished."), new WebhookEventDto("license.low_balance", "Credits are low.")]);

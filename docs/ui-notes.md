@@ -64,3 +64,11 @@ Pages under `Pages/Client/*` (all `[Authorize(Policy = "perm:<key>")]` plus the 
 - **Downloads:** `GET /bff/client/reports/usage.csv` (cookie + `usage.read` + client portal) relays the API's CSV; the admin route stays platform-only.
 - **Notifications:** `NotificationBell` polls every 60 s with a `PeriodicTimer` (cancelled on dispose); a failed poll keeps the last count. `NotificationState` shares the unread count with the notifications page.
 - **Photos:** `FacePhotoInput` wraps `FaceCapture` (camera or upload, size and magic-byte checks); pages run `PhotoGuard.Check` again before sending and `PhotoGuard.Forget` afterwards.
+
+### M8b review fixes (design notes)
+- **Passive calls:** `ApiCallOptions.Passive` marks a call as background (notification poll). `SessionBearerHandler` does not touch the session for it, so a tab left open cannot keep a session alive past the idle timeout; token refresh still happens when needed.
+- **Camera frames:** `face-capture.js` returns a Blob (`canvas.toBlob`); `FaceCapture` reads it through an `IJSStreamReference` limited to 5 MB into one exact-size buffer. The SignalR hub limit stays at its 32 KB default. Photos over 1 MB are not previewed.
+- **Idempotency:** `PhotoAttempt` hands out one key per (photo, details) pair. Timeouts, 5xx, 429 and an unreachable API (`PhotoGuard.IsRetryable`) keep the key and the photo so the retry cannot be charged twice; definitive refusals reset the key. Success or removing the photo wipes the buffer.
+- **Uploads on retry:** multipart bodies are passed as a `Func<HttpContent>` so the refresh retry rebuilds the body instead of buffering the photo a second time.
+- **CSV relay:** `GET /bff/**/usage.csv` requires `Sec-Fetch-Site: same-origin|none` and is limited by `DownloadThrottle` (6 per minute per session, 429 with `Retry-After`); the API still audits each export. Kept as GET so the download is a plain link.
+- **API guide accuracy:** `ApiGuideAccuracyTests` fails if the guide names a header that is not on a curated list whose entries are found in `src/Api`, `src/Contracts` or `src/Infrastructure`.

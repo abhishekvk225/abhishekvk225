@@ -331,6 +331,8 @@ public class WebhookTests : IAsyncLifetime
             "https://[fd00::1]/hook",
             "https://[::ffff:10.0.0.1]/hook",
             "https://user:pass@example.com/hook",
+            "https://user@example.com/hook",     // username only
+            "https://:secret@example.com/hook",  // password only
             "https://intranet/hook",             // single-label host
             "https://printer.local/hook",
         };

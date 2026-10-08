@@ -324,3 +324,101 @@ public class HubLimitTests
         limit.ShouldBe(32 * 1024);
     }
 }
+
+public class StaleResultTests : ClientPageTestBase
+{
+    private static readonly Guid A = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001");
+    private static readonly Guid B = Guid.Parse("bbbbbbbb-0000-0000-0000-000000000002");
+
+    [Fact]
+    public async Task Navigating_from_one_person_to_another_never_shows_the_slow_first_answer_and_cancels_it()
+    {
+        SignInAsClientAdmin();
+        var slowA = new TaskCompletionSource<ApiResult<NexaVerify.Contracts.Faces.FaceProfileDto>>();
+        CancellationToken tokenA = default;
+        Faces.ProfileById = (id, ct) =>
+        {
+            if (id == A)
+            {
+                tokenA = ct;
+                return slowA.Task;
+            }
+
+            return Ok.Of(ClientSample.Profile() with { Id = B, ExternalRef = "EMP-B" });
+        };
+        var cut = Render<NexaVerify.Web.Pages.Client.ProfileDetail>(p => p.Add(x => x.Id, A));
+
+        cut.Render(p => p.Add(x => x.Id, B));
+        cut.WaitForAssertion(() => cut.Markup.ShouldContain("EMP-B"));
+        tokenA.IsCancellationRequested.ShouldBeTrue("the older request was cancelled");
+
+        slowA.SetResult(ApiResult<NexaVerify.Contracts.Faces.FaceProfileDto>.Ok(ClientSample.Profile() with { Id = A, ExternalRef = "EMP-A" }));
+        await Task.Delay(50);
+        cut.Markup.ShouldContain("EMP-B");
+        cut.Markup.ShouldNotContain("EMP-A");
+    }
+
+    [Fact]
+    public async Task Re_rendering_the_same_person_does_not_load_again()
+    {
+        SignInAsClientAdmin();
+        var calls = 0;
+        Faces.ProfileById = (_, _) =>
+        {
+            calls++;
+            return Ok.Of(ClientSample.Profile());
+        };
+        var cut = Render<NexaVerify.Web.Pages.Client.ProfileDetail>(p => p.Add(x => x.Id, A));
+        cut.WaitForAssertion(() => cut.Markup.ShouldContain("EMP-1001"));
+
+        cut.Render(p => p.Add(x => x.Id, A));
+
+        calls.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Navigating_between_webhooks_never_shows_the_slow_first_answer()
+    {
+        SignInAsClientAdmin();
+        var slowA = new TaskCompletionSource<ApiResult<NexaVerify.Contracts.Api.WebhookEndpointDto>>();
+        CancellationToken tokenA = default;
+        Webhooks.HookById = (id, ct) =>
+        {
+            if (id == A)
+            {
+                tokenA = ct;
+                return slowA.Task;
+            }
+
+            return Ok.Of(ClientSample.Hook() with { Id = B, Name = "Hook B" });
+        };
+        var cut = Render<NexaVerify.Web.Pages.Client.WebhookDetail>(p => p.Add(x => x.Id, A));
+
+        cut.Render(p => p.Add(x => x.Id, B));
+        cut.WaitForAssertion(() => cut.Markup.ShouldContain("Hook B"));
+        tokenA.IsCancellationRequested.ShouldBeTrue();
+
+        slowA.SetResult(ApiResult<NexaVerify.Contracts.Api.WebhookEndpointDto>.Ok(ClientSample.Hook() with { Id = A, Name = "Hook A" }));
+        await Task.Delay(50);
+        cut.Markup.ShouldContain("Hook B");
+        cut.Markup.ShouldNotContain("Hook A");
+    }
+
+    [Fact]
+    public void Leaving_a_page_cancels_what_it_still_has_in_flight()
+    {
+        SignInAsClientAdmin();
+        var hung = new TaskCompletionSource<ApiResult<NexaVerify.Contracts.Faces.FaceProfileDto>>();
+        CancellationToken seen = default;
+        Faces.ProfileById = (_, ct) =>
+        {
+            seen = ct;
+            return hung.Task;
+        };
+        var cut = Render<NexaVerify.Web.Pages.Client.ProfileDetail>(p => p.Add(x => x.Id, A));
+
+        ((IDisposable)cut.Instance).Dispose();
+
+        seen.IsCancellationRequested.ShouldBeTrue();
+    }
+}
