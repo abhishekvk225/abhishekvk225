@@ -1,5 +1,9 @@
 name: CI
 
+# Pull requests and branch pushes: build (warnings are errors), format, tests, vulnerable-package check, secret scan,
+# container build + Trivy scan + SBOM, compose smoke test of the production-like stack, IIS package.
+# Releases (tags) are handled by release.yml. Third-party actions are pinned to commit SHAs (tag in the comment).
+
 on:
   push:
     branches: [main, "claude/**"]
@@ -12,41 +16,171 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_NOLOGO: "1"
+
 jobs:
   build-test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           global-json-file: global.json
       - name: Restore
         run: dotnet restore NexaVerify.slnx
       - name: Build (warnings are errors)
         run: dotnet build NexaVerify.slnx --no-restore -c Release
+      - name: Format check (advisory until the existing drift is cleaned up, see docs/STATUS.md M10)
+        continue-on-error: true
+        run: dotnet format NexaVerify.slnx --no-restore --verify-no-changes --verbosity minimal
       - name: EF model matches the checked-in migrations
         run: |
           dotnet tool restore
           dotnet ef migrations has-pending-model-changes -p src/Infrastructure -s src/Infrastructure
-      - name: Test (Testcontainers starts SQL Server via Docker)
+      - name: Test (Testcontainers starts SQL Server through Docker)
         run: dotnet test NexaVerify.slnx --no-build -c Release --logger "trx" --collect:"XPlat Code Coverage" --results-directory ./TestResults
-      - name: Vulnerable packages
+      - name: Vulnerable packages (direct and transitive)
         run: |
           dotnet list NexaVerify.slnx package --vulnerable --include-transitive 2>&1 | tee vuln.txt
-          ! grep -q "has the following vulnerable packages" vuln.txt
-      - uses: actions/upload-artifact@v4
+          if grep -q "has the following vulnerable packages" vuln.txt; then
+            echo "::error::Vulnerable NuGet packages found (see log)"; exit 1
+          fi
+      - name: Idempotent migration script (artefact; the app never migrates itself in production)
+        run: |
+          mkdir -p artifacts/sql
+          ConnectionStrings__Default="Server=placeholder;Database=NexaVerify;User Id=placeholder;Password=placeholder;TrustServerCertificate=True" \
+            dotnet run --no-build -c Release --project src/Migrator -- script > artifacts/sql/migrate.sql
+          test "$(wc -c < artifacts/sql/migrate.sql)" -gt 1024
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: test-results
           path: TestResults
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: migration-script
+          path: artifacts/sql/migrate.sql
+          if-no-files-found: error
 
   secret-scan:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Gitleaks (full history, repository rules in .gitleaks.toml)
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/repo:ro" \
+            -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/repo \
+            zricethezav/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
+            detect --source /repo --config /repo/.gitleaks.toml --redact --exit-code 1 --no-banner
+
+  container-images:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [api, web, migrator]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: Build ${{ matrix.image }} (not pushed)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.${{ matrix.image }}
+          load: true
+          push: false
+          tags: nexaverify-${{ matrix.image }}:ci
+          build-args: |
+            VERSION=0.0.0-ci
+            REVISION=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+      - name: Trivy scan (fail on fixable HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          image-ref: nexaverify-${{ matrix.image }}:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+      - name: SBOM (SPDX)
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: nexaverify-${{ matrix.image }}:ci
+          format: spdx-json
+          output-file: sbom-${{ matrix.image }}.spdx.json
+          artifact-name: sbom-${{ matrix.image }}.spdx.json
+
+  stack-smoke:
+    # Boots the production-like compose stack (TLS proxy, API, portal, SQL Server, migrator) and runs scripts/smoke-test.sh.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Prepare secrets and settings
+        run: |
+          bash deploy/docker/prod/make-secrets.sh
+          cp deploy/docker/.env.prod.example deploy/docker/.env.prod
+          sed -i 's/^ALLOW_MOCK_FACE_ENGINE=.*/ALLOW_MOCK_FACE_ENGINE=true/' deploy/docker/.env.prod
+      - name: Build and start
+        run: |
+          docker compose -f deploy/docker/docker-compose.prod.yml --env-file deploy/docker/.env.prod build
+          docker compose -f deploy/docker/docker-compose.prod.yml --env-file deploy/docker/.env.prod up -d --no-build
+      - name: Smoke test
+        run: |
+          SMOKE_INSECURE=1 SMOKE_RESOLVE="api.nexaverify.example:443:127.0.0.1,portal.nexaverify.example:443:127.0.0.1" \
+            scripts/smoke-test.sh https://api.nexaverify.example https://portal.nexaverify.example
+      - name: Logs on failure
+        if: failure()
+        run: docker compose -f deploy/docker/docker-compose.prod.yml --env-file deploy/docker/.env.prod logs --tail 200
+      - name: Tear down
+        if: always()
+        run: docker compose -f deploy/docker/docker-compose.prod.yml --env-file deploy/docker/.env.prod down -v
+
+  iis-package:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          global-json-file: global.json
+      - name: Build the IIS package
+        shell: pwsh
+        run: ./scripts/publish-iis.ps1 -Version 0.0.0-ci -SkipTests
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: iis-package
+          path: artifacts/nexaverify-iis-0.0.0-ci.zip
+          if-no-files-found: error
+
+  observability-config:
+    # Static validation of alert rules / dashboard JSON / compose files. Needs no cluster.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: promtool check rules
+        run: |
+          docker run --rm --entrypoint promtool -v "$GITHUB_WORKSPACE/deploy/observability:/o:ro" \
+            prom/prometheus:v2.55.1 check rules /o/alerts.rules.yml
+      - name: Dashboard JSON parses
+        run: python3 -c "import json,sys; json.load(open('deploy/observability/grafana/dashboards/nexaverify-overview.json'))"
+      - name: docker compose config
+        run: |
+          printf 'MSSQL_SA_PASSWORD=Ci-Sa-Passw0rd-1!\nAPP_DB_PASSWORD=Ci-App-Passw0rd-1!\nSEED_ADMIN_EMAIL=ci@example.test\nSEED_ADMIN_PASSWORD=Ci-Admin-Passw0rd-1!\n' > /tmp/dev.env
+          docker compose -f deploy/docker/docker-compose.dev.yml --env-file /tmp/dev.env --profile observability config -q
+          cp deploy/docker/.env.prod.example /tmp/prod.env
+          bash deploy/docker/prod/make-secrets.sh
+          docker compose -f deploy/docker/docker-compose.prod.yml --env-file /tmp/prod.env config -q

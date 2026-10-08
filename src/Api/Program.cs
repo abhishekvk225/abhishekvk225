@@ -17,6 +17,10 @@ using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Docker/Kubernetes secrets: every file in the secrets directory is a setting (file name "Jwt__SigningKeyPem" = key Jwt:SigningKeyPem).
+// Applied after environment variables, so a mounted secret wins. The directory is optional (absent in IIS / local runs).
+builder.Configuration.AddKeyPerFile(builder.Configuration["NEXAVERIFY_SECRETS_DIR"] ?? "/run/secrets", optional: true);
+
 if (builder.Environment.IsProduction() && builder.Configuration["AllowedHosts"] is null or "" or "*")
 {
     throw new InvalidOperationException("AllowedHosts must list the real host names in Production ('*' disables host-header validation).");
@@ -57,6 +61,7 @@ builder.Services.AddHealthChecks()
     .AddDbContextCheck<AppDbContext>("database", tags: ["ready"])
     .AddCheck<TenantProtectionHealthCheck>("tenant-protection", tags: ["ready"]);
 builder.Services.AddOpenApi();
+builder.Services.AddApiTelemetry(builder.Configuration, "nexaverify-api");
 
 var app = builder.Build();
 

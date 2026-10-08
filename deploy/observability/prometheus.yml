@@ -1,0 +1,35 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+
+rule_files:
+  - /etc/prometheus/alerts.rules.yml
+
+scrape_configs:
+  - job_name: otel-collector
+    static_configs:
+      - targets: ["otel-collector:8889"]
+
+  # Black-box probes of the public health endpoints (run a prom/blackbox-exporter next to Prometheus; module "http_2xx").
+  # Replace the targets with the real host names. /health/ready also exercises the database and tenant-protection checks.
+  - job_name: nexaverify-probes
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - https://api.nexaverify.example/health/live
+          - https://api.nexaverify.example/health/ready
+          - https://portal.nexaverify.example/health/live
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: target
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ["alertmanager:9093"]

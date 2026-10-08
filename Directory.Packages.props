@@ -23,6 +23,12 @@
     <PackageVersion Include="MudBlazor" Version="9.11.0" />
     <!-- QR code module matrix for the MFA enrolment page (MIT licence; only the matrix is used, rendering is done by a Blazor component). -->
     <PackageVersion Include="QRCoder" Version="1.6.0" />
+    <!-- Observability: OpenTelemetry (opt-in, exported over OTLP; see docs/runbooks/monitoring.md) -->
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.19.1" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.19.1" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.19.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.19.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.19.0" />
     <!-- Test -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />

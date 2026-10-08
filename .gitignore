@@ -16,3 +16,7 @@ secrets.json
 *.key
 App_Data/
 .blobs/
+
+# Local secret material for the production-like compose stack
+deploy/docker/secrets/
+deploy/docker/.env.prod

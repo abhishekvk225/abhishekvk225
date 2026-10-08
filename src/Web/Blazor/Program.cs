@@ -7,6 +7,10 @@ using NexaVerify.Web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Docker/Kubernetes secrets: every file in the secrets directory is a setting (file name "Jwt__SigningKeyPem" = key Jwt:SigningKeyPem).
+// Applied after environment variables, so a mounted secret wins. The directory is optional (absent in IIS / local runs).
+builder.Configuration.AddKeyPerFile(builder.Configuration["NEXAVERIFY_SECRETS_DIR"] ?? "/run/secrets", optional: true);
+
 builder.WebHost.ConfigureKestrel(kestrel => kestrel.AddServerHeader = false);
 
 builder.Services.Configure<SecurityHeadersOptions>(builder.Configuration.GetSection(SecurityHeadersOptions.Section));
@@ -44,6 +48,9 @@ builder.Services.AddPortalBff(builder.Configuration, builder.Environment);
 // Behind a TLS-terminating proxy the real client address and scheme arrive in X-Forwarded-* headers. Only proxies you list are trusted.
 var forwardedEnabled = ForwardedHeadersSetup.Configure(builder.Services, builder.Configuration);
 
+builder.Services.AddPortalTelemetry(builder.Configuration);
+builder.Services.AddHealthChecks();
+
 var app = builder.Build();
 
 if (forwardedEnabled)
@@ -55,7 +62,8 @@ if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/error", createScopeForErrors: true);
     app.UseHsts();
-    app.UseHttpsRedirection();
+    // Health probes arrive over plain HTTP inside the cluster/container; every other request is redirected.
+    app.UseWhen(http => !http.Request.Path.StartsWithSegments("/health"), branch => branch.UseHttpsRedirection());
 }
 
 app.UseMiddleware<SecurityHeadersMiddleware>();
@@ -77,6 +85,8 @@ app.MapGet("/", (HttpContext http) =>
     Results.Redirect(http.User.FindFirst(PortalClaims.Portal)?.Value is { } portal ? ReturnUrl.HomeFor(portal) : "/login"));
 app.MapPortalAuth();
 app.MapPortalDownloads();
+// Probes for the container orchestrator / load balancer: liveness only (the portal has no database; API reachability is shown to users, not probed here).
+app.MapHealthChecks("/health/live").AllowAnonymous();
 app.MapGet("/error", () => Results.Problem(title: "Something went wrong", statusCode: 500));
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 

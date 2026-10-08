@@ -1,0 +1,165 @@
+name: Deploy (reusable)
+
+# Used by release.yml (staging), deploy-staging.yml, deploy-production.yml and rollback.yml. Not started directly.
+#
+# The job runs in a GitHub ENVIRONMENT (staging / production). Configure in the repository settings:
+#   environment protection : production = required reviewers (+ optional wait timer), deployment branches/tags = v* tags only
+#   environment secrets    : DEPLOY_SSH_KEY (private key of a deploy-only user), DEPLOY_SSH_KNOWN_HOSTS (pinned host key line(s))
+#   environment variables  : DEPLOY_HOST, DEPLOY_USER, DEPLOY_DIR (default /opt/nexaverify), API_URL, PORTAL_URL
+# Nothing application-secret lives in GitHub: the host keeps deploy/docker secrets in $DEPLOY_DIR/secrets (docs/runbooks/deploy.md).
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: staging or production
+        required: true
+        type: string
+      tag:
+        description: Release tag to deploy (e.g. v1.2.3)
+        required: true
+        type: string
+      registry:
+        description: Image registry prefix (ghcr.io/owner/repo); derived from the repository when empty
+        required: false
+        type: string
+        default: ""
+      migrate:
+        description: Run the migrator (schema/guards/app login) before starting the new version
+        required: false
+        type: boolean
+        default: true
+      rollback:
+        description: Roll the containers back to the previously deployed tag instead of deploying the tag
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+      attestations: read
+    env:
+      ENVIRONMENT: ${{ inputs.environment }}
+      TAG: ${{ inputs.tag }}
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+      DEPLOY_DIR: ${{ vars.DEPLOY_DIR || '/opt/nexaverify' }}
+      API_URL: ${{ vars.API_URL }}
+      PORTAL_URL: ${{ vars.PORTAL_URL }}
+    steps:
+      - name: Validate inputs and environment configuration
+        env:
+          HAS_KEY: ${{ secrets.DEPLOY_SSH_KEY != '' }}
+          HAS_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS != '' }}
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "::error::tag '$TAG' is not a release tag"; exit 1; }
+          for v in DEPLOY_HOST DEPLOY_USER API_URL PORTAL_URL; do
+            [ -n "${!v}" ] || { echo "::error::environment variable $v is not set for $ENVIRONMENT"; exit 1; }
+          done
+          [ "$HAS_KEY" = "true" ] || { echo "::error::secret DEPLOY_SSH_KEY missing"; exit 1; }
+          [ "$HAS_HOSTS" = "true" ] || { echo "::error::secret DEPLOY_SSH_KNOWN_HOSTS missing (host key must be pinned)"; exit 1; }
+          if [ "$ENVIRONMENT" = "production" ] && [[ "$TAG" == *-* ]]; then echo "::error::pre-release tags cannot go to production"; exit 1; fi
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Resolve registry
+        id: reg
+        env:
+          INPUT_REGISTRY: ${{ inputs.registry }}
+        run: |
+          registry="$INPUT_REGISTRY"
+          [ -n "$registry" ] || registry="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "registry=$registry" >> "$GITHUB_OUTPUT"
+
+      - name: Verify image provenance (skipped for rollback to an already-running tag)
+        if: ${{ !inputs.rollback }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REGISTRY: ${{ steps.reg.outputs.registry }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+          for image in api web migrator; do
+            ref="$REGISTRY/$image:$TAG"
+            docker pull --quiet "$ref" >/dev/null
+            gh attestation verify "oci://$ref" --repo "$GITHUB_REPOSITORY"
+          done
+
+      - name: Download migration script (kept as the audit record of what the migrator applies)
+        if: ${{ !inputs.rollback }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p release-assets
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern 'migrate.sql*' --dir release-assets
+          (cd release-assets && sha256sum -c migrate.sql.sha256)
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ !inputs.rollback }}
+        with:
+          name: migrate-${{ inputs.environment }}-${{ inputs.tag }}
+          path: release-assets
+          if-no-files-found: error
+
+      - name: Configure SSH (pinned host key, deploy-only key)
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf 'Host deploy-target\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/id_deploy\n  IdentitiesOnly yes\n  StrictHostKeyChecking yes\n  UserKnownHostsFile ~/.ssh/known_hosts\n' "$DEPLOY_HOST" "$DEPLOY_USER" > ~/.ssh/config
+
+      - name: Ship release files
+        run: |
+          ssh deploy-target "mkdir -p '$DEPLOY_DIR/prod' '$DEPLOY_DIR/releases/$TAG'"
+          # The deploy script of the tag being deployed (or rolled back to) always lands at a fixed path.
+          scp scripts/deploy/remote-deploy.sh "deploy-target:$DEPLOY_DIR/remote-deploy.sh"
+          if [ "$ROLLBACK" != "true" ]; then
+            scp deploy/docker/docker-compose.prod.yml "deploy-target:$DEPLOY_DIR/docker-compose.prod.yml"
+            scp deploy/docker/prod/Caddyfile "deploy-target:$DEPLOY_DIR/prod/Caddyfile"
+            scp release-assets/migrate.sql "deploy-target:$DEPLOY_DIR/releases/$TAG/migrate.sql"
+          fi
+        env:
+          ROLLBACK: ${{ inputs.rollback }}
+
+      - name: Deploy
+        env:
+          ROLLBACK: ${{ inputs.rollback }}
+          MIGRATE: ${{ inputs.migrate }}
+          REGISTRY: ${{ steps.reg.outputs.registry }}
+        run: |
+          if [ "$ROLLBACK" = "true" ]; then
+            ssh deploy-target "cd '$DEPLOY_DIR' && NEXAVERIFY_REGISTRY='$REGISTRY' DEPLOY_DIR='$DEPLOY_DIR' bash ./remote-deploy.sh --rollback --expect-tag $TAG"
+          else
+            flags="--tag $TAG"
+            [ "$MIGRATE" = "true" ] || flags="$flags --no-migrate"
+            ssh deploy-target "cd '$DEPLOY_DIR' && NEXAVERIFY_REGISTRY='$REGISTRY' DEPLOY_DIR='$DEPLOY_DIR' bash ./remote-deploy.sh $flags"
+          fi
+
+      - name: Smoke test
+        run: scripts/smoke-test.sh "$API_URL" "$PORTAL_URL"
+
+      - name: Automatic rollback of the containers after a failed deployment
+        if: ${{ failure() && !inputs.rollback }}
+        env:
+          REGISTRY: ${{ steps.reg.outputs.registry }}
+        run: |
+          echo "::warning::Deployment or smoke test failed; rolling the containers back. The database is NOT rolled back (docs/runbooks/rollback.md)."
+          ssh deploy-target "cd '$DEPLOY_DIR' && NEXAVERIFY_REGISTRY='$REGISTRY' DEPLOY_DIR='$DEPLOY_DIR' bash ./remote-deploy.sh --rollback" || echo "::error::automatic rollback failed; follow docs/runbooks/rollback.md now"

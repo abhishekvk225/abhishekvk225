@@ -1,14 +1,23 @@
 # syntax=docker/dockerfile:1
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+# Base images are pinned by digest (provenance: Microsoft Artifact Registry). Dependabot (docker ecosystem) proposes updates and
+# CI scans every image with Trivy. Build from the repository root:  docker build -f deploy/docker/Dockerfile.api .
+FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:e70cdb7f80b0348f5cb85f19a8f670fca061f033d57eed12fa003d58b0e06317 AS build
 WORKDIR /src
 COPY global.json Directory.Build.props Directory.Packages.props .editorconfig ./
 COPY src/ src/
 RUN dotnet restore src/Api/NexaVerify.Api.csproj
 RUN dotnet publish src/Api/NexaVerify.Api.csproj -c Release -o /app/publish --no-restore /p:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0@sha256:222759b391a1aaf241166672c8f99b2d4ada452e7b5319f3c6e8f265a37b5ad4 AS runtime
+ARG VERSION=0.0.0-local
+ARG REVISION=unknown
+LABEL org.opencontainers.image.title="nexaverify-api" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}"
 WORKDIR /app
-# Non-root: the aspnet image ships an unprivileged "app" user.
+# Non-root: the aspnet image ships an unprivileged "app" user (uid 1654). Nothing is written under /app at run time,
+# so the container runs with a read-only root filesystem (writable /tmp via tmpfs). No secrets are baked in: every
+# secret arrives through environment variables or mounted files (deploy/CONFIG.md).
 USER app
 ENV ASPNETCORE_URLS=http://+:8080 \
     ASPNETCORE_ENVIRONMENT=Production \

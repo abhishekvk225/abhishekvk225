@@ -1,5 +1,7 @@
 # syntax=docker/dockerfile:1
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+# Schema migrator / seeder / app-principal tool. Build from the repository root:  docker build -f deploy/docker/Dockerfile.migrator .
+# Runs with an ADMINISTRATIVE database login; never give that login to the API.
+FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:e70cdb7f80b0348f5cb85f19a8f670fca061f033d57eed12fa003d58b0e06317 AS build
 WORKDIR /src
 COPY global.json Directory.Build.props Directory.Packages.props .editorconfig ./
 COPY src/ src/
@@ -7,8 +9,14 @@ RUN dotnet restore src/Migrator/NexaVerify.Migrator.csproj
 RUN dotnet publish src/Migrator/NexaVerify.Migrator.csproj -c Release -o /app/publish --no-restore /p:UseAppHost=false
 
 # The migrator links the ASP.NET Core shared framework through Infrastructure, so it needs the aspnet runtime image.
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0@sha256:222759b391a1aaf241166672c8f99b2d4ada452e7b5319f3c6e8f265a37b5ad4 AS runtime
+ARG VERSION=0.0.0-local
+ARG REVISION=unknown
+LABEL org.opencontainers.image.title="nexaverify-migrator" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}"
 WORKDIR /app
 USER app
+ENV DOTNET_EnableDiagnostics=0
 COPY --from=build --chown=app:app /app/publish .
 ENTRYPOINT ["dotnet", "NexaVerify.Migrator.dll"]

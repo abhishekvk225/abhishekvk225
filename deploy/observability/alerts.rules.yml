@@ -1,0 +1,124 @@
+# Prometheus alert rules for NexaVerify. Metric names are what the OpenTelemetry ASP.NET Core instrumentation produces after the
+# collector's Prometheus exporter (http.server.request.duration => http_server_request_duration_seconds_*). http_route is the route
+# template without a leading slash, e.g. api/v1/faces/verify. Validate with:  promtool check rules deploy/observability/alerts.rules.yml
+# Thresholds are starting points: tune them after the staging soak test (docs/runbooks/staging-soak-test.md).
+groups:
+  - name: nexaverify-availability
+    rules:
+      - alert: NexaVerifyHealthProbeFailing
+        expr: probe_success{job="nexaverify-probes"} == 0
+        for: 3m
+        labels: { severity: critical }
+        annotations:
+          summary: "Health probe failing: {{ $labels.target }}"
+          description: "/health/ready returning 503 means the database or tenant-protection (RLS) check failed; /health/live failing means the process is down. See docs/runbooks/incident-response.md."
+          runbook: docs/runbooks/incident-response.md
+
+      - alert: NexaVerifyTelemetryMissing
+        expr: up{job="otel-collector"} == 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "OpenTelemetry collector is not scraped; dashboards and alerts below are blind."
+
+  - name: nexaverify-api-golden-signals
+    rules:
+      - record: nexaverify:http_requests:rate5m
+        expr: sum by (service_name) (rate(http_server_request_duration_seconds_count[5m]))
+      - record: nexaverify:http_5xx_ratio:rate5m
+        expr: |
+          sum by (service_name) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m]))
+          / sum by (service_name) (rate(http_server_request_duration_seconds_count[5m]))
+      - record: nexaverify:http_p95_seconds:5m
+        expr: histogram_quantile(0.95, sum by (le, service_name) (rate(http_server_request_duration_seconds_bucket[5m])))
+
+      - alert: ApiHighErrorRate
+        expr: nexaverify:http_5xx_ratio:rate5m{service_name="nexaverify-api"} > 0.02 and nexaverify:http_requests:rate5m{service_name="nexaverify-api"} > 0.2
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: "More than 2% of API requests fail with 5xx"
+          runbook: docs/runbooks/incident-response.md
+
+      - alert: ApiHighLatencyP95
+        expr: nexaverify:http_p95_seconds:5m{service_name="nexaverify-api"} > 1
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "API p95 latency above 1 s"
+
+      - alert: PortalHighErrorRate
+        expr: nexaverify:http_5xx_ratio:rate5m{service_name="nexaverify-portal"} > 0.05 and nexaverify:http_requests:rate5m{service_name="nexaverify-portal"} > 0.2
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "More than 5% of portal requests fail with 5xx"
+
+  - name: nexaverify-face-operations
+    rules:
+      - alert: FaceVerifyLatencyHigh
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name="nexaverify-api",http_route=~"/?api/v1/faces/verify"}[5m]))) > 2
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "POST /faces/verify p95 above 2 s"
+          description: "Check CPU saturation (image gate queue returns 503 when full), SQL latency and the face engine provider."
+
+      - alert: FaceIdentifyLatencyHigh
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name="nexaverify-api",http_route=~"/?api/v1/faces/identify"}[5m]))) > 3
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "POST /faces/identify (search) p95 above 3 s"
+
+      - alert: FaceImageGateShedding
+        expr: sum(rate(http_server_request_duration_seconds_count{service_name="nexaverify-api",http_route=~"/?api/v1/faces/.*",http_response_status_code="503"}[5m])) > 0.05
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Face endpoints are shedding load (503): image decode queue full"
+
+  - name: nexaverify-licensing-and-security
+    rules:
+      - alert: LicenseExhaustionSpike
+        # 402 = LICENSE_INSUFFICIENT_BALANCE. A few are normal (a client ran out); a burst means a big client is down or a billing bug.
+        expr: sum(increase(http_server_request_duration_seconds_count{service_name="nexaverify-api",http_response_status_code="402"}[15m])) > 50
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Many requests refused for exhausted credits (HTTP 402)"
+          description: "Look at the admin dashboard (low balance / expiring) and at license.exhausted webhooks; contact the clients."
+
+      - alert: AuthFailureSpike
+        expr: sum(increase(http_server_request_duration_seconds_count{service_name="nexaverify-api",http_route=~"/?api/v1/auth/(login|mfa/verify|refresh)",http_response_status_code=~"401|403"}[5m])) > 100
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Burst of failed sign-ins / MFA / refresh calls (possible credential stuffing)"
+          description: "Per-account lockout and the per-IP auth limit are active; review audit log, consider docs/runbooks/emergency-revoke.md."
+
+      - alert: AuthRateLimitHits
+        expr: sum(increase(http_server_request_duration_seconds_count{service_name="nexaverify-api",http_route=~"/?api/v1/auth/.*",http_response_status_code="429"}[5m])) > 200
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Auth endpoints are rate limiting heavily"
+          description: "If every sign-in comes from one address, forwarded headers are mis-configured (ForwardedHeaders:KnownProxies) and all users share one bucket."
+
+      - alert: ApiKeyAuthFailureSpike
+        expr: sum(increase(http_server_request_duration_seconds_count{service_name="nexaverify-api",http_route=~"/?api/v1/faces/.*",http_response_status_code=~"401|403"}[5m])) > 200
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Burst of rejected API-key calls on face endpoints"
+
+  - name: nexaverify-runtime
+    rules:
+      - alert: KestrelRejectingConnections
+        expr: sum(increase(kestrel_rejected_connections_total[5m])) > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Kestrel rejected connections (connection limit reached)"

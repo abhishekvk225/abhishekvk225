@@ -15,6 +15,8 @@ using Serilog;
 // Connection string: ConnectionStrings__Default (an administrative principal). Seed: Seed__SuperAdminEmail / Seed__SuperAdminPassword.
 
 var builder = Host.CreateApplicationBuilder(args);
+// Docker/Kubernetes secrets: files in /run/secrets become settings (file "ConnectionStrings__Default" = key ConnectionStrings:Default).
+builder.Configuration.AddKeyPerFile(builder.Configuration["NEXAVERIFY_SECRETS_DIR"] ?? "/run/secrets", optional: true);
 builder.Logging.ClearProviders();
 builder.Logging.AddSerilog(new LoggerConfiguration().ReadFrom.Configuration(builder.Configuration).WriteTo.Console().CreateLogger());
 builder.Services.AddApplication();

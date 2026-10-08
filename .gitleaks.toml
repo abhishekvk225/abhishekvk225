@@ -1,0 +1,18 @@
+# Gitleaks configuration: default rules plus a narrow allow-list for fixtures that look like secrets but are not.
+title = "NexaVerify gitleaks"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Test fixtures (throw-away passwords for test hosts and in-memory test databases) and the UI styleguide sample values"
+paths = [
+  '''(^|/)tests/''',
+  '''(^|/)src/Web/Blazor/Pages/Styleguide\.razor$''',
+]
+
+[[allowlists]]
+description = "Locally generated secret material for the compose stack (git-ignored, never committed; listed so a --no-git scan of a working copy stays quiet)"
+paths = [
+  '''(^|/)deploy/docker/secrets/''',
+]
