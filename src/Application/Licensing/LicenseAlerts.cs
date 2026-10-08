@@ -145,7 +145,8 @@ public interface ILicenseAlertCandidates
 
 public interface ILicenseAlertRepository
 {
-    Task<bool> ExistsAsync(Guid subjectId, LicenseAlertType type, string bucket, CancellationToken cancellationToken);
+    /// <summary>Which of these subjects already have which (type, bucket) alerts: one query for the whole batch.</summary>
+    Task<HashSet<(Guid SubjectId, LicenseAlertType Type, string Bucket)>> RaisedAsync(IReadOnlyCollection<Guid> subjectIds, CancellationToken cancellationToken);
 
     Task<LicenseAlert?> GetAsync(Guid id, CancellationToken cancellationToken);
 
@@ -185,10 +186,18 @@ public sealed class LicenseAlertService : ILicenseAlertService
     {
         var options = _options.Value;
         var raised = 0;
-        foreach (var (clientId, due) in licenses.SelectMany(l => LicenseAlertRules.Evaluate(l, now, options).Select(a => (l.ClientId, Alert: a)))
-                     .Concat(apiKeys.SelectMany(k => LicenseAlertRules.Evaluate(k, now, options).Select(a => (k.ClientId, Alert: a)))))
+        var candidates = licenses.SelectMany(l => LicenseAlertRules.Evaluate(l, now, options).Select(a => (l.ClientId, Alert: a)))
+            .Concat(apiKeys.SelectMany(k => LicenseAlertRules.Evaluate(k, now, options).Select(a => (k.ClientId, Alert: a))))
+            .ToList();
+        if (candidates.Count == 0)
         {
-            if (await _alerts.ExistsAsync(due.SubjectId, due.Type, due.Bucket, cancellationToken))
+            return 0;
+        }
+
+        var already = await _alerts.RaisedAsync(candidates.Select(c => c.Alert.SubjectId).Distinct().ToList(), cancellationToken);
+        foreach (var (clientId, due) in candidates)
+        {
+            if (already.Contains((due.SubjectId, due.Type, due.Bucket)))
             {
                 continue;
             }

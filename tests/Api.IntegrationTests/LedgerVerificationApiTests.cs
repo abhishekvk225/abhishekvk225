@@ -127,6 +127,27 @@ public class LedgerVerificationApiTests : UsageTestBase
     }
 
     [Fact]
+    public async Task A_verification_running_on_another_node_blocks_this_one_and_releases_cleanly()
+    {
+        await NewTenantAsync("V6");
+        var locks = App.Factory.Services.GetRequiredService<IDistributedLock>();
+
+        var other = await locks.TryAcquireAsync("ledger-verification", default); // stands in for another node's session
+        other.ShouldNotBeNull();
+        try
+        {
+            (await locks.TryAcquireAsync("ledger-verification", default)).ShouldBeNull();
+            (await App.PostAsync(Url, null, Platform.AccessToken)).StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        }
+        finally
+        {
+            await other.DisposeAsync();
+        }
+
+        (await App.PostAsync(Url, null, Platform.AccessToken)).StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
     public async Task The_endpoint_needs_authentication_and_the_platform_permission()
     {
         var a = await NewTenantAsync("V5");

@@ -131,6 +131,8 @@ public class LedgerVerificationTests
 
         public int HeadReads { get; private set; }
 
+        public Guid? Poisoned { get; set; }
+
         public Func<int, int>? RemainingOverride { get; set; }
 
         public Task<IReadOnlyList<LicenseLedgerHead>> ListLicensesAsync(Guid? afterLicenseId, int take, CancellationToken cancellationToken)
@@ -153,6 +155,11 @@ public class LedgerVerificationTests
 
         public Task<IReadOnlyList<LicenseTransaction>> ListEntriesAsync(Guid licenseId, long afterEntryId, int take, CancellationToken cancellationToken)
         {
+            if (licenseId == Poisoned)
+            {
+                throw new InvalidOperationException("unreadable");
+            }
+
             var entries = Licenses.Single(l => l.Head.LicenseId == licenseId).Entries;
             return Task.FromResult<IReadOnlyList<LicenseTransaction>>(entries.Where(e => e.Id > afterEntryId).OrderBy(e => e.Id).Take(take).ToList());
         }
@@ -207,8 +214,8 @@ public class LedgerVerificationTests
 
         public LedgerVerificationOptions Options { get; } = new() { LicenseBatchSize = 10, EntryBatchSize = 100, RecheckDelayMilliseconds = 0, BalanceRecheckAttempts = 2 };
 
-        public LedgerVerificationService Service(LedgerVerificationGate? gate = null) =>
-            new(Store, gate ?? new LedgerVerificationGate(), Audit, Uow, Microsoft.Extensions.Options.Options.Create(Options), TimeProvider.System, Log);
+        public LedgerVerificationService Service(LedgerVerificationGate? gate = null, IDistributedLock? distributedLock = null) =>
+            new(Store, gate ?? new LedgerVerificationGate(), Audit, Uow, Microsoft.Extensions.Options.Options.Create(Options), TimeProvider.System, Log, distributedLock);
 
         public Guid Add(License license, List<LicenseTransaction> entries)
         {
@@ -306,5 +313,36 @@ public class LedgerVerificationTests
         result.Error!.Type.ShouldBe(Common.ErrorType.Conflict);
         gate.Exit();
         (await h.Service(gate).VerifyAllAsync(default)).IsSuccess.ShouldBeTrue(); // released after the earlier refusal and after a normal run
+    }
+
+    private sealed class HeldElsewhere : IDistributedLock
+    {
+        public Task<IAsyncDisposable?> TryAcquireAsync(string name, CancellationToken cancellationToken) => Task.FromResult<IAsyncDisposable?>(null);
+    }
+
+    [Fact]
+    public async Task A_verification_held_by_another_node_is_refused()
+    {
+        var h = new Harness();
+        var result = await h.Service(distributedLock: new HeldElsewhere()).VerifyAllAsync(default);
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error!.Type.ShouldBe(Common.ErrorType.Conflict);
+    }
+
+    [Fact]
+    public async Task An_unreadable_license_is_reported_without_hiding_the_others()
+    {
+        var h = new Harness();
+        var (bad, badEntries) = Chain();
+        var (good, goodEntries) = Chain();
+        var badId = h.Add(bad, badEntries);
+        h.Add(good, goodEntries);
+        h.Store.Poisoned = badId;
+
+        var report = (await h.Service().VerifyAllAsync(default)).Value;
+
+        report.LicensesChecked.ShouldBe(2);
+        report.Breaks.Single().LicenseId.ShouldBe(badId);
     }
 }

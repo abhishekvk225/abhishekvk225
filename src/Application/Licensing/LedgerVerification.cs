@@ -122,6 +122,12 @@ public interface ILedgerVerificationStore
     Task<IReadOnlyList<LicenseTransaction>> ListEntriesAsync(Guid licenseId, long afterEntryId, int take, CancellationToken cancellationToken);
 }
 
+/// <summary>A cross-node mutual-exclusion lock (implemented over the database); null from <see cref="TryAcquireAsync"/> means another node holds it.</summary>
+public interface IDistributedLock
+{
+    Task<IAsyncDisposable?> TryAcquireAsync(string name, CancellationToken cancellationToken);
+}
+
 /// <summary>Allows one platform-wide verification at a time per process (the endpoint and the nightly job share it).</summary>
 public sealed class LedgerVerificationGate
 {
@@ -142,6 +148,7 @@ public sealed partial class LedgerVerificationService : ILedgerVerificationServi
 {
     private readonly ILedgerVerificationStore _store;
     private readonly LedgerVerificationGate _gate;
+    private readonly IDistributedLock? _lock;
     private readonly IAuditService _audit;
     private readonly IUnitOfWork _unitOfWork;
     private readonly Microsoft.Extensions.Options.IOptions<LedgerVerificationOptions> _options;
@@ -155,8 +162,10 @@ public sealed partial class LedgerVerificationService : ILedgerVerificationServi
         IUnitOfWork unitOfWork,
         Microsoft.Extensions.Options.IOptions<LedgerVerificationOptions> options,
         TimeProvider time,
-        ILogger<LedgerVerificationService> logger)
+        ILogger<LedgerVerificationService> logger,
+        IDistributedLock? distributedLock = null)
     {
+        _lock = distributedLock;
         _store = store;
         _gate = gate;
         _audit = audit;
@@ -173,8 +182,14 @@ public sealed partial class LedgerVerificationService : ILedgerVerificationServi
             return Error.Conflict(ErrorCodes.Conflict, "A ledger verification is already running.");
         }
 
+        IAsyncDisposable? cluster = null;
         try
         {
+            if (_lock is not null && (cluster = await _lock.TryAcquireAsync("ledger-verification", cancellationToken)) is null)
+            {
+                return Error.Conflict(ErrorCodes.Conflict, "A ledger verification is already running on another node.");
+            }
+
             var options = _options.Value;
             var started = _time.GetUtcNow().UtcDateTime;
             var breaks = new List<LedgerBreakDto>();
@@ -187,7 +202,19 @@ public sealed partial class LedgerVerificationService : ILedgerVerificationServi
                 var batch = await _store.ListLicensesAsync(after, options.LicenseBatchSize, cancellationToken);
                 foreach (var head in batch)
                 {
-                    var (count, problem) = await VerifyLicenseAsync(head, options, cancellationToken);
+                    long count;
+                    LedgerProblem? problem;
+                    try
+                    {
+                        (count, problem) = await VerifyLicenseAsync(head, options, cancellationToken);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        // One unreadable license must not silence the check for every other license: report it and carry on.
+                        _logger.LogError(ex, "License {LicenseId} could not be verified", head.LicenseId);
+                        (count, problem) = (0, new LedgerProblem(null, "The ledger could not be read for verification."));
+                    }
+
                     licenses++;
                     entries += count;
                     if (problem is not null)
@@ -209,6 +236,11 @@ public sealed partial class LedgerVerificationService : ILedgerVerificationServi
         }
         finally
         {
+            if (cluster is not null)
+            {
+                await cluster.DisposeAsync();
+            }
+
             _gate.Exit();
         }
     }

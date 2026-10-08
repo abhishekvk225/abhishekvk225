@@ -11,7 +11,7 @@ Gate legend: ✅ passed · 🔄 in progress · ⬜ not started · ❌ failed. A 
 | M4 Licensing & Metering | ✅ | ✅ | ✅ | ⬜ (M8) | 🔄 pass-with-conditions (see below) | ✅ 25 API + 17 domain tests | 🔄 Majors M-1..M-4 fixed | 🔄 | ⬜ | ⬜ |
 | M5 Face Recognition | ✅ | ✅ | ✅ (mock engine; real provider pending) | ⬜ (M8) | 🔄 High fixed; re-verify + conditions below | ✅ 22 API + 8 unit tests | 🔄 Blocker + Majors fixed; rest below | 🔄 | ⬜ | ⬜ |
 | M6 API Management | ✅ | ✅ | ✅ keys, auth, limits, logs, webhooks | ⬜ (M8) | 🔄 pass-with-conditions; Mediums M-1(clamp)/M-3/M-4 fixed | ✅ 30 API + 40 unit tests | 🔄 approve-with-changes; Majors M1–M4, M7 fixed | 🔄 | ⬜ | ⬜ |
-| M7 Usage & Dashboards | ✅ | ✅ | ✅ dashboards, CSV exports, ledger verification, alerts, notification feed | ⬜ (M8) | ⬜ | ✅ 34 API + 79 unit tests (reconciliation, tamper, dedupe) | ⬜ | ⬜ | ⬜ | ⬜ |
+| M7 Usage & Dashboards | ✅ | ✅ | ✅ dashboards, CSV exports, ledger verification, alerts, notification feed | ⬜ (M8) | ⬜ | 🔄 pass-with-conditions; M2/L1/L4/L7 fixed, M1 → M9 | ✅ 38 targeted + full suite green | 🔄 changes-requested; Majors 1–2 fixed, 3 partial | ⬜ | ⬜ |
 | M8 Blazor Portal polish | ⬜ | – | – | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M9 Hardening | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M10 Release readiness | – | – | – | – | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
@@ -38,3 +38,7 @@ Gate legend: ✅ passed · 🔄 in progress · ⬜ not started · ❌ failed. A 
 ## M6 review outcomes (`docs/reviews/security-m6.md`, `code-m6.md`)
 - **Fixed:** regenerate re-checks scopes and the key cap; a key's rate limit can no longer exceed the account's; `Webhooks:AllowUnsafeTargets` refused outside Development/Testing; last-used write is best-effort; poison webhook deliveries (undecryptable secret, bad URL) now count as failed attempts and reach abandonment, shutdown no longer counts as a failure; delivery rows purged after 30 days.
 - **Open:** daily quota/rate counters are per node (persist or share for multi-node, M9); no per-endpoint dispatcher fairness/throttle on test+retry (M9); "20 consecutive failures" counts attempts not events; lease/batch not configurable; license/apikey webhook events arrive with M7; Lows L-1..L-9 and code Minors tracked for M10.
+
+## M7 review outcomes (`docs/reviews/security-m7.md`, `code-m7.md`)
+- **Fixed:** ledger verification is now exclusive across nodes (SQL application lock) as well as per process; one unreadable license no longer aborts the whole check; report dates are bounded (no more truncated CSV on absurd ranges); CSV neutralisation also covers zero-width/format characters; alert processing checks existing alerts with one set query per client instead of one per alert; wall-clock `Today` in CSV tests computed per call.
+- **Open:** ledger hash is unkeyed SHA-256 – a DB-level attacker can recompute the chain, tail truncation undetected (keyed HMAC or external anchor, M9); on-demand verify is one synchronous scan (make async/per-client, M9); persistent break repeats Critical log nightly with no operator alert; no per-principal throttle on dashboards/exports; CSV streaming failure returns truncated body, no BOM; top-clients is gross while other figures are net; remaining test-clock flakiness (fake `TimeProvider` host) and code Minors → M10.

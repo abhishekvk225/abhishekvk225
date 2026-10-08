@@ -19,6 +19,7 @@ namespace NexaVerify.Application.Dashboards;
 /// </summary>
 public static class CsvFormat
 {
+    private static readonly char[] Invisible = ['\u200B', '\u200C', '\u200D', '\u200E', '\u200F', '\u2060', '\uFEFF', '\u00AD'];
     private static readonly char[] FormulaStarts = ['=', '+', '-', '@', '\t', '\r'];
     private static readonly SearchValues<char> QuotedChars = SearchValues.Create(",\"\r\n");
 
@@ -30,7 +31,8 @@ public static class CsvFormat
         }
 
         // Also checked after leading spaces: some spreadsheets ignore them when deciding whether a cell is a formula.
-        var trimmed = value.TrimStart();
+        // Zero-width and other format characters (U+200B, U+FEFF ...) are invisible but can precede a formula, so they are skipped too.
+        var trimmed = value.TrimStart().TrimStart(Invisible).TrimStart();
         var isFormula = Array.IndexOf(FormulaStarts, value[0]) >= 0 || (trimmed.Length > 0 && Array.IndexOf(FormulaStarts, trimmed[0]) >= 0);
         var cell = isFormula ? "'" + value : value;
         return cell.AsSpan().IndexOfAny(QuotedChars) >= 0 ? "\"" + cell.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"" : cell;
@@ -68,6 +70,13 @@ public static class ReportRange
 {
     public static Result<(DateOnly From, DateOnly To)> Resolve(UsageReportQuery query, DateOnly today, DashboardOptions options)
     {
+        var earliest = new DateOnly(2020, 1, 1);
+        var latest = today.AddDays(1); // tomorrow in UTC covers clients ahead of the server's date
+        if ((query.To is { } t && (t < earliest || t > latest)) || (query.From is { } f && (f < earliest || f > latest)))
+        {
+            return Error.Validation("The dates are outside the supported range.", new Dictionary<string, string[]> { ["from"] = [$"Dates must be between {earliest:yyyy-MM-dd} and tomorrow."] });
+        }
+
         var to = query.To ?? today;
         var from = query.From ?? to.AddDays(1 - options.DefaultReportDays);
         if (from > to)

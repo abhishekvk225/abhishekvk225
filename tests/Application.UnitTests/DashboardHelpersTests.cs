@@ -15,6 +15,8 @@ public class CsvFormatTests
     [InlineData("\t=1", "'\t=1")]
     [InlineData("\r=1", "\"'\r=1\"")]
     [InlineData("   =HYPERLINK(\"x\")", "\"'   =HYPERLINK(\"\"x\"\")\"")]
+    [InlineData("\u200B=1+1", "'\u200B=1+1")]
+    [InlineData("\uFEFF@cmd", "'\uFEFF@cmd")]
     public void Cells_that_a_spreadsheet_would_run_as_formulas_are_neutralised(string input, string expected) =>
         CsvFormat.Text(input).ShouldBe(expected);
 

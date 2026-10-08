@@ -13,7 +13,7 @@ namespace NexaVerify.Api.IntegrationTests;
 [Collection(SqlServerCollection.Name)]
 public class UsageReportTests : UsageTestBase
 {
-    private static readonly string Today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+    private static string Today => DateTime.UtcNow.ToString("yyyy-MM-dd");
 
     public UsageReportTests(SqlServerFixture fixture)
         : base(fixture)
@@ -166,5 +166,15 @@ public class UsageReportTests : UsageTestBase
         Lines(client).Skip(1).Select(l => long.Parse(l.Split(',')[4])).Sum().ShouldBe(charged);
         charged.ShouldBe(consumed);
         refunded.ShouldBe(2);
+    }
+
+    [Theory]
+    [InlineData("from=2020-01-01&to=9999-12-31")]
+    [InlineData("to=0001-01-01")]
+    [InlineData("from=0001-01-01&to=0001-02-01")]
+    public async Task Dates_outside_the_supported_range_are_rejected_before_anything_is_exported(string query)
+    {
+        var (response, _) = await CsvAsync($"/api/v1/admin/reports/usage.csv?{query}", Platform.AccessToken);
+        response.StatusCode.ShouldBe(System.Net.HttpStatusCode.BadRequest);
     }
 }

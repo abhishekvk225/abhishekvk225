@@ -49,8 +49,14 @@ internal sealed class LicenseAlertRepository : ILicenseAlertRepository
         _db = db;
     }
 
-    public Task<bool> ExistsAsync(Guid subjectId, LicenseAlertType type, string bucket, CancellationToken cancellationToken) =>
-        _db.LicenseAlerts.AsNoTracking().AnyAsync(a => a.SubjectId == subjectId && a.AlertType == type && a.Bucket == bucket, cancellationToken);
+    public async Task<HashSet<(Guid SubjectId, LicenseAlertType Type, string Bucket)>> RaisedAsync(IReadOnlyCollection<Guid> subjectIds, CancellationToken cancellationToken)
+    {
+        var rows = await _db.LicenseAlerts.AsNoTracking()
+            .Where(a => subjectIds.Contains(a.SubjectId))
+            .Select(a => new { a.SubjectId, a.AlertType, a.Bucket })
+            .ToListAsync(cancellationToken);
+        return rows.Select(r => (r.SubjectId, r.AlertType, r.Bucket)).ToHashSet();
+    }
 
     public Task<LicenseAlert?> GetAsync(Guid id, CancellationToken cancellationToken) => _db.LicenseAlerts.FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
 

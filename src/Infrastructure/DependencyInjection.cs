@@ -96,6 +96,7 @@ public static class DependencyInjection
         services.AddScoped<IAuditService, AuditService>();
         services.AddScoped<ILoginThrottle, LoginThrottle>();
         services.AddScoped<IRefreshTokenClaimer, RefreshTokenClaimer>();
+        services.AddSingleton<NexaVerify.Application.Licensing.IDistributedLock, Platform.SqlDistributedLock>();
         services.AddSingleton<EmailOutbox>();
         services.TryAddSingleton<IEmailOutbox>(sp => sp.GetRequiredService<EmailOutbox>());
         services.AddHostedService<EmailDispatcher>();
