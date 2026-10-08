@@ -190,3 +190,15 @@ The tenant is written to `SESSION_CONTEXT` by EF interceptors on every connectio
 - Raw SQL objects: RLS and the append-only triggers are **generated from the model** and applied by the migrator (`NexaVerify.Migrator`: drop policy → migrate → install guards → seed); procedures/partition scripts live in versioned `Migrations/Sql/*.sql` files. `Migrator --script` emits the equivalent idempotent script for DBA-run deployments.
 - Seed (idempotent): system roles (`SuperAdmin`, `ClientAdmin`, `ClientUser`), permission sync, role→permission map, platform default cost rules, default plans, first Super Admin from **environment-provided** one-time credentials (forced password change on first login; no default password in the repo).
 - Backward-compatible (expand → migrate → contract) changes only, so rolling deploys are safe.
+
+
+## M9a additions
+| Table | Purpose |
+|---|---|
+| `iam.UserMfa` | One TOTP credential per user: `SecretEnc` (AES-GCM payload), `IsConfirmed`, `LastUsedStep` (replay guard, updated by a conditional `UPDATE`), `ConfirmFailures`. Tenant-owned (RLS) |
+| `iam.MfaRecoveryCodes` | `(UserId, CodeHash)` unique, `UsedAt`; SHA-256 only. Tenant-owned |
+| `iam.MfaChallenges` | The ticket between password and second factor: `TokenHash` unique, `ExpiresAt`, `Attempts` (incremented atomically), `ConsumedAt`. Tenant-owned |
+| `licensing.LicenseAdjustmentRequests` | Pending/decided large adjustments: `Credits`, `Reason`, `RequestedBy`, `ExpiresAt`, `Status`, `DecidedBy/At/Note`, `LedgerTransactionId`. The decision is one conditional `UPDATE ... WHERE Status = 'Pending' AND ExpiresAt > now`. Tenant-owned |
+| `licensing.LedgerCheckpoints` | **Append-only** (`IAppendOnly`: trigger + DENY): `(LicenseId, LastEntryId)` unique, `EntryCount`, `HeadHash`, `BalanceAfter`, `KeyId`, `Mac` (HMAC-SHA256 over the canonical fields). Tenant-owned |
+| `licensing.LedgerBreakRecords` | One row per `(LicenseId, BreakKey)` (`row:{id}`, `balance`, `checkpoint:{id}`, `license-missing`, `unreadable`): `FirstSeenAt`, `LastSeenAt`, `TimesSeen`, `ClearedAt`. De-duplicates the audit entry. No FK to Licenses (a deleted license must still be recordable) |
+| `licensing.LedgerVerificationRuns` | Platform-level (no `ClientId`): `Status`, `Trigger`, counts, `BreaksJson` (bounded). Backs the 202 + status endpoint across nodes |

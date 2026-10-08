@@ -44,6 +44,34 @@ Layering: `appsettings.json` (safe defaults, **no secrets**) → `appsettings.{E
 | `Jwt:Issuer/Audience/AccessTokenMinutes/ClockSkewSeconds` | `nexaverify` / `nexaverify-api` / 15 / 60 | |
 | `Seed:SuperAdminEmail/SuperAdminPassword/SuperAdminName` | unset | Migrator only. Creates the first Super Admin once (must change password at first sign-in). `Migrator recover-superadmin` is the break-glass path. |
 
+## Two-factor authentication (M9a)
+| Key | Default | Notes |
+|---|---|---|
+| `Mfa:Enabled` | `true` | Master switch for enrolment, the second sign-in step and enforcement. Accounts that already enrolled are **always** challenged, whatever this says. |
+| `Mfa:RequiredPlatformRoles` | `SuperAdmin` | Comma-separated platform roles that **must** enrol (`security.requireMfa` for staff). Such an account gets an enrolment-only token (`mer` claim, `mfaEnrolmentRequired: true`) until it has a second factor; the same pattern as a forced password change. Use `-` for "nobody" (Development and the test host do; see below). |
+| `Mfa:AllowClientUsers` | `true` | Client users may enrol; each client turns on the requirement for all its users with its own `security.requireMfa` setting. |
+| `Mfa:Issuer` | `NexaVerify` | Label shown in the authenticator app. |
+| `Mfa:ChallengeMinutes` / `MaxChallengeAttempts` | 5 / 5 | Lifetime of the ticket between "password accepted" and "second factor proven" (single use) and the codes it accepts, right or wrong. Failed codes also count against the account's `Auth:MaxFailedAttempts` lockout. |
+| `Mfa:Window` | 1 | Accepted clock drift in 30-second steps either side of now (TOTP RFC 6238: SHA-1, 30 s, 6 digits). An accepted step can never be reused (replay protection). |
+| `Mfa:RecoveryCodeCount` | 10 | Single-use recovery codes issued at enrolment and on regeneration (shown once, stored as SHA-256). |
+
+TOTP secrets are encrypted at rest (AES-256-GCM, key derived from `Encryption:MasterKeyBase64` with HKDF, purpose `mfa-secret`, authenticated with the user id). **The master key therefore protects MFA as well**: with a throw-away development key (`Encryption:AllowEphemeralKey`) enrolled secrets become unreadable after a restart, which is why `appsettings.Development.json` sets `Mfa:RequiredPlatformRoles` to `-`. A lost authenticator is fixed by another Super Admin (`POST /api/v1/admin/users/{id}/mfa/reset`, reason required, audited); the very last Super Admin recovers with `Migrator recover-superadmin` plus a database-side reset of `iam.UserMfa`. The portal needs no extra settings: the API's challenge is parked in the portal's session cache (cookie `__Host-nv.mfa`, opaque, HttpOnly, lifetime = the challenge).
+
+## Licensing controls (M9a)
+| Key | Default | Notes |
+|---|---|---|
+| `Licensing:MaxAdjustPerAction` | 10000 | Largest credit adjustment (up **or** down) one person may apply. Above it `POST /admin/licenses/{id}/adjust` files a request (202) that a different user holding `licenses.approve-adjust` must approve. Not editable through the API on purpose (a compromised admin cannot raise their own limit). |
+| `Licensing:AdjustApprovalHours` | 24 | How long an approver has; afterwards the request is `Expired` and must be raised again. |
+
+## API access control (M9a)
+| Key | Default | Notes |
+|---|---|---|
+| `ApiAuth:CacheSeconds` | 5 | How long a node trusts its cached view of an API key (status, scopes, the client's IP allow-list, the client kill switch). **Propagation bound**: a revoked key / the kill switch (`PUT /admin/clients/{id}/api-access`) takes effect on the node that handled the call immediately and on every other node within this many seconds. Lower = faster, more database reads. |
+| `ApiAuth:NegativeCacheEntries` / `NegativeCacheSeconds` | 5000 / 5 | Size and age of the bounded cache of unknown key prefixes (random probing cannot grow memory). |
+| `Faces:Retention:Enabled` | `true` | Hourly sweep: erases expired face profiles (drained batch by batch) and blanks personal data on old recognition history. |
+| `Faces:Retention:HistoryPersonalDataDays` | 90 | After this many days a recognition-history row loses its image fingerprint and IP address (outcome, score, cost stay for billing). |
+| `Faces:Retention:BatchSize` / `MaxBatchesPerClient` | 200 / 500 | Batch size and a safety valve per client and run. |
+
 ## Usage, dashboards and alerts (M7)
 | Key | Default | Notes |
 |---|---|---|
@@ -52,7 +80,8 @@ Layering: `appsettings.json` (safe defaults, **no secrets**) → `appsettings.{E
 | `Dashboards:ExpiringWithinDays` / `LowBalancePercent` | 30 / 10 | Admin "expiring" horizon and the "low balance" threshold (share of credits left). |
 | `Dashboards:LatencyBucketMilliseconds` / `LatencyCapMilliseconds` | 25 / 10000 | The p95 latency is read off a histogram of this resolution (exact to one bucket); slower requests count in the last bucket. |
 | `Dashboards:DefaultReportDays` / `MaxReportDays` | 30 / 92 | Default and maximum range of one usage CSV export. |
-| `Metering:LedgerVerification:Enabled` | `true` | Nightly tamper check of every license ledger (hash chain + balance). Findings are logged at **Critical** and audited as `ledger.verification_failed`: alert on that log level. The on-demand `POST /api/v1/admin/licensing/verify-ledger` works even when this is off. |
+| `Metering:LedgerVerification:Enabled` | `true` | Nightly tamper check of every license ledger (hash chain, balance **and the signed checkpoints**). Findings are logged at **Critical on every run** (event id 7001: alert on it) and audited as `ledger.verification_failed` **once per license and broken thing** (a persistent break is counted on `licensing.LedgerBreakRecords`, not re-audited nightly). The on-demand `POST /api/v1/admin/licensing/verify-ledger` (202 + run id, poll `GET .../runs/{id}`) works even when this is off. |
+| *(ledger anchors)* | | Each license that verifies clean gets an HMAC-SHA256 checkpoint (`licensing.LedgerCheckpoints`, append-only) keyed from `Encryption:MasterKeyBase64` (purpose `ledger-anchor`, never stored in the database). **Changing the master key invalidates all checkpoints** (reported as failed signatures): re-anchor deliberately after a rotation. Every checkpoint is also logged at Information (event 7002, head hash and MAC): ship that log line to storage the database operator cannot edit, because an attacker who can delete the newest checkpoints together with the newest ledger rows is only caught by such an external copy. |
 | `Metering:LedgerVerification:IntervalHours` / `InitialDelayMinutes` | 24 / 10 | Run cadence and the wait after start-up (so a restart does not skip the check). |
 | `Metering:LedgerVerification:LicenseBatchSize` / `EntryBatchSize` | 200 / 1000 | Paging of the read-only scan. |
 | `Metering:LedgerVerification:BalanceRecheckAttempts` / `RecheckDelayMilliseconds` | 2 / 250 | A balance-only mismatch is re-checked (a charge may have landed mid-scan) before being reported; a broken row is reported at once. |
@@ -93,7 +122,7 @@ Multi-node notes: the session store is `IDistributedCache` (in-memory by default
 On the API side: add the portal's address to `ForwardedHeaders:KnownProxies` so the end user's address (sent as `X-Forwarded-For` on sign-in) drives the per-IP auth limits, otherwise all sign-ins share the portal's IP bucket. Set `Auth:PasswordResetUrlTemplate` to the portal's `/reset-password?email={email}&token={token}`.
 
 ## Development-only switches (the API refuses to start in Production with any of these on)
-`Jwt:AllowEphemeralKey`, `Encryption:AllowEphemeralKey`, `Email:LogBodies` (logs reset links!).
+`Jwt:AllowEphemeralKey`, `Encryption:AllowEphemeralKey`, `Email:LogBodies` (logs reset links!). In Development `Mfa:RequiredPlatformRoles` is `-` (see above).
 
 ## Migrator commands
 `migrate` · `script` (idempotent SQL for DBAs) · `app-principal` (`Migrator:AppLogin`, `Migrator:AppPassword`) · `recover-superadmin`.
