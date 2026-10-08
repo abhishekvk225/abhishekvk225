@@ -366,7 +366,7 @@ public static class DownloadEndpoints
 
         var sessionId = http.User.FindFirst(PortalClaims.SessionId)?.Value;
         var path = apiPath + (query.Count > 0 ? "?" + string.Join('&', query) : string.Empty);
-        var result = await api.OpenStreamAsync(path, http.RequestAborted, new ApiCallOptions { SessionId = sessionId });
+        var result = await api.OpenStreamAsync(path, http.RequestAborted, new ApiCallOptions { SessionId = sessionId, ClientIp = http.Connection.RemoteIpAddress?.ToString() });
         if (!result.IsSuccess)
         {
             var error = result.Error!;

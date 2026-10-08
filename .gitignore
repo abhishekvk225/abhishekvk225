@@ -16,3 +16,4 @@ secrets.json
 *.key
 App_Data/
 .blobs/
+tests/Load/k6/fixtures/

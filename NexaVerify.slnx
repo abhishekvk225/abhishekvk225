@@ -41,6 +41,9 @@
   <Folder Name="/tests/Infrastructure.UnitTests/">
     <Project Path="tests/Infrastructure.UnitTests/NexaVerify.Infrastructure.UnitTests.csproj" />
   </Folder>
+  <Folder Name="/tests/Load/">
+    <Project Path="tests/Load/NexaVerify.Load/NexaVerify.Load.csproj" />
+  </Folder>
   <Folder Name="/tests/TestSupport/">
     <Project Path="tests/TestSupport/NexaVerify.TestSupport.csproj" />
   </Folder>
