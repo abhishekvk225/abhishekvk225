@@ -73,7 +73,7 @@ public class MfaTests : IAsyncLifetime
         return (start.SecretBase32, enabled.RecoveryCodes, enabled.Session);
     }
 
-    private async Task<LoginResponse> ChallengeAsync(string email, string password = Password)
+    private async Task<LoginResponse> ChallengeAsync(string email, string password = AuthApp.StrongPassword)
     {
         var step1 = await ReadAsync<LoginResponse>(await _app.PostAsync(Login, new LoginRequest(email, password)));
         step1.MfaRequired.ShouldBeTrue();
@@ -205,14 +205,17 @@ public class MfaTests : IAsyncLifetime
         var (secret, _, _) = await EnrolAsync(_admin);
         var used = await LastUsedStepAsync(DatabaseBootstrap.SuperAdminEmail);
 
-        var replayed = await VerifyAsync((await ChallengeAsync(DatabaseBootstrap.SuperAdminEmail)).MfaChallengeToken!, Code(secret, used, absolute: true));
+        // one challenge for the three tries: failed second factors count against the account, so a person who types
+        // two bad codes and then the right one still gets in
+        var ticket = (await ChallengeAsync(DatabaseBootstrap.SuperAdminEmail)).MfaChallengeToken!;
+        var replayed = await VerifyAsync(ticket, Code(secret, used, absolute: true));
         replayed.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         (await JsonOf(replayed)).GetProperty("code").GetString().ShouldBe(ErrorCodes.MfaCodeInvalid);
 
-        var older = await VerifyAsync((await ChallengeAsync(DatabaseBootstrap.SuperAdminEmail)).MfaChallengeToken!, Code(secret, used - 1, absolute: true));
+        var older = await VerifyAsync(ticket, Code(secret, used - 1, absolute: true));
         older.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
 
-        var fresh = await VerifyAsync((await ChallengeAsync(DatabaseBootstrap.SuperAdminEmail)).MfaChallengeToken!, Code(secret, used + 1, absolute: true));
+        var fresh = await VerifyAsync(ticket, Code(secret, used + 1, absolute: true));
         fresh.StatusCode.ShouldBe(HttpStatusCode.OK);
         (await LastUsedStepAsync(DatabaseBootstrap.SuperAdminEmail)).ShouldBe(used + 1);
 
@@ -266,7 +269,7 @@ public class MfaTests : IAsyncLifetime
         var history = await _app.WithDbAsync(db => db.LoginHistory.AsNoTracking().Select(h => h.Outcome).ToListAsync());
         history.Count(o => o == LoginOutcome.MfaFailed).ShouldBeGreaterThanOrEqualTo(3);
         // the failed second factors count against the account: it is now locked for password sign-in too
-        (await _app.PostAsync(Login, new LoginRequest(DatabaseBootstrap.SuperAdminEmail, Password))).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await _app.PostAsync(Login, new LoginRequest(DatabaseBootstrap.SuperAdminEmail, AuthApp.StrongPassword))).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         (await _app.WithDbAsync(db => db.AuditLogs.CountAsync(a => a.Action == "auth.mfa_challenge_exhausted"))).ShouldBe(1);
     }
 

@@ -1,6 +1,10 @@
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using NexaVerify.Application.Persistence;
+using NexaVerify.Domain.Identity;
+using NexaVerify.Infrastructure.Persistence;
 using NexaVerify.Api.IntegrationTests.Support;
 using NexaVerify.Contracts.Common;
 using NexaVerify.Contracts.Identity;
@@ -32,8 +36,25 @@ public class ClientViewAndPrivilegeTests : IAsyncLifetime
 
     public async Task DisposeAsync() => await _app.DisposeAsync();
 
-    private async Task CreateClientRoleAsync(string name, params string[] permissions) =>
-        (await _app.PostAsync("/api/v1/admin/roles", new CreateRoleRequest(name, "Client", null, permissions), _platform.AccessToken)).StatusCode.ShouldBe(HttpStatusCode.Created);
+    /// <summary>
+    /// A custom client role. The API cannot create one (platform staff do not hold client permissions, and nobody can grant what they lack),
+    /// so the role is inserted the way an operator's data migration would.
+    /// </summary>
+    private Task CreateClientRoleAsync(string name, params string[] permissionKeys) =>
+        _app.WithServicesAsync(null, async sp =>
+        {
+            var db = sp.GetRequiredService<AppDbContext>();
+            var role = Role.Create(name, RoleScope.Client, isSystem: false, description: null);
+            foreach (var permission in await db.Permissions.Where(p => permissionKeys.Contains(p.Key)).ToListAsync())
+            {
+                role.GrantPermission(permission);
+            }
+
+            db.Roles.Add(role);
+            await db.SaveChangesAsync();
+            sp.GetRequiredService<IPermissionResolver>().Invalidate();
+            return true;
+        });
 
     /// <summary>Invites a user, accepts the invitation and signs in.</summary>
     private async Task<(ClientUserDto User, LoginResponse Session)> InviteAsync(string ownerToken, string email, string role)
