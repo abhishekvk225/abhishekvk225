@@ -36,6 +36,18 @@ public class WebhookUrlGuardTests
     [InlineData("::ffff:10.0.0.1", false)]
     [InlineData("::ffff:8.8.8.8", true)]
     [InlineData("64:ff9b::a00:1", false)]
+    [InlineData("2002:0a00:0001::1", false)]                    // 6to4 embedding 10.0.0.1
+    [InlineData("2002:0808:0808::1", false)]                    // 6to4 is refused even when the embedded address is public
+    [InlineData("2001:0:4136:e378:8000:63bf:3fff:fdd2", false)] // Teredo
+    [InlineData("2001:1::1", false)]                            // 2001::/23 IETF protocol assignments
+    [InlineData("::10.0.0.1", false)]                           // IPv4-compatible
+    [InlineData("::8.8.8.8", false)]
+    [InlineData("0:0:0:0:0:0:a00:1", false)]
+    [InlineData("fe80::5efe:10.0.0.1", false)]                  // link-local ISATAP
+    [InlineData("2a00:1450:4001:81b::200e", true)]              // an ordinary global address
+    [InlineData("3fff::1", false)]                              // documentation 3fff::/20
+    [InlineData("192.88.99.1", false)]                          // 6to4 relay anycast
+    [InlineData("2620:0:ccc::2", true)]
     public void Only_public_unicast_addresses_pass(string address, bool expected) => WebhookUrlGuard.IsPublic(IPAddress.Parse(address)).ShouldBe(expected);
 
     [Theory]

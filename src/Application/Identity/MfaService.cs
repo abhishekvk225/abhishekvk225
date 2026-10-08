@@ -299,6 +299,9 @@ public sealed class MfaService : IMfaService
             return InvalidChallenge;
         }
 
+        // This was the last attempt the ticket allows: whatever happens to it, the ticket is spent (audited once).
+        var spent = challenge.Attempts + 1 >= max;
+
         if (!user.IsPlatformUser && await _clientGuard.CheckAsync(user.ClientId, cancellationToken) is { } blocked)
         {
             return blocked;
@@ -310,6 +313,7 @@ public sealed class MfaService : IMfaService
         if (attempt.Locked)
         {
             RecordLogin(user, LoginOutcome.LockedOut, "locked during second factor");
+            RecordExhausted(user, spent);
             await _unitOfWork.SaveChangesAsync(CancellationToken.None);
             return InvalidChallenge;
         }
@@ -318,13 +322,7 @@ public sealed class MfaService : IMfaService
         if (method is null)
         {
             RecordLogin(user, LoginOutcome.MfaFailed, "bad second factor");
-            if (challenge.Attempts + 1 >= max)
-            {
-                // The ticket is spent: the next attempt needs a new password sign-in (and the account throttle has counted these too).
-                _audit.Record(new AuditEntry(AuditActions.MfaChallengeExhausted, nameof(User), user.Id.ToString(), user.ClientId, ActorId: user.Id));
-                _logger.LogWarning("MFA challenge for user {UserId} exhausted its attempts", user.Id);
-            }
-
+            RecordExhausted(user, spent);
             await _unitOfWork.SaveChangesAsync(CancellationToken.None);
             return InvalidCode;
         }
@@ -476,6 +474,18 @@ public sealed class MfaService : IMfaService
     {
         var issuer = Uri.EscapeDataString(_options.Issuer);
         return $"otpauth://totp/{issuer}:{Uri.EscapeDataString(email)}?secret={secretBase32}&issuer={issuer}&algorithm=SHA1&digits={Totp.Digits}&period={Totp.StepSeconds}";
+    }
+
+    /// <summary>The ticket has used up its attempts: the next try needs a new password sign-in (the account throttle has counted these tries as well).</summary>
+    private void RecordExhausted(User user, bool spent)
+    {
+        if (!spent)
+        {
+            return;
+        }
+
+        _audit.Record(new AuditEntry(AuditActions.MfaChallengeExhausted, nameof(User), user.Id.ToString(), user.ClientId, ActorId: user.Id));
+        _logger.LogWarning("MFA challenge for user {UserId} exhausted its attempts", user.Id);
     }
 
     private void RecordLogin(User user, LoginOutcome outcome, string? reason) =>

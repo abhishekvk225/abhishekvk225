@@ -247,9 +247,9 @@ public sealed class ClientPortalService : IClientPortalService
         }
 
         var user = row.User;
-        if (user.Id == _currentUser.ActorId && (!request.IsActive || role.Value.Name != row.Role))
+        if (user.Id == _currentUser.ActorId && !request.IsActive)
         {
-            return Error.Conflict(ErrorCodes.Conflict, !request.IsActive ? "You cannot deactivate your own account." : "You cannot change your own role.");
+            return Error.Conflict(ErrorCodes.Conflict, "You cannot deactivate your own account.");
         }
 
         var losesAdmin = row.Role == SystemRoles.ClientAdmin && (role.Value.Name != SystemRoles.ClientAdmin || !request.IsActive);
