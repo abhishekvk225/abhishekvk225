@@ -1,0 +1,132 @@
+@page "/client/webhooks/{Id:guid}"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.WebhooksManage)]
+@inject IWebhooksApiClient Api
+@inject IDialogService Dialogs
+@inject IAppSnackbar Snackbar
+
+<PageTitle>@(_result is { IsSuccess: true } ? _result.Value.Name : "Webhook") · NexaVerify</PageTitle>
+
+<PageState T="WebhookEndpointDto" Result="_result" OnRetry="LoadAsync">
+    <Loading><SkeletonCard Lines="4" /></Loading>
+    <ChildContent Context="hook">
+        <PageHeader Title="@hook.Name" Subtitle="Where the events go, and what happened to each one." Breadcrumbs="Crumbs(hook)">
+            <Actions>
+                <StatusChip Kind="StatusKind.Webhook" Value="@hook.Status" />
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Send" OnClick="TestAsync" Disabled="_testing" data-testid="send-test">Send test event</MudButton>
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Autorenew" OnClick="RotateAsync" data-testid="rotate-secret">New signing secret</MudButton>
+            </Actions>
+        </PageHeader>
+
+        <MudGrid Spacing="3">
+            <MudItem xs="12">
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Details</MudText>
+                    <DetailList Items="Items(hook)" />
+                    @if (!string.Equals(hook.Status, "Active", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(hook.DisabledReason))
+                    {
+                        <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3" data-testid="disabled-reason">Turned off: @hook.DisabledReason</MudAlert>
+                    }
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12">
+                <MudPaper Class="nv-card" Elevation="0">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="pa-4 pb-0">Delivery log</MudText>
+                    <DataTable @ref="_deliveries" T="WebhookDeliveryDto" Caption="Delivery log" Columns="_columns" DefaultSort="createdAt:desc" PageSize="25"
+                               LoadData="p => Api.GetDeliveriesAsync(hook.Id, p)" EmptyMessage="Nothing has been sent to this address yet. Try sending a test event.">
+                        <RowActions Context="delivery">
+                            @if (string.Equals(delivery.Status, "Abandoned", StringComparison.OrdinalIgnoreCase))
+                            {
+                                <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => RetryAsync(hook, delivery)" aria-label="@($"Try delivery {delivery.Id} again")" data-testid="retry-delivery">Try again</MudButton>
+                            }
+                        </RowActions>
+                    </DataTable>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    </ChildContent>
+</PageState>
+
+@code {
+    private ApiResult<WebhookEndpointDto>? _result;
+    private DataTable<WebhookDeliveryDto>? _deliveries;
+    private IReadOnlyList<DataColumn<WebhookDeliveryDto>> _columns = [];
+    private bool _testing;
+
+    [Parameter] public Guid Id { get; set; }
+
+    protected override void OnInitialized() =>
+        _columns =
+        [
+            DataColumn<WebhookDeliveryDto>.Text("Created (UTC)", d => d.CreatedAt.ToString("d MMM yyyy, HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture), "createdAt"),
+            DataColumn<WebhookDeliveryDto>.Text("Event", d => d.EventType),
+            DataColumn<WebhookDeliveryDto>.Custom("Status", d => @<StatusChip Kind="StatusKind.Delivery" Value="@d.Status" />),
+            DataColumn<WebhookDeliveryDto>.Text("Attempts", d => UiText.Number(d.Attempts), numeric: true),
+            DataColumn<WebhookDeliveryDto>.Text("Your server answered", d => d.LastStatusCode?.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            DataColumn<WebhookDeliveryDto>.Text("Problem", d => d.LastError),
+            DataColumn<WebhookDeliveryDto>.Text("Next try (UTC)", d => string.Equals(d.Status, "Pending", StringComparison.OrdinalIgnoreCase) ? d.NextAttemptAt.ToString("d MMM, HH:mm", System.Globalization.CultureInfo.InvariantCulture) : null),
+        ];
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _result = null;
+        _result = await Api.GetAsync(Id);
+    }
+
+    private static List<BreadcrumbItem> Crumbs(WebhookEndpointDto h) => [new("Webhooks", "client/webhooks"), new(h.Name, null, true)];
+
+    private static IReadOnlyList<DetailItem> Items(WebhookEndpointDto h) =>
+    [
+        new("Address", h.Url),
+        new("Events", string.Join(", ", h.Events)),
+        new("Recent failures in a row", UiText.Number(h.FailureCount)),
+        new("Added", h.CreatedAt.ToString("d MMM yyyy", System.Globalization.CultureInfo.InvariantCulture)),
+    ];
+
+    private async Task TestAsync()
+    {
+        _testing = true;
+        try
+        {
+            if ((await Api.SendTestAsync(Id)).Report(Snackbar, "A test event was queued. It appears in the log below.") && _deliveries is not null)
+            {
+                await _deliveries.ReloadAsync();
+            }
+        }
+        finally
+        {
+            _testing = false;
+        }
+    }
+
+    private async Task RotateAsync()
+    {
+        var confirmed = await Dialogs.ConfirmAsync(
+            "Create a new signing secret?", "The old secret stops working straight away, so update your software with the new one.", "Create new secret", destructive: true);
+        if (confirmed is null)
+        {
+            return;
+        }
+
+        var result = await Api.RotateSecretAsync(Id);
+        if (!result.IsSuccess)
+        {
+            Snackbar.Error(result.Error!);
+            return;
+        }
+
+        var secret = result.Value.Secret;
+        await Dialogs.RevealSecretAsync("Your new signing secret", secret,
+            "Use this secret to check that events really come from NexaVerify. Copy it now: it is shown only once and cannot be shown again.");
+        secret = null;
+    }
+
+    private async Task RetryAsync(WebhookEndpointDto hook, WebhookDeliveryDto delivery)
+    {
+        if ((await Api.RetryAsync(hook.Id, delivery.Id)).Report(Snackbar, "We will try this delivery again shortly.") && _deliveries is not null)
+        {
+            await _deliveries.ReloadAsync();
+        }
+    }
+}

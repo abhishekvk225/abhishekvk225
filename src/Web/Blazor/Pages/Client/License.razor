@@ -1,0 +1,88 @@
+@page "/client/license"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.LicenseRead)]
+@inject IClientLicenseApiClient Api
+
+<PageTitle>License and usage · NexaVerify</PageTitle>
+
+<PageHeader Title="License and usage" Subtitle="Your credits, and what they are used for." />
+
+<PageState T="LicenseSummaryDto" Result="_result" OnRetry="LoadAsync" IsEmpty="s => s.Licenses.Count == 0"
+           EmptyTitle="No license yet" EmptyMessage="You do not have a license yet. Contact your account manager to get started.">
+    <Loading><SkeletonCard Lines="4" /></Loading>
+    <ChildContent Context="summary">
+        <MudGrid Spacing="3">
+            <MudItem xs="12" lg="8">
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0" Style="height: 100%;">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-4">Your credits</MudText>
+                    <LicenseGauge Remaining="summary.RemainingCredits" Total="summary.TotalCredits" ExpiresAt="@Expiry(summary)" />
+                    <MudText Typo="Typo.body2" Class="nv-muted mt-3" data-testid="license-message">@summary.Message</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" lg="4">
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0" Style="height: 100%;">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">At a glance</MudText>
+                    <DetailList Items="Glance(summary)" />
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12">
+                <MudPaper Class="nv-card" Elevation="0">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="pa-4 pb-0">Your licenses</MudText>
+                    <div class="nv-table-wrap">
+                        <table class="nv-table" aria-label="Your licenses" data-testid="license-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Name</th>
+                                    <th scope="col">Status</th>
+                                    <th scope="col" style="text-align:right">Credits left</th>
+                                    <th scope="col">Valid until</th>
+                                    <th scope="col"><span class="nv-sr">Open</span></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var license in summary.Licenses)
+                                {
+                                    <tr>
+                                        <td>@license.Name</td>
+                                        <td><StatusChip Kind="StatusKind.License" Value="@license.EffectiveStatus" /></td>
+                                        <td style="text-align:right">@UiText.Number(license.RemainingCredits) / @UiText.Number(license.TotalCredits)</td>
+                                        <td>@license.ExpiresAt.ToString("d MMM yyyy", System.Globalization.CultureInfo.InvariantCulture)</td>
+                                        <td style="text-align:right"><MudLink Href="@($"client/license/{license.Id}")" Underline="Underline.Hover" aria-label="@($"Open {license.Name}")">Details</MudLink></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </MudPaper>
+            </MudItem>
+
+            <Can Permission="@WebPermissions.UsageRead">
+                <MudItem xs="12" lg="6">
+                    <UsageCsvCard DownloadPath="bff/client/reports/usage.csv" Description="How many face checks you made and how many credits they used, day by day." />
+                </MudItem>
+            </Can>
+        </MudGrid>
+    </ChildContent>
+</PageState>
+
+@code {
+    private ApiResult<LicenseSummaryDto>? _result;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _result = null;
+        _result = await Api.GetSummaryAsync();
+    }
+
+    private static DateTimeOffset? Expiry(LicenseSummaryDto s) =>
+        s.NextExpiry is { } e ? new DateTimeOffset(DateTime.SpecifyKind(e, DateTimeKind.Utc)) : null;
+
+    private static IReadOnlyList<DetailItem> Glance(LicenseSummaryDto s) =>
+    [
+        new("Active licenses", UiText.Number(s.ActiveLicenses)),
+        new("Used so far", $"{UiText.Number(s.ConsumedCredits)} credits"),
+        new("Next expiry", s.NextExpiry is { } e ? $"{e.ToString("d MMM yyyy", System.Globalization.CultureInfo.InvariantCulture)} ({UiText.Plural(Math.Max(0, s.DaysUntilExpiry ?? 0), "day")} left)" : "None"),
+    ];
+}

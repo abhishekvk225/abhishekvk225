@@ -1,0 +1,22 @@
+@inject IClipboardService Clipboard
+
+@* Code is always rendered as text inside <pre>; there is no markup path for it. *@
+<figure class="nv-code" data-testid="code-sample">
+    <figcaption class="d-flex align-center justify-space-between">
+        <MudText Typo="Typo.subtitle2" HtmlTag="span">@Title</MudText>
+        <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@(_copied ? Icons.Material.Filled.Check : Icons.Material.Outlined.ContentCopy)" OnClick="CopyAsync"
+                   aria-label="@($"Copy {Title}")" data-testid="code-copy">@(_copied ? "Copied" : "Copy")</MudButton>
+    </figcaption>
+    <pre tabindex="0"><code>@Code</code></pre>
+    <span class="nv-sr" role="status" aria-live="polite">@(_copied ? "Copied to clipboard" : string.Empty)</span>
+</figure>
+
+@code {
+    private bool _copied;
+
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired] public string Code { get; set; } = string.Empty;
+
+    private async Task CopyAsync() => _copied = await Clipboard.CopyAsync(Code);
+}

@@ -1,0 +1,156 @@
+@using System.Text.Json
+@using NexaVerify.Contracts.Tenancy
+
+@* One group of client settings. Editable when the API says so AND the user holds the permission; otherwise a plain read-only list. *@
+<MudPaper Class="nv-card nv-card-pad" Elevation="0" data-testid="@($"settings-{Title}")">
+    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-1">@Title</MudText>
+    @if (!string.IsNullOrWhiteSpace(Intro))
+    {
+        <MudText Typo="Typo.body2" Class="nv-muted mb-3">@Intro</MudText>
+    }
+
+    @if (!_editing)
+    {
+        <DetailList Items="ReadItems()" />
+        @if (CanEdit && Settings.Any(s => s.Editable))
+        {
+            <MudButton Variant="Variant.Outlined" Class="mt-3" StartIcon="@Icons.Material.Outlined.Edit" OnClick="StartEdit" data-testid="settings-edit">Change</MudButton>
+        }
+    }
+    else
+    {
+        <div class="nv-form">
+            @foreach (var setting in Settings)
+            {
+                var key = setting.Key;
+                if (!setting.Editable)
+                {
+                    continue;
+                }
+
+                switch (setting.Type)
+                {
+                    case "Bool":
+                        <MudSwitch T="bool" Value="@((bool)_values[key]!)" ValueChanged="@(on => _values[key] = on)" Label="@setting.Description" Color="Color.Primary" />
+                        break;
+                    case "StringList":
+                        <MudTextField T="string" Value="@((string)_values[key]!)" ValueChanged="@(text => _values[key] = text)" Label="@setting.Description" Lines="3" Variant="Variant.Outlined" Immediate="true"
+                                      HelperText="One entry per line. Leave empty for no restriction." />
+                        break;
+                    default:
+                        <MudNumericField T="decimal?" Value="@((decimal?)_values[key])" ValueChanged="@(n => _values[key] = n)" Label="@setting.Description" Variant="Variant.Outlined"
+                                         Min="@setting.Min" Max="@setting.Max" HelperText="@Range(setting)" />
+                        break;
+                }
+            }
+
+            @if (_error is not null)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true" role="alert" data-testid="settings-error">
+                    @_error.Message
+                    @if (_error.FieldErrors is not null)
+                    {
+                        @foreach (var message in _error.FieldErrors.Values.SelectMany(v => v))
+                        {
+                            <div>@message</div>
+                        }
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_error.CorrelationId))
+                    {
+                        <MudText Typo="Typo.caption" Class="d-block">Reference: @_error.CorrelationId</MudText>
+                    }
+                </MudAlert>
+            }
+            <div class="d-flex" style="gap: var(--nv-space-2);">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="_saving" data-testid="settings-save">@(_saving ? "Saving…" : "Save")</MudButton>
+                <MudButton Variant="Variant.Text" OnClick="Cancel" Disabled="_saving">Cancel</MudButton>
+            </div>
+        </div>
+    }
+</MudPaper>
+
+@code {
+    private readonly Dictionary<string, object?> _values = [];
+    private bool _editing;
+    private bool _saving;
+    private ApiError? _error;
+
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    [Parameter] public string? Intro { get; set; }
+
+    [Parameter, EditorRequired] public IReadOnlyList<SettingDto> Settings { get; set; } = [];
+
+    /// <summary>The user holds the permission for this group.</summary>
+    [Parameter] public bool CanEdit { get; set; }
+
+    /// <summary>Saves the changed values. Null on success, otherwise the API error.</summary>
+    [Parameter] public Func<UpdateSettingsRequest, Task<ApiError?>>? OnSave { get; set; }
+
+    private IReadOnlyList<DetailItem> ReadItems() =>
+        Settings.Select(s => new DetailItem(s.Description, Display(s) + (s.Editable ? string.Empty : "  (set by NexaVerify)"))).ToList();
+
+    private static string Range(SettingDto s) => s.Min is { } min && s.Max is { } max ? $"Between {min:0.##} and {max:0.##}." : string.Empty;
+
+    private static string Display(SettingDto s) => s.Value.ValueKind switch
+    {
+        JsonValueKind.True => "On",
+        JsonValueKind.False => "Off",
+        JsonValueKind.Array => s.Value.GetArrayLength() == 0 ? "Any" : string.Join(", ", s.Value.EnumerateArray().Select(e => e.ToString())),
+        JsonValueKind.Number => s.Value.GetDecimal().ToString("0.##", System.Globalization.CultureInfo.InvariantCulture),
+        _ => s.Value.ToString(),
+    };
+
+    private void StartEdit()
+    {
+        _values.Clear();
+        _error = null;
+        foreach (var s in Settings.Where(s => s.Editable))
+        {
+            _values[s.Key] = s.Type switch
+            {
+                "Bool" => s.Value.ValueKind == JsonValueKind.True,
+                "StringList" => string.Join('\n', s.Value.ValueKind == JsonValueKind.Array ? s.Value.EnumerateArray().Select(e => e.ToString()) : []),
+                _ => s.Value.ValueKind == JsonValueKind.Number ? s.Value.GetDecimal() : (decimal?)null,
+            };
+        }
+
+        _editing = true;
+    }
+
+    private void Cancel() => _editing = false;
+
+    private async Task SaveAsync()
+    {
+        if (OnSave is null)
+        {
+            return;
+        }
+
+        var changes = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        foreach (var s in Settings.Where(s => s.Editable))
+        {
+            var value = _values[s.Key];
+            changes[s.Key] = s.Type switch
+            {
+                "Bool" => JsonSerializer.SerializeToElement((bool)value!),
+                "StringList" => JsonSerializer.SerializeToElement(
+                    ((string)value!).Split(['\n', '\r', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct(StringComparer.Ordinal).ToArray()),
+                "Int" => JsonSerializer.SerializeToElement(value is decimal d ? (long)Math.Round(d) : 0L),
+                _ => JsonSerializer.SerializeToElement(value is decimal m ? m : 0m),
+            };
+        }
+
+        _saving = true;
+        _error = null;
+        try
+        {
+            _error = await OnSave(new UpdateSettingsRequest(changes));
+            _editing = _error is not null;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

@@ -1,0 +1,65 @@
+@using NexaVerify.Contracts.Faces
+@inject IFacesApiClient Api
+
+<MudDialog>
+    <TitleContent><MudText Typo="Typo.h5" HtmlTag="h2">Check details</MudText></TitleContent>
+    <DialogContent>
+        <PageState T="RecognitionRequestDetailDto" Result="_result" OnRetry="LoadAsync">
+            <ChildContent Context="detail">
+                <DetailList Items="Items(detail)" />
+                @if (detail.Candidates.Count > 0)
+                {
+                    <MudText Typo="Typo.subtitle2" HtmlTag="h3" Class="mt-4 mb-2">Closest people</MudText>
+                    <div class="nv-table-wrap">
+                        <table class="nv-table nv-dense" aria-label="Closest people" data-testid="candidates">
+                            <thead><tr><th scope="col">#</th><th scope="col">Reference</th><th scope="col" style="text-align:right">Score</th><th scope="col">Match</th></tr></thead>
+                            <tbody>
+                                @foreach (var candidate in detail.Candidates)
+                                {
+                                    <tr>
+                                        <td>@candidate.Rank</td>
+                                        <td>@(candidate.ExternalRef ?? "Erased")</td>
+                                        <td style="text-align:right">@candidate.Score.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture)</td>
+                                        <td>@(candidate.IsMatch ? "Yes" : "No")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </ChildContent>
+        </PageState>
+    </DialogContent>
+    <DialogActions><MudButton OnClick="Close">Close</MudButton></DialogActions>
+</MudDialog>
+
+@code {
+    private ApiResult<RecognitionRequestDetailDto>? _result;
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter, EditorRequired] public Guid RequestId { get; set; }
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _result = null;
+        _result = await Api.GetHistoryDetailAsync(RequestId);
+    }
+
+    private void Close() => MudDialog.Close();
+
+    private static IReadOnlyList<DetailItem> Items(RecognitionRequestDetailDto d) =>
+    [
+        new("What", d.Request.Operation),
+        new("When (UTC)", d.Request.CreatedAt.ToString("d MMM yyyy, HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture)),
+        new("Result", StatusMap.Resolve(StatusKind.Outcome, d.Request.Outcome).Label),
+        new("Needed to count as a match", d.Request.Threshold.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture)),
+        new("Best score", d.Request.BestScore?.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture)),
+        new("Credits used", UiText.Number(d.Request.CreditsCharged)),
+        new("Credits left afterwards", d.BalanceAfter is { } b ? UiText.Number(b) : null),
+        new("Took", $"{UiText.Number(d.Request.LatencyMs)} ms"),
+        new("Problem", d.Request.ErrorCode),
+    ];
+}

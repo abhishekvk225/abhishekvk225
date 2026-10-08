@@ -1,0 +1,47 @@
+@page "/client/activity"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.AuditReadClient)]
+@inject IClientAccountApiClient Api
+
+<PageTitle>Activity · NexaVerify</PageTitle>
+
+<PageHeader Title="Activity" Subtitle="What changed in your account, and who signed in." />
+
+<MudPaper Class="nv-card" Elevation="0">
+    <MudTabs Elevation="0" Rounded="true" TabPanelsClass="pt-2">
+        <MudTabPanel Text="Sign-ins">
+            <DataTable T="LoginHistoryDto" Caption="Sign-ins" Columns="_loginColumns" PageSize="25" DefaultSort="occurredAt:desc"
+                       LoadData="p => Api.GetLoginsAsync(new ActivityQuery { Page = p.Page, PageSize = p.PageSize })" EmptyMessage="No sign-ins recorded yet." />
+        </MudTabPanel>
+        <MudTabPanel Text="Account changes">
+            <DataTable T="AuditLogDto" Caption="Account changes" Columns="_auditColumns" PageSize="25" DefaultSort="occurredAt:desc"
+                       LoadData="p => Api.GetActivityAsync(new ActivityQuery { Page = p.Page, PageSize = p.PageSize })" EmptyMessage="No changes recorded yet." />
+        </MudTabPanel>
+    </MudTabs>
+</MudPaper>
+
+@code {
+    private IReadOnlyList<DataColumn<LoginHistoryDto>> _loginColumns = [];
+    private IReadOnlyList<DataColumn<AuditLogDto>> _auditColumns = [];
+
+    protected override void OnInitialized()
+    {
+        _loginColumns =
+        [
+            DataColumn<LoginHistoryDto>.Text("When (UTC)", l => l.OccurredAt.ToString("d MMM yyyy, HH:mm", System.Globalization.CultureInfo.InvariantCulture)),
+            DataColumn<LoginHistoryDto>.Text("Email", l => l.EmailAttempted),
+            DataColumn<LoginHistoryDto>.Text("Result", l => l.Outcome),
+            DataColumn<LoginHistoryDto>.Text("Address", l => l.IpAddress),
+            DataColumn<LoginHistoryDto>.Text("Device", l => l.UserAgent),
+            DataColumn<LoginHistoryDto>.Text("Why it failed", l => l.FailureReason),
+        ];
+        _auditColumns =
+        [
+            DataColumn<AuditLogDto>.Text("When (UTC)", a => a.OccurredAt.ToString("d MMM yyyy, HH:mm", System.Globalization.CultureInfo.InvariantCulture)),
+            DataColumn<AuditLogDto>.Text("What", a => a.Action),
+            DataColumn<AuditLogDto>.Text("About", a => a.EntityType),
+            DataColumn<AuditLogDto>.Text("Done by", a => a.ActorType),
+            DataColumn<AuditLogDto>.Text("Address", a => a.IpAddress),
+            DataColumn<AuditLogDto>.Text("Reference", a => a.CorrelationId),
+        ];
+    }
+}

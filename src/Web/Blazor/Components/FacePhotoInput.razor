@@ -1,0 +1,44 @@
+@* One photo for a face check: the camera/upload picker until a photo is chosen, then a short "photo ready" line with a way to discard it. *@
+<div data-testid="face-photo-input">
+    @if (Image is null)
+    {
+        <FaceCapture OnCaptured="OnCapturedAsync" MaxBytes="MaxBytes" />
+    }
+    else
+    {
+        <MudAlert Severity="Severity.Success" Dense="true" Variant="Variant.Outlined" data-testid="photo-ready">
+            Photo ready (@Describe(Image)).
+            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="RemoveAsync" data-testid="photo-remove">Remove photo</MudButton>
+        </MudAlert>
+    }
+</div>
+
+@code {
+    /// <summary>The chosen photo. Held in memory only; the page clears it straight after the request.</summary>
+    [Parameter] public CapturedImage? Image { get; set; }
+
+    [Parameter] public EventCallback<CapturedImage?> ImageChanged { get; set; }
+
+    /// <summary>The API's limit (5 MB).</summary>
+    [Parameter] public long MaxBytes { get; set; } = 5 * 1024 * 1024;
+
+    private async Task OnCapturedAsync(CapturedImage image)
+    {
+        Image = image;
+        await ImageChanged.InvokeAsync(image);
+    }
+
+    private async Task RemoveAsync()
+    {
+        if (Image is not null)
+        {
+            Array.Clear(Image.Data);
+        }
+
+        Image = null;
+        await ImageChanged.InvokeAsync(null);
+    }
+
+    private static string Describe(CapturedImage image) =>
+        $"{image.ContentType.Replace("image/", string.Empty, StringComparison.Ordinal).ToUpperInvariant()}, {Math.Max(1, image.Data.Length / 1024):N0} KB";
+}

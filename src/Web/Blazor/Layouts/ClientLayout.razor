@@ -3,7 +3,8 @@
 @inject CurrentUserState User
 
 <PortalShell AllGroups="NavigationCatalog.Client" PortalLabel="@(User.ClientName ?? "Client portal")" HomeHref="client">
-    @Body
+    <Bell><NotificationBell /></Bell>
+    <ChildContent>@Body</ChildContent>
 </PortalShell>
 
 @code {

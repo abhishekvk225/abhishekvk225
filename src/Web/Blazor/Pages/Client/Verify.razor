@@ -1,0 +1,106 @@
+@page "/client/verify"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.FacesVerify)]
+@inject IFacesApiClient Api
+@inject IAppSnackbar Snackbar
+
+<PageTitle>Check a person · NexaVerify</PageTitle>
+
+<PageHeader Title="Check a person" Subtitle="Is this the person they say they are? Upload a photo and say who it should be." />
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" lg="7">
+        <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+            <EditForm Model="_form" OnValidSubmit="SubmitAsync" novalidate>
+                <DataAnnotationsValidator />
+                <div class="nv-form">
+                    <MudTextField T="string" @bind-Value="_form.ExternalRef" For="() => _form.ExternalRef" Label="Reference of the person to check" Variant="Variant.Outlined" Immediate="true"
+                                  HelperText="The reference you used when you registered them." MaxLength="100" Disabled="_busy" data-testid="verify-ref" />
+                    <div>
+                        <MudText Typo="Typo.subtitle2" HtmlTag="h2" Class="mb-2">Photo</MudText>
+                        <FacePhotoInput @bind-Image="_image" />
+                        @if (_photoProblem is not null)
+                        {
+                            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2" role="alert" data-testid="photo-problem">@_photoProblem</MudAlert>
+                        }
+                    </div>
+                    @if (_error is not null)
+                    {
+                        <ErrorState Error="_error" />
+                    }
+                    <div>
+                        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_busy || _image is null)" data-testid="verify-submit">
+                            @(_busy ? "Checking…" : "Check")
+                        </MudButton>
+                    </div>
+                </div>
+            </EditForm>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" lg="5">
+        <div aria-live="polite" data-testid="verify-result">
+            @if (_result is not null)
+            {
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+                    <div class="d-flex align-center mb-3" style="gap: var(--nv-space-3);">
+                        <StatusChip Kind="StatusKind.Outcome" Value="@_result.Outcome" />
+                        <MudText Typo="Typo.h5" HtmlTag="p" data-testid="verify-verdict">@(_result.Match ? "This looks like the same person." : "This does not look like the same person.")</MudText>
+                    </div>
+                    <DetailList Items="Items()" />
+                    <div class="mt-3"><ChargeSummary Credits="_result.Credits" ElapsedMs="_elapsedMs" /></div>
+                </MudPaper>
+            }
+        </div>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private readonly VerifyForm _form = new();
+    private CapturedImage? _image;
+    private bool _busy;
+    private string? _photoProblem;
+    private ApiError? _error;
+    private VerifyFaceResponse? _result;
+    private long _elapsedMs;
+
+    private async Task SubmitAsync()
+    {
+        _photoProblem = PhotoGuard.Check(_image);
+        if (_photoProblem is not null)
+        {
+            return;
+        }
+
+        var image = _image!;
+        _busy = true;
+        _error = null;
+        _result = null;
+        try
+        {
+            var started = System.Diagnostics.Stopwatch.GetTimestamp();
+            var result = await Api.VerifyAsync(_form.ToRequest(), image, PhotoGuard.NewIdempotencyKey());
+            _elapsedMs = (long)System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            if (result.IsSuccess)
+            {
+                _result = result.Value;
+            }
+            else
+            {
+                _error = result.Error;
+                Snackbar.Error(result.Error!);
+            }
+        }
+        finally
+        {
+            PhotoGuard.Forget(image);
+            _image = null;
+            _busy = false;
+        }
+    }
+
+    private IReadOnlyList<DetailItem> Items() =>
+    [
+        new("Similarity score", _result!.Score.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture)),
+        new("Needed to count as a match", _result.Threshold.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture)),
+    ];
+}

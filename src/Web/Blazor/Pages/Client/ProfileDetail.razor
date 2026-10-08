@@ -1,0 +1,120 @@
+@page "/client/profiles/{Id:guid}"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.FacesRead)]
+@inject IFacesApiClient Api
+@inject IDialogService Dialogs
+@inject IAppSnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>@(_result is { IsSuccess: true } ? _result.Value.ExternalRef : "Person") · NexaVerify</PageTitle>
+
+<PageState T="FaceProfileDto" Result="_result" OnRetry="LoadAsync">
+    <Loading><SkeletonCard Lines="4" /></Loading>
+    <ChildContent Context="person">
+        <PageHeader Title="@(string.IsNullOrWhiteSpace(person.DisplayName) ? person.ExternalRef : person.DisplayName)" Subtitle="@($"Reference {person.ExternalRef}")" Breadcrumbs="Crumbs(person)">
+            <Actions>
+                <StatusChip Kind="StatusKind.User" Value="@person.Status" />
+                <Can Permission="@WebPermissions.FacesErase">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Outlined.DeleteForever" OnClick="() => EraseAsync(person)" data-testid="erase-profile">Erase person</MudButton>
+                </Can>
+            </Actions>
+        </PageHeader>
+
+        <MudGrid Spacing="3">
+            <MudItem xs="12" lg="5">
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0" Style="height: 100%;">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Details</MudText>
+                    <DetailList Items="Items(person)" />
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" lg="7">
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0" Style="height: 100%;">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Registered photos (@person.TemplateCount)</MudText>
+                    @if (person.Templates.Count == 0)
+                    {
+                        <EmptyState Title="No photos" Message="This person has no usable photo, so they cannot be recognised." />
+                    }
+                    else
+                    {
+                        <div class="nv-table-wrap">
+                            <table class="nv-table nv-dense" aria-label="Registered photos" data-testid="templates-table">
+                                <thead><tr><th scope="col">Added</th><th scope="col" style="text-align:right">Quality</th><th scope="col">Status</th><th scope="col"><span class="nv-sr">Actions</span></th></tr></thead>
+                                <tbody>
+                                    @foreach (var template in person.Templates)
+                                    {
+                                        <tr>
+                                            <td>@template.CreatedAt.ToString("d MMM yyyy, HH:mm", System.Globalization.CultureInfo.InvariantCulture)</td>
+                                            <td style="text-align:right">@template.Quality.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</td>
+                                            <td>@template.Status</td>
+                                            <td style="text-align:right">
+                                                <Can Permission="@WebPermissions.FacesErase">
+                                                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" OnClick="() => EraseTemplateAsync(person, template)" data-testid="erase-template">Remove photo</MudButton>
+                                                </Can>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    </ChildContent>
+</PageState>
+
+@code {
+    private ApiResult<FaceProfileDto>? _result;
+
+    [Parameter] public Guid Id { get; set; }
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _result = null;
+        _result = await Api.GetProfileAsync(Id);
+    }
+
+    private static List<BreadcrumbItem> Crumbs(FaceProfileDto p) => [new("People", "client/profiles"), new(p.ExternalRef, null, true)];
+
+    private static string Day(DateTime value) => value.ToString("d MMM yyyy", System.Globalization.CultureInfo.InvariantCulture);
+
+    // Metadata is client-supplied JSON text: shown as text only.
+    private static IReadOnlyList<DetailItem> Items(FaceProfileDto p) =>
+    [
+        new("Reference", p.ExternalRef),
+        new("Name", p.DisplayName),
+        new("Consent recorded in", p.ConsentReference),
+        new("Consent recorded on", Day(p.ConsentRecordedAt)),
+        new("Kept until", p.RetentionUntil is { } r ? Day(r) : "Until you erase them"),
+        new("Registered", Day(p.CreatedAt)),
+        new("Extra details", p.Metadata),
+    ];
+
+    private async Task EraseAsync(FaceProfileDto person)
+    {
+        var confirmed = await Dialogs.ConfirmAsync(
+            $"Erase {person.ExternalRef}?",
+            "This permanently deletes this person and all their face data. It cannot be undone.",
+            "Erase person", destructive: true, requiredPhrase: "ERASE");
+        if (confirmed is null)
+        {
+            return;
+        }
+
+        if ((await Api.EraseProfileAsync(person.Id)).Report(Snackbar, "The person was erased."))
+        {
+            Nav.NavigateTo("client/profiles");
+        }
+    }
+
+    private async Task EraseTemplateAsync(FaceProfileDto person, FaceTemplateDto template)
+    {
+        var confirmed = await Dialogs.ConfirmAsync(
+            "Remove this photo?", "The photo's face data is deleted. The person stays registered with their other photos.", "Remove photo", destructive: true);
+        if (confirmed is not null && (await Api.EraseTemplateAsync(person.Id, template.Id)).Report(Snackbar, "The photo was removed."))
+        {
+            await LoadAsync();
+        }
+    }
+}

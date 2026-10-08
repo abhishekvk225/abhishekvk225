@@ -1,0 +1,41 @@
+@using NexaVerify.Contracts.Api
+
+<div class="nv-form" data-testid="webhook-fields">
+    <MudTextField T="string" @bind-Value="Model.Name" For="() => Model.Name" Label="Name" Variant="Variant.Outlined" Immediate="true" MaxLength="100" />
+    <MudTextField T="string" @bind-Value="Model.Url" For="() => Model.Url" Label="Address that receives events" Variant="Variant.Outlined" Immediate="true" MaxLength="500" InputType="InputType.Url"
+                  HelperText="Must start with https://. Addresses inside private networks are not allowed." />
+    <fieldset class="nv-fieldset">
+        <legend class="mud-typography mud-typography-subtitle2">Events to send</legend>
+        @foreach (var item in Events)
+        {
+            var type = item.Type;
+            <MudCheckBox T="bool" Value="Model.Events.Contains(type)" ValueChanged="@(on => Toggle(type, on))" Label="@item.Description" Color="Color.Primary" />
+        }
+        <ValidationMessage For="() => Model.Events" />
+    </fieldset>
+    @if (ShowEnabled)
+    {
+        <MudSwitch T="bool" @bind-Value="Model.Enabled" Label="Send events to this address" Color="Color.Primary" />
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public WebhookForm Model { get; set; } = default!;
+
+    [Parameter, EditorRequired] public IReadOnlyList<WebhookEventDto> Events { get; set; } = [];
+
+    /// <summary>Only when editing an existing endpoint.</summary>
+    [Parameter] public bool ShowEnabled { get; set; }
+
+    private void Toggle(string type, bool on)
+    {
+        if (on)
+        {
+            Model.Events.Add(type);
+        }
+        else
+        {
+            Model.Events.Remove(type);
+        }
+    }
+}

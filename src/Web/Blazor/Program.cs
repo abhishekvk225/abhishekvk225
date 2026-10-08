@@ -34,6 +34,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<ThemeService>();
 builder.Services.AddScoped<CurrentUserState>();
 builder.Services.AddScoped<DashboardRangeState>();
+builder.Services.AddScoped<NotificationState>();
 builder.Services.AddScoped<IClipboardService, ClipboardService>();
 builder.Services.AddScoped<IAppSnackbar, AppSnackbar>();
 
