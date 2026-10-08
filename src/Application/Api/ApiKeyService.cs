@@ -37,12 +37,14 @@ public sealed class ApiKeyService : IApiKeyService
     private readonly IApiKeyAuthenticator _authenticator;
     private readonly IAuditService _audit;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ITransactionLock _lock;
     private readonly TimeProvider _time;
 
     public ApiKeyService(
         IApiKeyRepository keys, ICurrentUser currentUser, IPermissionResolver permissions, IClientSettingsService settings,
-        IApiKeyAuthenticator authenticator, IAuditService audit, IUnitOfWork unitOfWork, TimeProvider time)
+        IApiKeyAuthenticator authenticator, IAuditService audit, IUnitOfWork unitOfWork, ITransactionLock transactionLock, TimeProvider time)
     {
+        _lock = transactionLock;
         _keys = keys;
         _currentUser = currentUser;
         _permissions = permissions;
@@ -80,11 +82,6 @@ public sealed class ApiKeyService : IApiKeyService
 
         var now = Now;
         var settings = await _settings.GetEffectiveAsync(clientId, cancellationToken);
-        if (await _keys.CountActiveAsync(now, cancellationToken) >= settings.Int(SettingKeys.Limits.MaxApiKeys))
-        {
-            return Error.Conflict("APIKEY_LIMIT_REACHED", "The maximum number of active API keys for this account has been reached. Revoke one first.");
-        }
-
         var (raw, prefix, hash) = ApiKeyMaterial.Generate();
         ApiKey key;
         try
@@ -96,9 +93,31 @@ public sealed class ApiKeyService : IApiKeyService
             return ex.ToError();
         }
 
-        _keys.Add(key);
-        _audit.Record(new AuditEntry("apikey.created", nameof(ApiKey), key.Id.ToString(), clientId, NewValues: new { key.Name, key.KeyPrefix, key.Scopes, key.ExpiresAt }));
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        try
+        {
+            // The cap is checked and the key inserted under one transaction-scoped lock, so parallel creates cannot overshoot it.
+            await _unitOfWork.ExecuteInTransactionAsync(
+                async ct =>
+                {
+                    await _lock.AcquireAsync(CapLockName(clientId), ct);
+                    if (await _keys.CountActiveAsync(now, ct) >= settings.Int(SettingKeys.Limits.MaxApiKeys))
+                    {
+                        throw new CapExceededException("APIKEY_LIMIT_REACHED", "The maximum number of active API keys for this account has been reached. Revoke one first.");
+                    }
+
+                    _keys.Add(key);
+                    _audit.Record(new AuditEntry("apikey.created", nameof(ApiKey), key.Id.ToString(), clientId, NewValues: new { key.Name, key.KeyPrefix, key.Scopes, key.ExpiresAt }));
+                    await _unitOfWork.SaveChangesAsync(ct);
+                    return true;
+                },
+                cancellationToken);
+        }
+        catch (CapExceededException ex)
+        {
+            _unitOfWork.ClearTracked();
+            return Error.Conflict(ex.Code, ex.Message);
+        }
+
         return new CreatedApiKeyDto(ToDto(key, now), raw);
     }
 
@@ -179,16 +198,6 @@ public sealed class ApiKeyService : IApiKeyService
             return scopeError;
         }
 
-        // With a grace period both keys stay live, so the regeneration adds one to the active count.
-        if (request.GraceMinutes > 0)
-        {
-            var settings = await _settings.GetEffectiveAsync(old.ClientId, cancellationToken);
-            if (await _keys.CountActiveAsync(now, cancellationToken) >= settings.Int(SettingKeys.Limits.MaxApiKeys))
-            {
-                return Error.Conflict("APIKEY_LIMIT_REACHED", "The maximum number of active API keys for this account has been reached. Regenerate without a grace period or revoke one first.");
-            }
-        }
-
         var (raw, prefix, hash) = ApiKeyMaterial.Generate();
         ApiKey replacement;
         try
@@ -208,13 +217,41 @@ public sealed class ApiKeyService : IApiKeyService
             return ex.ToError();
         }
 
-        _keys.Add(replacement);
-        _audit.Record(new AuditEntry("apikey.regenerated", nameof(ApiKey), old.Id.ToString(), old.ClientId,
-            NewValues: new { OldPrefix = old.KeyPrefix, NewPrefix = prefix, request.GraceMinutes }));
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        // With a grace period both keys stay live, so the regeneration adds one to the active count (checked under the cap lock).
+        var maxKeys = request.GraceMinutes > 0 ? (await _settings.GetEffectiveAsync(old.ClientId, cancellationToken)).Int(SettingKeys.Limits.MaxApiKeys) : int.MaxValue;
+        try
+        {
+            await _unitOfWork.ExecuteInTransactionAsync(
+                async ct =>
+                {
+                    if (request.GraceMinutes > 0)
+                    {
+                        await _lock.AcquireAsync(CapLockName(old.ClientId), ct);
+                        if (await _keys.CountActiveAsync(now, ct) >= maxKeys)
+                        {
+                            throw new CapExceededException("APIKEY_LIMIT_REACHED", "The maximum number of active API keys for this account has been reached. Regenerate without a grace period or revoke one first.");
+                        }
+                    }
+
+                    _keys.Add(replacement);
+                    _audit.Record(new AuditEntry("apikey.regenerated", nameof(ApiKey), old.Id.ToString(), old.ClientId,
+                        NewValues: new { OldPrefix = old.KeyPrefix, NewPrefix = prefix, request.GraceMinutes }));
+                    await _unitOfWork.SaveChangesAsync(ct);
+                    return true;
+                },
+                cancellationToken);
+        }
+        catch (CapExceededException ex)
+        {
+            _unitOfWork.ClearTracked();
+            return Error.Conflict(ex.Code, ex.Message);
+        }
+
         _authenticator.Invalidate(old.KeyPrefix);
         return new CreatedApiKeyDto(ToDto(replacement, now), raw);
     }
+
+    private static string CapLockName(Guid clientId) => "apikeys:" + clientId.ToString("N");
 
     /// <summary>Scopes must be integration scopes AND ones the caller holds themselves (a key can never out-rank its creator).</summary>
     private async Task<Error?> CheckScopesAsync(IReadOnlyList<string> scopes, CancellationToken cancellationToken)

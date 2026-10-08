@@ -52,6 +52,7 @@ public sealed class FaceRecognitionService : IFaceRecognitionService
     private readonly TimeProvider _time;
     private readonly ILogger<FaceRecognitionService> _logger;
     private readonly Api.IWebhookPublisher _webhooks;
+    private readonly ITransactionLock _lock;
 
     public FaceRecognitionService(
         ICurrentUser currentUser,
@@ -69,8 +70,10 @@ public sealed class FaceRecognitionService : IFaceRecognitionService
         IUnitOfWork unitOfWork,
         TimeProvider time,
         ILogger<FaceRecognitionService> logger,
-        Api.IWebhookPublisher webhooks)
+        Api.IWebhookPublisher webhooks,
+        ITransactionLock transactionLock)
     {
+        _lock = transactionLock;
         _logger = logger;
         _webhooks = webhooks;
         _currentUser = currentUser;
@@ -199,6 +202,14 @@ public sealed class FaceRecognitionService : IFaceRecognitionService
             {
                 if (profileCreated)
                 {
+                    // The pre-flight count above is only a cheap early answer; this one is authoritative: under the per-client lock
+                    // two parallel enrolments cannot both take the last slot. Throwing rolls back the charge with it.
+                    await _lock.AcquireAsync("profiles:" + clientId.ToString("N"), ct);
+                    if (await _faces.CountProfilesAsync(ct) >= settings.Int(SettingKeys.Limits.MaxProfiles))
+                    {
+                        throw new CapExceededException("PROFILE_LIMIT_REACHED", "The maximum number of registered people for this account has been reached.");
+                    }
+
                     profile.DisplayNameEnc = displayName;
                     profile.MetadataJson = string.IsNullOrWhiteSpace(request.Metadata) ? null : request.Metadata;
                     _faces.Add(profile);
@@ -589,6 +600,11 @@ public sealed class FaceRecognitionService : IFaceRecognitionService
                     return build(record.Id, credits);
                 },
                 cancellationToken);
+        }
+        catch (CapExceededException ex)
+        {
+            _unitOfWork.ClearTracked();
+            return Error.Conflict(ex.Code, ex.Message);
         }
         catch (ConcurrencyConflictException)
         {

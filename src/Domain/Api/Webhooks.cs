@@ -194,6 +194,9 @@ public sealed class WebhookDelivery : ITenantOwned
         return false;
     }
 
+    /// <summary>Postpones the next attempt without counting one (the client is suspended, so nothing is sent for now).</summary>
+    public void Defer(DateTime until) => NextAttemptAt = until;
+
     /// <summary>Gives up without sending (the endpoint is disabled or gone).</summary>
     public void Abandon(string reason, DateTime now)
     {

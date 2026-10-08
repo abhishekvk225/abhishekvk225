@@ -24,6 +24,14 @@ public static class ErrorCodes
     public const string ClientSuspended = "CLIENT_SUSPENDED";
     public const string ClientInactive = "CLIENT_INACTIVE";
     public const string IpNotAllowed = "IP_NOT_ALLOWED";
+    public const string ApiAccessDisabled = "API_ACCESS_DISABLED";
+    public const string MfaRequired = "MFA_REQUIRED";
+    public const string MfaCodeInvalid = "MFA_CODE_INVALID";
+    public const string MfaChallengeInvalid = "MFA_CHALLENGE_INVALID";
+    public const string ApprovalRequired = "APPROVAL_REQUIRED";
+    public const string ApprovalExpired = "APPROVAL_EXPIRED";
+    public const string ApprovalNotPending = "APPROVAL_NOT_PENDING";
+    public const string SelfApprovalForbidden = "SELF_APPROVAL_FORBIDDEN";
 
     public const string NotFound = "NOT_FOUND";
     public const string Conflict = "CONFLICT";

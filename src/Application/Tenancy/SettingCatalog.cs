@@ -53,6 +53,8 @@ public static class SettingCatalog
         new(SettingKeys.Api.RateLimitPerMinute, "API", SettingType.Int, SettingManager.Platform, "API requests allowed per minute per key.", 60, 1, 100000),
         new(SettingKeys.Api.DailyQuota, "API", SettingType.Int, SettingManager.Platform, "API requests allowed per day for the whole client.", 10000, 1, 100000000),
 
+        new(SettingKeys.Api.AccessDisabled, "API", SettingType.Bool, SettingManager.Platform, "Emergency kill switch: refuse every API key of this client (propagates within the API-key cache TTL, a few seconds).", false),
+
         new(SettingKeys.Limits.MaxProfiles, "Limits", SettingType.Int, SettingManager.Platform, "Maximum registered people (face profiles).", 10000, 1, 100000000),
         new(SettingKeys.Limits.MaxApiKeys, "Limits", SettingType.Int, SettingManager.Platform, "Maximum active API keys.", 5, 1, 100),
         new(SettingKeys.Limits.MaxUsers, "Limits", SettingType.Int, SettingManager.Platform, "Maximum active users.", 10, 1, 1000),
@@ -161,9 +163,7 @@ public static class SettingCatalog
     {
         if (key == SettingKeys.Integration.AllowedIps)
         {
-            var parts = item.Split('/');
-            var valid = parts.Length <= 2 && IPAddress.TryParse(parts[0], out var address)
-                && (parts.Length == 1 || (int.TryParse(parts[1], out var prefix) && prefix >= 0 && prefix <= (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork ? 32 : 128)));
+            var valid = Api.IpRules.IsValid(item);
             return valid ? null : $"'{item}' is not a valid IP address or CIDR range.";
         }
 

@@ -21,7 +21,10 @@ namespace NexaVerify.Infrastructure.Background;
 /// </summary>
 public sealed class WebhookDispatcher : BackgroundService
 {
-    private static readonly TimeSpan Lease = TimeSpan.FromMinutes(2);
+    private const int BatchSize = 50;
+    private const int Parallelism = 8;
+    private const int PoisonMaxAttempts = 3;
+    private static readonly TimeSpan SuspendedRecheck = TimeSpan.FromMinutes(5);
 
     private readonly IServiceScopeFactory _scopes;
     private readonly WebhookOptions _options;
@@ -36,7 +39,14 @@ public sealed class WebhookDispatcher : BackgroundService
         _logger = logger;
         _time = time;
         _http = BuildClient(_options);
+
+        // The lease must outlive the worst-case batch (every slot waiting for its full timeout), or another node could claim a
+        // row that is still in flight and send it twice.
+        var worstCaseRounds = (int)Math.Ceiling(BatchSize / (double)Parallelism);
+        _lease = TimeSpan.FromSeconds((worstCaseRounds * (Math.Clamp(_options.TimeoutSeconds, 1, 30) + 5)) + 30);
     }
+
+    private readonly TimeSpan _lease;
 
     private static HttpClient BuildClient(WebhookOptions options)
     {
@@ -130,10 +140,10 @@ public sealed class WebhookDispatcher : BackgroundService
         await using (var scope = _scopes.CreateAsyncScope())
         {
             using var platform = scope.ServiceProvider.GetRequiredService<ITenantScope>().BeginPlatform("webhook claim");
-            ids = await scope.ServiceProvider.GetRequiredService<WebhookStore>().ClaimDueAsync(50, _time.GetUtcNow().UtcDateTime, Lease, cancellationToken);
+            ids = await scope.ServiceProvider.GetRequiredService<WebhookStore>().ClaimDueAsync(BatchSize, _time.GetUtcNow().UtcDateTime, _lease, cancellationToken);
         }
 
-        await Parallel.ForEachAsync(ids, new ParallelOptions { MaxDegreeOfParallelism = 8, CancellationToken = cancellationToken },
+        await Parallel.ForEachAsync(ids, new ParallelOptions { MaxDegreeOfParallelism = Parallelism, CancellationToken = cancellationToken },
             async (id, token) =>
             {
                 try
@@ -170,8 +180,26 @@ public sealed class WebhookDispatcher : BackgroundService
             return;
         }
 
+        // The endpoint row is looked up by id only; never deliver one client's event to another client's endpoint.
+        if (endpoint.ClientId != delivery.ClientId)
+        {
+            delivery.Abandon("The endpoint does not belong to the delivery's client.", now);
+            await db.SaveChangesAsync(cancellationToken);
+            _logger.LogError("Webhook delivery {DeliveryId} references endpoint {EndpointId} of another client and was abandoned", id, endpoint.Id);
+            return;
+        }
+
+        // A suspended or inactive client receives nothing; the event stays queued and is re-checked later.
+        if (await scope.ServiceProvider.GetRequiredService<IClientAccessGuard>().CheckAsync(delivery.ClientId, cancellationToken) is not null)
+        {
+            delivery.Defer(now.Add(SuspendedRecheck));
+            await db.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
         int? statusCode = null;
         string? error = null;
+        var poison = false;
         try
         {
             var secret = Encoding.UTF8.GetString(await encryption.DecryptAsync(endpoint.ClientId, endpoint.SecretEnc, "webhook-secret", cancellationToken));
@@ -192,7 +220,10 @@ public sealed class WebhookDispatcher : BackgroundService
         // undecryptable secret, a malformed URL) is a failed attempt, so a poison delivery always advances toward abandonment.
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
-            error = ex is TaskCanceledException ? "The endpoint did not answer in time." : "The endpoint could not be reached.";
+            poison = ex is System.Security.Cryptography.CryptographicException or UriFormatException or FormatException;
+            error = ex is TaskCanceledException ? "The endpoint did not answer in time."
+                : poison ? "The delivery could not be prepared (secret or URL is unusable)."
+                : "The endpoint could not be reached.";
             _logger.LogInformation("Webhook {DeliveryId} to endpoint {EndpointId} failed: {Reason}", id, endpoint.Id, ex.GetType().Name);
         }
 
@@ -206,6 +237,12 @@ public sealed class WebhookDispatcher : BackgroundService
         }
 
         delivery.MarkFailed(statusCode, error, finished);
+        if (poison && delivery.Status == DeliveryStatus.Pending && delivery.Attempts >= PoisonMaxAttempts)
+        {
+            // Retrying cannot fix an undecryptable secret or a malformed URL: stop after a few attempts instead of every backoff step.
+            delivery.Abandon(error, finished);
+        }
+
         await db.SaveChangesAsync(cancellationToken);
         if (delivery.EventType != WebhookEvents.Test)
         {

@@ -18,6 +18,9 @@ public static class SettingKeys
     {
         public const string RateLimitPerMinute = "api.rateLimitPerMinute";
         public const string DailyQuota = "api.dailyQuota";
+
+        /// <summary>Platform-managed kill switch: while true, every API key of the client is refused (tokens/portal sign-in are unaffected).</summary>
+        public const string AccessDisabled = "api.accessDisabled";
     }
 
     public static class Limits

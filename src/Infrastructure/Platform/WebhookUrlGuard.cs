@@ -108,6 +108,7 @@ public sealed class WebhookUrlGuard : IWebhookUrlGuard
                 || (bytes[0] == 169 && bytes[1] == 254)                // link-local incl. cloud metadata 169.254.169.254
                 || (bytes[0] == 172 && bytes[1] is >= 16 and <= 31)
                 || (bytes[0] == 192 && bytes[1] == 0 && bytes[2] is 0 or 2) // IETF protocol / TEST-NET-1
+                || (bytes[0] == 192 && bytes[1] == 88 && bytes[2] == 99)  // 6to4 relay anycast (deprecated)
                 || (bytes[0] == 192 && bytes[1] == 168)
                 || (bytes[0] == 198 && bytes[1] is 18 or 19)           // benchmarking
                 || (bytes[0] == 198 && bytes[1] == 51 && bytes[2] == 100) // TEST-NET-2
@@ -117,11 +118,20 @@ public sealed class WebhookUrlGuard : IWebhookUrlGuard
 
         if (address.AddressFamily == AddressFamily.InterNetworkV6)
         {
-            return !(address.IsIPv6LinkLocal || address.IsIPv6SiteLocal || address.IsIPv6Multicast
-                || (bytes[0] & 0xFE) == 0xFC                              // unique local fc00::/7
+            // Allow-list: only global unicast 2000::/3 can be public. That already excludes ::/8 (unspecified, IPv4-compatible
+            // ::a.b.c.d, loopback), fc00::/7, fe80::/10, ff00::/8 and 64:ff9b::/96 (NAT64). The special-purpose blocks that live
+            // INSIDE 2000::/3 and can embed or tunnel arbitrary IPv4 addresses are removed explicitly.
+            if ((bytes[0] & 0xE0) != 0x20)
+            {
+                return false;
+            }
+
+            return !(address.IsIPv6Teredo                                       // 2001::/32 Teredo
+                || (bytes[0] == 0x20 && bytes[1] == 0x01 && bytes[2] < 0x02)    // 2001::/23 IETF protocol assignments (incl. Teredo, ORCHID)
                 || (bytes[0] == 0x20 && bytes[1] == 0x01 && bytes[2] == 0x0D && bytes[3] == 0xB8) // documentation 2001:db8::/32
-                || (bytes[0] == 0x01 && bytes[1] == 0 && bytes[2] == 0 && bytes[3] == 0 && bytes[4] == 0 && bytes[5] == 0 && bytes[6] == 0 && bytes[7] == 0) // discard 100::/64
-                || (bytes[0] == 0x00 && bytes[1] == 0x64 && bytes[2] == 0xFF && bytes[3] == 0x9B)); // NAT64 64:ff9b::/96 can embed private v4
+                || (bytes[0] == 0x20 && bytes[1] == 0x02)                        // 6to4 2002::/16 embeds an IPv4 address
+                || (bytes[0] == 0x3F && bytes[1] == 0xFF && (bytes[2] & 0xF0) == 0x00)  // documentation 3fff::/20
+                || (bytes[8] is 0x00 or 0x02 && bytes[9] == 0x00 && bytes[10] == 0x5E && bytes[11] == 0xFE)); // ISATAP interface id embeds IPv4
         }
 
         return false;

@@ -68,7 +68,8 @@ public static class IpRules
         }
 
         var max = address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork ? 32 : 128;
-        return int.TryParse(parts[1], out var prefix) && prefix >= 0 && prefix <= max;
+        // IPNetwork rejects host bits (203.0.113.7/24): a rule like that would silently never match, so refuse it up front.
+        return int.TryParse(parts[1], out var prefix) && prefix >= 0 && prefix <= max && System.Net.IPNetwork.TryParse(rule.Trim(), out _);
     }
 
     /// <summary>True when the list is empty (no restriction) or the address matches one entry.</summary>

@@ -138,10 +138,14 @@ public static class DependencyInjection
         services.AddSingleton<TemplateIndexStore>();
         services.AddScoped<IEmbeddingCodec, EmbeddingCodec>();
         services.AddScoped<ITemplateIndex, TemplateIndex>();
+        services.AddOptions<FaceRetentionOptions>().Bind(configuration.GetSection(FaceRetentionOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
         services.AddHostedService<FaceRetentionSweeper>();
 
         services.AddScoped<IApiKeyRepository, ApiKeyRepository>();
         services.AddScoped<IApiLogRepository, ApiLogRepository>();
+        services.AddOptions<ApiAuthOptions>().Bind(configuration.GetSection(ApiAuthOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
+        services.AddSingleton<ApiKeyNegativeCache>();
+        services.AddScoped<ITransactionLock, SqlTransactionLock>();
         services.AddScoped<IApiKeyAuthenticator, ApiKeyAuthenticator>();
         services.AddScoped<IWebhookRepository, WebhookRepository>();
         services.AddOptions<WebhookOptions>().Bind(configuration.GetSection(WebhookOptions.SectionName));
