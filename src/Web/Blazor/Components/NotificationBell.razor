@@ -50,6 +50,9 @@
     private PeriodicTimer? _timer;
     private Task? _loop;
 
+    /// <summary>The polling loop, exposed so tests can await it deterministically.</summary>
+    public Task? PollLoop => _loop;
+
     protected override async Task OnInitializedAsync()
     {
         State.Changed += OnStateChanged;
