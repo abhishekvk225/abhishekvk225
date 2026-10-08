@@ -40,9 +40,9 @@ internal sealed class ApiRequestLogConfiguration : IEntityTypeConfiguration<ApiR
         b.Property(x => x.ErrorCode).HasMaxLength(60).IsUnicode(false);
         b.Property(x => x.CorrelationId).HasMaxLength(64).IsUnicode(false);
         b.HasOne<Client>().WithMany().HasForeignKey(x => x.ClientId).OnDelete(DeleteBehavior.Restrict);
-        b.HasIndex(x => new { x.ClientId, x.CreatedAt }).IsDescending(false, true);
+        b.HasIndex(x => new { x.ClientId, x.CreatedAt }).IsDescending(false, true).IncludeProperties(x => new { x.StatusCode, x.DurationMs, x.ApiKeyId });
         b.HasIndex(x => new { x.ApiKeyId, x.CreatedAt });
-        b.HasIndex(x => x.CreatedAt); // retention purge
+        b.HasIndex(x => x.CreatedAt).IncludeProperties(x => new { x.StatusCode, x.DurationMs }); // retention purge and platform-wide daily aggregates
     }
 }
 
@@ -78,5 +78,6 @@ internal sealed class WebhookDeliveryConfiguration : IEntityTypeConfiguration<We
         b.HasIndex(x => new { x.Status, x.NextAttemptAt });
         b.HasIndex(x => new { x.EndpointId, x.CreatedAt }).IsDescending(false, true);
         b.HasIndex(x => new { x.ClientId, x.CreatedAt }).IsDescending(false, true);
+        b.HasIndex(x => new { x.Status, x.CreatedAt }); // delivery-health counts on the admin dashboard
     }
 }

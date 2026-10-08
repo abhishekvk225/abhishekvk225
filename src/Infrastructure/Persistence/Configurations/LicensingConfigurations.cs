@@ -83,8 +83,24 @@ internal sealed class LicenseTransactionConfiguration : IEntityTypeConfiguration
         b.HasOne<LicenseTransaction>().WithMany().HasForeignKey(x => x.ReferenceTransactionId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => new { x.LicenseId, x.Id });
         b.HasIndex(x => new { x.LicenseId, x.PrevHash }).IsUnique(); // a chain cannot fork: one successor per previous hash
-        b.HasIndex(x => new { x.ClientId, x.CreatedAt });
+        // Dashboards and usage reports aggregate by day: covering indexes keep them to an index range scan (per client, and platform-wide).
+        b.HasIndex(x => new { x.ClientId, x.CreatedAt }).IncludeProperties(x => new { x.Type, x.Credits, x.Operation });
+        b.HasIndex(x => x.CreatedAt).IncludeProperties(x => new { x.ClientId, x.Type, x.Credits, x.Operation });
         b.HasIndex(x => new { x.ClientId, x.IdempotencyKey }).IsUnique().HasFilter("[IdempotencyKey] IS NOT NULL");
         b.HasIndex(x => x.ReferenceTransactionId).IsUnique().HasFilter("[ReferenceTransactionId] IS NOT NULL AND [Type] = 'Refund'");
+    }
+}
+
+internal sealed class LicenseAlertConfiguration : IEntityTypeConfiguration<LicenseAlert>
+{
+    public void Configure(EntityTypeBuilder<LicenseAlert> b)
+    {
+        b.ToTable("LicenseAlerts", "licensing");
+        b.Property(x => x.Bucket).HasMaxLength(60).IsUnicode(false).IsRequired();
+        b.Property(x => x.Title).HasMaxLength(150).IsRequired();
+        b.Property(x => x.Message).HasMaxLength(400).IsRequired();
+        b.HasOne<Client>().WithMany().HasForeignKey(x => x.ClientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => new { x.SubjectId, x.AlertType, x.Bucket }).IsUnique(); // the de-duplication guarantee
+        b.HasIndex(x => new { x.ClientId, x.CreatedAt }).IsDescending(false, true); // the notification feed
     }
 }

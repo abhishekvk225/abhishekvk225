@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using NexaVerify.Application.Api;
+using NexaVerify.Application.Dashboards;
 using NexaVerify.Application.Faces;
 using NexaVerify.Application.Identity;
 using NexaVerify.Application.Licensing;
@@ -41,6 +42,13 @@ public static class DependencyInjection
         services.AddScoped<ICostRuleService, CostRuleService>();
         services.AddScoped<IClientLicenseService, ClientLicenseService>();
         services.AddScoped<ILicenseExpiryProcessor, LicenseExpiryProcessor>();
+        services.AddScoped<IClientDashboardService, ClientDashboardService>();
+        services.AddScoped<IAdminDashboardService, AdminDashboardService>();
+        services.AddScoped<IUsageReportService, UsageReportService>();
+        services.AddSingleton<LedgerVerificationGate>();
+        services.AddScoped<ILedgerVerificationService, LedgerVerificationService>();
+        services.AddScoped<ILicenseAlertService, LicenseAlertService>();
+        services.AddScoped<INotificationService, NotificationService>();
         return services;
     }
 }

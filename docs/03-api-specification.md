@@ -86,9 +86,9 @@ There is **no** endpoint to edit or delete a ledger entry, by design.
 ### 3.3 Dashboard, reports, system
 | Method | Path | Permission | Purpose |
 |---|---|---|---|
-| GET | `/admin/dashboard/summary?from&to` | `dashboard.admin` | KPI block (see §6) |
-| GET | `/admin/dashboard/usage-series` · `/license-consumption` · `/top-clients` · `/recent-activity` · `/alerts` | `dashboard.admin` | chart/feeds |
-| GET | `/admin/reports/usage` · `/licenses` · `/clients` (+ `?format=csv`) | `reports.read` | exports (CSV injection-safe) |
+| GET | `/admin/dashboard?days=30` (1..90) | `dashboard.admin` | one aggregate document (M7): clients/licenses by status, expiring ≤30 d and low-balance (≤10 %) licenses, credits per day (ledger), top 10 clients, API traffic, webhook health. Aggregates only — no face data |
+| GET | `/admin/reports/usage.csv?from&to` (≤ 92 days) | `reports.read` | streamed CSV of billed usage per day/client/operation (CSV-injection-safe, audit-logged) |
+| POST | `/admin/licensing/verify-ledger` | `licenses.verify-ledger` | recomputes every ledger hash chain; first broken row per license; 409 if one is already running (also runs nightly) |
 | GET | `/admin/audit-logs` | `audit.read` | global audit search (actor, action, client, entity, date) |
 | GET/PUT | `/admin/system-settings` | `system.configure` | platform defaults, retention, maintenance mode |
 | GET | `/admin/system/health` | `system.configure` | provider status, job last-run, ledger-verification result |
@@ -99,8 +99,8 @@ There is **no** endpoint to edit or delete a ledger entry, by design.
 
 | Method | Path | Permission (role) | Purpose |
 |---|---|---|---|
-| GET | `/client/dashboard/summary?from&to` | `dashboard.client` | KPIs (see §6) |
-| GET | `/client/dashboard/usage-series` · `/recent-activity` · `/alerts` · `/api-usage` | `dashboard.client` | |
+| GET | `/client/dashboard?days=30` (1..90) | `dashboard.client` | one document (M7): license summary, recognitions per day/operation/outcome with success/no-match/error rates, credits per day (ledger), API requests/error rate/p95 per day, top API keys |
+| GET | `/client/reports/usage.csv?from&to` (≤ 92 days) | `usage.read` | streamed CSV of the client's own usage per day/operation/outcome (CSV-injection-safe, audit-logged) |
 | GET | `/client/profile` · PUT | `client.profile.read` / `client.profile.update` (ClientAdmin) | company info |
 | GET | `/client/license` · `/client/licenses` · `/client/licenses/{id}/transactions` | `license.read` | balance, expiry, history (read-only) |
 | GET | `/client/usage?from&to` | `usage.read` | detailed usage |
@@ -115,7 +115,7 @@ There is **no** endpoint to edit or delete a ledger entry, by design.
 | GET | `/client/webhooks/{id}/deliveries` | `webhooks.manage` | delivery attempts |
 | GET | `/client/audit-logs` | `audit.read.client` | own activity history |
 | GET | `/client/logins` | `audit.read.client` | own login history |
-| GET/PUT | `/client/notifications` · POST `/{id}/read` · `/read-all` | `notifications.read` | in-app notifications |
+| GET | `/client/notifications?unreadOnly&page&pageSize` · POST `/client/notifications/{id}/read` | `notifications.read` | in-app feed backed by the license/API-key alert rows (`read-all` not built) |
 
 ## 5. Face Recognition API — `/api/v1/faces` (JWT **or** API key; permission/scope shown)
 

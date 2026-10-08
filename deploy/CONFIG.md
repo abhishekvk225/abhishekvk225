@@ -44,6 +44,28 @@ Layering: `appsettings.json` (safe defaults, **no secrets**) → `appsettings.{E
 | `Jwt:Issuer/Audience/AccessTokenMinutes/ClockSkewSeconds` | `nexaverify` / `nexaverify-api` / 15 / 60 | |
 | `Seed:SuperAdminEmail/SuperAdminPassword/SuperAdminName` | unset | Migrator only. Creates the first Super Admin once (must change password at first sign-in). `Migrator recover-superadmin` is the break-glass path. |
 
+## Usage, dashboards and alerts (M7)
+| Key | Default | Notes |
+|---|---|---|
+| `Dashboards:DefaultDays` / `MaxDays` | 30 / 90 | Window of the client and admin dashboards; `days` outside 1..`MaxDays` is rejected with 400. |
+| `Dashboards:TopApiKeys` / `TopClients` / `AttentionListSize` | 5 / 10 / 10 | Rows in the "top" lists and the expiring / low-balance lists (their counts are always complete). |
+| `Dashboards:ExpiringWithinDays` / `LowBalancePercent` | 30 / 10 | Admin "expiring" horizon and the "low balance" threshold (share of credits left). |
+| `Dashboards:LatencyBucketMilliseconds` / `LatencyCapMilliseconds` | 25 / 10000 | The p95 latency is read off a histogram of this resolution (exact to one bucket); slower requests count in the last bucket. |
+| `Dashboards:DefaultReportDays` / `MaxReportDays` | 30 / 92 | Default and maximum range of one usage CSV export. |
+| `Metering:LedgerVerification:Enabled` | `true` | Nightly tamper check of every license ledger (hash chain + balance). Findings are logged at **Critical** and audited as `ledger.verification_failed`: alert on that log level. The on-demand `POST /api/v1/admin/licensing/verify-ledger` works even when this is off. |
+| `Metering:LedgerVerification:IntervalHours` / `InitialDelayMinutes` | 24 / 10 | Run cadence and the wait after start-up (so a restart does not skip the check). |
+| `Metering:LedgerVerification:LicenseBatchSize` / `EntryBatchSize` | 200 / 1000 | Paging of the read-only scan. |
+| `Metering:LedgerVerification:BalanceRecheckAttempts` / `RecheckDelayMilliseconds` | 2 / 250 | A balance-only mismatch is re-checked (a charge may have landed mid-scan) before being reported; a broken row is reported at once. |
+| `Metering:Alerts:Enabled` | `true` | Hourly job raising `license.low_balance`, `license.exhausted`, `license.expiring`, `license.expired` and `apikey.expiring` (webhook + in-app notification). Set `false` in tests. |
+| `Metering:Alerts:IntervalMinutes` / `InitialDelaySeconds` | 60 / 60 | |
+| `Metering:Alerts:LowBalancePercent` | 10 | Credits left (or less) at which the low-balance alert fires. |
+| `Metering:Alerts:ExpiringNoticeDays` / `ExpiringFinalNoticeDays` | 7 / 1 | Days before the end date of a license of the two expiry notices (final must be shorter). |
+| `Metering:Alerts:ApiKeyExpiringDays` | 7 | |
+| `Metering:Alerts:ExpiredLookbackDays` | 3 | A license that ended longer ago is not announced (no history dump on first run). |
+| `Metering:Alerts:BatchSize` | 500 | Page size of the candidate scan. |
+
+Alerts are de-duplicated by a unique `(subject, type, bucket)` row (`licensing.LicenseAlerts`), so restarts and several API nodes cannot send one twice; a renewal or top-up changes the bucket so the next crossing alerts again. The job runs on every node that hosts the API; split it onto a worker later without code change.
+
 ## Development-only switches (the API refuses to start in Production with any of these on)
 `Jwt:AllowEphemeralKey`, `Encryption:AllowEphemeralKey`, `Email:LogBodies` (logs reset links!).
 

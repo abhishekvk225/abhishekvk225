@@ -140,3 +140,23 @@ public class LicenseTests
     public void Charge_policy_rules(ChargePolicy policy, MeterOutcome outcome, bool charged) =>
         policy.ShouldCharge(outcome).ShouldBe(charged);
 }
+
+public class LicenseEffectiveStatusTests
+{
+    private static readonly DateTime Now = new(2026, 1, 10, 0, 0, 0, DateTimeKind.Utc);
+
+    [Theory]
+    [InlineData(LicenseStatus.Active, 1, LicenseStatus.Expired)]
+    [InlineData(LicenseStatus.Suspended, 1, LicenseStatus.Expired)]
+    [InlineData(LicenseStatus.Inactive, 0, LicenseStatus.Expired)]
+    [InlineData(LicenseStatus.Draft, 1, LicenseStatus.Expired)]
+    [InlineData(LicenseStatus.Active, -1, LicenseStatus.Active)]
+    [InlineData(LicenseStatus.Revoked, 5, LicenseStatus.Revoked)]
+    [InlineData(LicenseStatus.Expired, -5, LicenseStatus.Expired)]
+    public void The_static_rule_and_the_instance_rule_agree(LicenseStatus stored, int daysPastEnd, LicenseStatus expected)
+    {
+        var end = Now.AddDays(-daysPastEnd);
+
+        License.EffectiveStatusOf(stored, end, Now).ShouldBe(expected);
+    }
+}

@@ -60,7 +60,7 @@ internal sealed class RecognitionRequestConfiguration : IEntityTypeConfiguration
         b.HasOne<Client>().WithMany().HasForeignKey(x => x.ClientId).OnDelete(DeleteBehavior.Restrict);
         b.HasMany(x => x.Matches).WithOne().HasForeignKey(m => m.RequestId).OnDelete(DeleteBehavior.Cascade);
         b.Navigation(x => x.Matches).UsePropertyAccessMode(PropertyAccessMode.Field);
-        b.HasIndex(x => new { x.ClientId, x.CreatedAt }).IsDescending(false, true);
+        b.HasIndex(x => new { x.ClientId, x.CreatedAt }).IsDescending(false, true).IncludeProperties(x => new { x.Operation, x.Outcome, x.CreditsCharged }); // dashboards and usage reports
         b.HasIndex(x => new { x.ClientId, x.Outcome, x.CreatedAt });
         b.HasIndex(x => new { x.ClientId, x.TargetProfileId, x.CreatedAt });
         b.HasIndex(x => new { x.ClientId, x.IdempotencyKey }).IsUnique().HasFilter("[IdempotencyKey] IS NOT NULL");

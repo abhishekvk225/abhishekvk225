@@ -77,10 +77,13 @@ public sealed class License : AuditableEntity, ITenantOwned
         Status == LicenseStatus.Active && StartsAt <= now && now < ExpiresAt && Remaining >= cost;
 
     /// <summary>The status a user should see: a license past its end date is Expired even if the sweeper has not flipped it yet.</summary>
-    public LicenseStatus EffectiveStatus(DateTime now) =>
-        (Status is LicenseStatus.Active or LicenseStatus.Inactive or LicenseStatus.Suspended or LicenseStatus.Draft) && now >= ExpiresAt
+    public LicenseStatus EffectiveStatus(DateTime now) => EffectiveStatusOf(Status, ExpiresAt, now);
+
+    /// <summary>The single definition of "effective status", also used by aggregate queries that only have the two columns.</summary>
+    public static LicenseStatus EffectiveStatusOf(LicenseStatus status, DateTime expiresAt, DateTime now) =>
+        (status is LicenseStatus.Active or LicenseStatus.Inactive or LicenseStatus.Suspended or LicenseStatus.Draft) && now >= expiresAt
             ? LicenseStatus.Expired
-            : Status;
+            : status;
 
     public void Activate(DateTime now)
     {
