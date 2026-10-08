@@ -1,4 +1,5 @@
 @page "/client/profiles"
+@implements IDisposable
 @attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.FacesRead)]
 @inject IFacesApiClient Api
 @inject IDialogService Dialogs
@@ -38,6 +39,14 @@
 </MudPaper>
 
 @code {
+    private readonly CancellationTokenSource _cts = new();
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+
     private DataTable<FaceProfileListItemDto>? _table;
     private IReadOnlyList<DataColumn<FaceProfileListItemDto>> _columns = [];
     private string? _search;
@@ -71,7 +80,7 @@
             return;
         }
 
-        var result = await Api.EraseProfileAsync(person.Id);
+        var result = await Api.EraseProfileAsync(person.Id, _cts.Token);
         if (result.Report(Snackbar, "The person was erased.") && _table is not null)
         {
             await _table.ReloadAsync();

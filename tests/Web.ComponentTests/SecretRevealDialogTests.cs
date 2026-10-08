@@ -37,4 +37,25 @@ public class SecretRevealDialogTests : UiTestBase
 
         Services.GetRequiredService<FakeClipboard>().Last.ShouldBe(Secret);
     }
+
+    [Fact]
+    public async Task Closing_drops_the_parameter_and_the_component_holds_no_copy_of_the_secret()
+    {
+        var provider = RenderProviders();
+        var dialogs = Services.GetRequiredService<IDialogService>();
+        Task? shown = null;
+        await provider.InvokeAsync(() => { shown = dialogs.RevealSecretAsync("New key", Secret); return Task.CompletedTask; });
+        provider.WaitForAssertion(() => provider.FindAll("[data-testid=secret-value]").Count.ShouldBe(1));
+        var dialog = provider.FindComponent<NexaVerify.Web.Components.SecretRevealDialog>().Instance;
+        dialog.Secret.ShouldBe(Secret);
+
+        provider.Find(".mud-dialog input[type=checkbox]").Change(true);
+        provider.Find("[data-testid=secret-done]").Click();
+        await shown!;
+
+        dialog.Secret.ShouldBeNull();
+        var fields = typeof(NexaVerify.Web.Components.SecretRevealDialog).GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            .Where(f => f.FieldType == typeof(string)).Select(f => f.GetValue(dialog) as string);
+        fields.ShouldAllBe(v => v == null || !v.Contains(Secret));
+    }
 }

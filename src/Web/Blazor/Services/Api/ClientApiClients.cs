@@ -132,7 +132,10 @@ public interface IApiKeysApiClient
 
     Task<ApiResult<PagedResult<ApiRequestLogDto>>> GetLogsAsync(ApiLogQuery query, CancellationToken ct = default);
 
-    /// <summary>Per-key traffic from the client dashboard (last <paramref name="days"/> days).</summary>
+    /// <summary>
+    /// Per-key traffic (last <paramref name="days"/> days). The API has no lighter per-key usage endpoint, so this reads the client
+    /// dashboard and keeps only the top-keys list; it costs one extra dashboard query per page load. API gap: a dedicated endpoint.
+    /// </summary>
     Task<ApiResult<IReadOnlyList<TopApiKeyDto>>> GetKeyUsageAsync(int days, CancellationToken ct = default);
 }
 

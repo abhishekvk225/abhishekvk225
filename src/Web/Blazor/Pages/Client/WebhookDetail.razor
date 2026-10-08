@@ -56,7 +56,14 @@
 
     [Parameter] public Guid Id { get; set; }
 
-    public void Dispose() => _state.Dispose();
+    private readonly CancellationTokenSource _cts = new();
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+        _state.Dispose();
+    }
 
     protected override void OnInitialized() =>
         _columns =
@@ -103,7 +110,7 @@
         _testing = true;
         try
         {
-            if ((await Api.SendTestAsync(Id)).Report(Snackbar, "A test event was queued. It appears in the log below.") && _deliveries is not null)
+            if ((await Api.SendTestAsync(Id, _cts.Token)).Report(Snackbar, "A test event was queued. It appears in the log below.") && _deliveries is not null)
             {
                 await _deliveries.ReloadAsync();
             }
@@ -123,22 +130,20 @@
             return;
         }
 
-        var result = await Api.RotateSecretAsync(Id);
+        var result = await Api.RotateSecretAsync(Id, _cts.Token);
         if (!result.IsSuccess)
         {
             Snackbar.Error(result.Error!);
             return;
         }
 
-        var secret = result.Value.Secret;
-        await Dialogs.RevealSecretAsync("Your new signing secret", secret,
+        await Dialogs.RevealSecretAsync("Your new signing secret", result.Value.Secret,
             "Use this secret to check that events really come from NexaVerify. Copy it now: it is shown only once and cannot be shown again.");
-        secret = null;
     }
 
     private async Task RetryAsync(WebhookEndpointDto hook, WebhookDeliveryDto delivery)
     {
-        if ((await Api.RetryAsync(hook.Id, delivery.Id)).Report(Snackbar, "We will try this delivery again shortly.") && _deliveries is not null)
+        if ((await Api.RetryAsync(hook.Id, delivery.Id, _cts.Token)).Report(Snackbar, "We will try this delivery again shortly.") && _deliveries is not null)
         {
             await _deliveries.ReloadAsync();
         }

@@ -150,7 +150,7 @@
                 Settle(image);
                 _result = result.Value;
                 Snackbar.Success(result.Value.ProfileCreated ? "The person was registered." : "The photo was added.");
-                var profile = await Api.GetProfileAsync(result.Value.ProfileId);
+                var profile = await Api.GetProfileAsync(result.Value.ProfileId, _cts.Token);
                 _templateCount = profile.IsSuccess ? profile.Value.TemplateCount : null;
                 _form.ExternalRef = string.Empty;
                 _form.DisplayName = null;

@@ -1,4 +1,5 @@
 @page "/client/users"
+@implements IDisposable
 @attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.UsersManage)]
 @inject IClientAccountApiClient Api
 @inject IDialogService Dialogs
@@ -27,6 +28,14 @@
 </MudPaper>
 
 @code {
+    private readonly CancellationTokenSource _cts = new();
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+
     private DataTable<ClientUserDto>? _table;
     private IReadOnlyList<DataColumn<ClientUserDto>> _columns = [];
 
@@ -53,7 +62,7 @@
     {
         var saved = await Dialogs.ShowFormAsync(
             "Invite someone", new InviteUserForm(), m => @<ClientUserFields Model="m" />,
-            async m => (await Api.CreateUserAsync(m.ToCreate())).ToFormError(),
+            async m => (await Api.CreateUserAsync(m.ToCreate(), _cts.Token)).ToFormError(),
             "Send invitation");
         if (saved is not null)
         {
@@ -66,7 +75,7 @@
     {
         var saved = await Dialogs.ShowFormAsync(
             "Edit person", InviteUserForm.From(user), m => @<ClientUserFields Model="m" />,
-            async m => (await Api.UpdateUserAsync(user.Id, m.ToUpdate())).ToFormError(),
+            async m => (await Api.UpdateUserAsync(user.Id, m.ToUpdate(), _cts.Token)).ToFormError(),
             "Save changes");
         if (saved is not null)
         {
@@ -89,7 +98,7 @@
 
         var form = InviteUserForm.From(user);
         form.IsActive = !turnOff;
-        if ((await Api.UpdateUserAsync(user.Id, form.ToUpdate())).Report(Snackbar, turnOff ? "Access was turned off." : "Access was restored."))
+        if ((await Api.UpdateUserAsync(user.Id, form.ToUpdate(), _cts.Token)).Report(Snackbar, turnOff ? "Access was turned off." : "Access was restored."))
         {
             await ReloadAsync();
         }
@@ -101,7 +110,7 @@
             $"Reset the password for {user.FullName}?", "We email them a link to choose a new password. Their current password stops working.", "Send reset email");
         if (confirmed is not null)
         {
-            (await Api.ResetUserPasswordAsync(user.Id)).Report(Snackbar, "We sent a password reset email.");
+            (await Api.ResetUserPasswordAsync(user.Id, _cts.Token)).Report(Snackbar, "We sent a password reset email.");
         }
     }
 

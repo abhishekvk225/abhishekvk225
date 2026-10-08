@@ -60,6 +60,56 @@ public static class DialogExtensions
         await dialog.Result;
     }
 
+    /// <summary>
+    /// "Submit a form, then show the one-time secret the API returned" (API keys, webhook secrets). The secret lives only in a local
+    /// variable between the API response and the reveal dialog, and is cleared as soon as the dialog closes. Returns true when saved.
+    /// </summary>
+    public static async Task<bool> ShowSecretFormAsync<TModel, TResult>(
+        this IDialogService dialogs,
+        string title,
+        TModel model,
+        RenderFragment<TModel> fields,
+        Func<TModel, Task<ApiResult<TResult>>> submit,
+        Func<TResult, string?> secretOf,
+        string revealTitle,
+        string revealDescription,
+        string submitText)
+        where TModel : class
+    {
+        string? secret = null;
+        var saved = await dialogs.ShowFormAsync(
+            title, model, fields,
+            async m =>
+            {
+                var result = await submit(m);
+                if (result.IsSuccess)
+                {
+                    secret = secretOf(result.Value);
+                }
+
+                return result.ToFormError();
+            },
+            submitText);
+        try
+        {
+            if (saved is null)
+            {
+                return false;
+            }
+
+            if (secret is not null)
+            {
+                await dialogs.RevealSecretAsync(revealTitle, secret, revealDescription);
+            }
+
+            return true;
+        }
+        finally
+        {
+            secret = null;
+        }
+    }
+
     /// <summary>Shows a model form. Returns the (valid, submitted) model, or null when cancelled.</summary>
     public static async Task<T?> ShowFormAsync<T>(
         this IDialogService dialogs,

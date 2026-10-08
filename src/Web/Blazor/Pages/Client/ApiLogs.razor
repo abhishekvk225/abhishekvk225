@@ -1,4 +1,5 @@
 @page "/client/api-logs"
+@implements IDisposable
 @* The API guards this endpoint with apikeys.read (not apilogs.read), so the page asks for the same permission the API enforces. *@
 @attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.ApiKeysRead)]
 @inject IApiKeysApiClient Api
@@ -40,6 +41,14 @@
 </MudGrid>
 
 @code {
+    private readonly CancellationTokenSource _cts = new();
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+
     private sealed record Applied(Guid? KeyId, string? StatusClass, DateTime? From, DateTime? To);
 
     private IReadOnlyList<DataColumn<ApiRequestLogDto>> _columns = [];
@@ -69,7 +78,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var keys = await Api.ListAsync();
+        var keys = await Api.ListAsync(_cts.Token);
         _keys = keys.IsSuccess ? keys.Value : [];
         if (KeyIdFromQuery is { } fromQuery)
         {

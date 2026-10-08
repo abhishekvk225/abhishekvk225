@@ -69,7 +69,14 @@
 
     [Parameter] public Guid Id { get; set; }
 
-    public void Dispose() => _state.Dispose();
+    private readonly CancellationTokenSource _cts = new();
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+        _state.Dispose();
+    }
 
     protected override Task OnParametersSetAsync()
     {
@@ -116,7 +123,7 @@
             return;
         }
 
-        if ((await Api.EraseProfileAsync(person.Id)).Report(Snackbar, "The person was erased."))
+        if ((await Api.EraseProfileAsync(person.Id, _cts.Token)).Report(Snackbar, "The person was erased."))
         {
             Nav.NavigateTo("client/profiles");
         }
@@ -126,7 +133,7 @@
     {
         var confirmed = await Dialogs.ConfirmAsync(
             "Remove this photo?", "The photo's face data is deleted. The person stays registered with their other photos.", "Remove photo", destructive: true);
-        if (confirmed is not null && (await Api.EraseTemplateAsync(person.Id, template.Id)).Report(Snackbar, "The photo was removed."))
+        if (confirmed is not null && (await Api.EraseTemplateAsync(person.Id, template.Id, _cts.Token)).Report(Snackbar, "The photo was removed."))
         {
             await LoadAsync();
         }

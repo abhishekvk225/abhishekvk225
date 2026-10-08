@@ -1,4 +1,5 @@
 @page "/client/notifications"
+@implements IDisposable
 @attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.NotificationsRead)]
 @inject INotificationsApiClient Api
 @inject NotificationState State
@@ -25,6 +26,14 @@
 </MudPaper>
 
 @code {
+    private readonly CancellationTokenSource _cts = new();
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+
     private DataTable<NotificationDto>? _table;
     private IReadOnlyList<DataColumn<NotificationDto>> _columns = [];
     private bool _unreadOnly;
@@ -54,7 +63,7 @@
 
     private async Task MarkReadAsync(NotificationDto item)
     {
-        var result = await Api.MarkReadAsync(item.Id);
+        var result = await Api.MarkReadAsync(item.Id, _cts.Token);
         if (result.Report(Snackbar, "Marked as read."))
         {
             State.NotifyRead(); // the bell reloads its list and count

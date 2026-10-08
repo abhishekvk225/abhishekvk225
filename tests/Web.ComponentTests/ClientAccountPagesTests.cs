@@ -58,9 +58,10 @@ public class NotificationsTests : ClientPageTestBase
         cut.WaitForAssertion(() => Notifications.Calls.ShouldBe(2));
         cut.WaitForAssertion(() => cut.Markup.ShouldContain("Notifications, 7 unread"));
 
+        var loop = cut.Instance.PollLoop;
         await ((IAsyncDisposable)cut.Instance).DisposeAsync();
         Clock.Advance(TimeSpan.FromMinutes(5));
-        Thread.Sleep(100);
+        await loop!.WaitAsync(TimeSpan.FromSeconds(5));
         Notifications.Calls.ShouldBe(2, "polling stops with the component");
     }
 

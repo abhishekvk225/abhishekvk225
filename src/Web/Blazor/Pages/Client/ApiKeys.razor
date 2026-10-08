@@ -1,4 +1,5 @@
 @page "/client/api-keys"
+@implements IDisposable
 @attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.ApiKeysRead)]
 @inject IApiKeysApiClient Api
 @inject IDialogService Dialogs
@@ -33,6 +34,14 @@
 </MudPaper>
 
 @code {
+    private readonly CancellationTokenSource _cts = new();
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+
     private DataTable<ApiKeyDto>? _table;
     private IReadOnlyList<DataColumn<ApiKeyDto>> _columns = [];
     private Dictionary<Guid, TopApiKeyDto> _usage = [];
@@ -54,7 +63,7 @@
         var keys = await Api.ListAsync(ct);
         if (keys.IsSuccess)
         {
-            var usage = await Api.GetKeyUsageAsync(30); // optional: a user without dashboard access just sees 0
+            var usage = await Api.GetKeyUsageAsync(30, ct); // optional: a user without dashboard access just sees 0
             _usage = usage.IsSuccess ? usage.Value.ToDictionary(u => u.ApiKeyId) : [];
         }
 
@@ -63,7 +72,7 @@
 
     private async Task<IReadOnlyList<ApiScopeDto>?> LoadScopesAsync()
     {
-        var scopes = await Api.ScopesAsync();
+        var scopes = await Api.ScopesAsync(_cts.Token);
         if (!scopes.IsSuccess)
         {
             Snackbar.Error(scopes.Error!);
@@ -81,24 +90,13 @@
             return;
         }
 
-        string? raw = null;
-        var saved = await Dialogs.ShowFormAsync(
+        var saved = await Dialogs.ShowSecretFormAsync(
             "Create an API key", new ApiKeyForm(), m => @<ApiKeyFields Model="m" Scopes="scopes" />,
-            async m =>
-            {
-                var result = await Api.CreateAsync(m.ToCreate());
-                if (result.IsSuccess)
-                {
-                    raw = result.Value.RawKey;
-                }
-
-                return result.ToFormError();
-            },
+            m => Api.CreateAsync(m.ToCreate(), _cts.Token), r => r.RawKey,
+            "Your new API key", "Copy this key now and keep it somewhere safe. For your security it is shown only once and cannot be shown again.",
             "Create key");
-        if (saved is not null)
+        if (saved)
         {
-            await RevealAsync("Your new API key", raw, "Copy this key now and keep it somewhere safe. For your security it is shown only once and cannot be shown again.");
-            raw = null;
             await ReloadAsync();
         }
     }
@@ -112,7 +110,7 @@
 
         var saved = await Dialogs.ShowFormAsync(
             "Edit API key", ApiKeyForm.From(key), m => @<ApiKeyFields Model="m" Scopes="scopes" />,
-            async m => (await Api.UpdateAsync(key.Id, m.ToUpdate())).ToFormError(),
+            async m => (await Api.UpdateAsync(key.Id, m.ToUpdate(), _cts.Token)).ToFormError(),
             "Save changes");
         if (saved is not null)
         {
@@ -123,29 +121,18 @@
 
     private async Task RegenerateAsync(ApiKeyDto key)
     {
-        string? raw = null;
-        var saved = await Dialogs.ShowFormAsync(
+        var saved = await Dialogs.ShowSecretFormAsync(
             $"Replace {key.Name}", new RegenerateKeyForm(),
             m => @<div class="nv-form">
                 <MudText Typo="Typo.body2">We create a new key with the same settings. The old key keeps working for the time below, so you can update your software without a break.</MudText>
                 <MudNumericField T="int" @bind-Value="m.GraceMinutes" For="() => m.GraceMinutes" Label="Keep the old key working for (minutes)" Variant="Variant.Outlined" Min="0" Max="10080"
                                  HelperText="0 stops the old key straight away. The most is 10,080 (7 days)." />
             </div>,
-            async m =>
-            {
-                var result = await Api.RegenerateAsync(key.Id, m.GraceMinutes);
-                if (result.IsSuccess)
-                {
-                    raw = result.Value.RawKey;
-                }
-
-                return result.ToFormError();
-            },
+            m => Api.RegenerateAsync(key.Id, m.GraceMinutes, _cts.Token), r => r.RawKey,
+            "Your replacement API key", "Copy this key now and keep it somewhere safe. It is shown only once.",
             "Create replacement");
-        if (saved is not null)
+        if (saved)
         {
-            await RevealAsync("Your replacement API key", raw, "Copy this key now and keep it somewhere safe. It is shown only once.");
-            raw = null;
             await ReloadAsync();
         }
     }
@@ -154,17 +141,9 @@
     {
         var confirmed = await Dialogs.ConfirmAsync(
             $"Revoke {key.Name}?", "Software using this key stops working straight away. This cannot be undone.", "Revoke key", destructive: true, requireReason: true);
-        if (confirmed is not null && (await Api.RevokeAsync(key.Id, confirmed.Reason ?? string.Empty)).Report(Snackbar, "The key was revoked."))
+        if (confirmed is not null && (await Api.RevokeAsync(key.Id, confirmed.Reason ?? string.Empty, _cts.Token)).Report(Snackbar, "The key was revoked."))
         {
             await ReloadAsync();
-        }
-    }
-
-    private async Task RevealAsync(string title, string? raw, string description)
-    {
-        if (raw is not null)
-        {
-            await Dialogs.RevealSecretAsync(title, raw, description);
         }
     }
 

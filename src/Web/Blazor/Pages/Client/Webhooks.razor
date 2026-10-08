@@ -1,4 +1,5 @@
 @page "/client/webhooks"
+@implements IDisposable
 @attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.WebhooksManage)]
 @inject IWebhooksApiClient Api
 @inject IDialogService Dialogs
@@ -26,6 +27,16 @@
 </MudPaper>
 
 @code {
+    private readonly CancellationTokenSource _cts = new();
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+
+    private const string RevealText = "Use this secret to check that events really come from NexaVerify. Copy it now: it is shown only once and cannot be shown again.";
+
     private DataTable<WebhookEndpointDto>? _table;
     private IReadOnlyList<DataColumn<WebhookEndpointDto>> _columns = [];
     private IReadOnlyList<WebhookEventDto>? _events;
@@ -51,7 +62,7 @@
             return _events;
         }
 
-        var events = await Api.EventsAsync();
+        var events = await Api.EventsAsync(_cts.Token);
         if (!events.IsSuccess)
         {
             Snackbar.Error(events.Error!);
@@ -68,24 +79,13 @@
             return;
         }
 
-        string? secret = null;
-        var saved = await Dialogs.ShowFormAsync(
+        var saved = await Dialogs.ShowSecretFormAsync(
             "Add a webhook endpoint", new WebhookForm(), m => @<WebhookFields Model="m" Events="events" />,
-            async m =>
-            {
-                var result = await Api.CreateAsync(m.ToCreate());
-                if (result.IsSuccess)
-                {
-                    secret = result.Value.Secret;
-                }
-
-                return result.ToFormError();
-            },
+            m => Api.CreateAsync(m.ToCreate(), _cts.Token), r => r.Secret,
+            "Your webhook signing secret", RevealText,
             "Add endpoint");
-        if (saved is not null)
+        if (saved)
         {
-            await RevealAsync(secret);
-            secret = null;
             await ReloadAsync();
         }
     }
@@ -99,7 +99,7 @@
 
         var saved = await Dialogs.ShowFormAsync(
             "Edit webhook endpoint", WebhookForm.From(hook), m => @<WebhookFields Model="m" Events="events" ShowEnabled="true" />,
-            async m => (await Api.UpdateAsync(hook.Id, m.ToUpdate())).ToFormError(),
+            async m => (await Api.UpdateAsync(hook.Id, m.ToUpdate(), _cts.Token)).ToFormError(),
             "Save changes");
         if (saved is not null)
         {
@@ -112,7 +112,7 @@
     {
         var form = WebhookForm.From(hook);
         form.Enabled = !IsOn(hook);
-        if ((await Api.UpdateAsync(hook.Id, form.ToUpdate())).Report(Snackbar, form.Enabled ? "The endpoint is on." : "The endpoint is off."))
+        if ((await Api.UpdateAsync(hook.Id, form.ToUpdate(), _cts.Token)).Report(Snackbar, form.Enabled ? "The endpoint is on." : "The endpoint is off."))
         {
             await ReloadAsync();
         }
@@ -122,18 +122,9 @@
     {
         var confirmed = await Dialogs.ConfirmAsync(
             $"Delete {hook.Name}?", "Events stop being sent to this address and its delivery history is removed. This cannot be undone.", "Delete endpoint", destructive: true);
-        if (confirmed is not null && (await Api.DeleteAsync(hook.Id)).Report(Snackbar, "The endpoint was deleted."))
+        if (confirmed is not null && (await Api.DeleteAsync(hook.Id, _cts.Token)).Report(Snackbar, "The endpoint was deleted."))
         {
             await ReloadAsync();
-        }
-    }
-
-    private async Task RevealAsync(string? secret)
-    {
-        if (secret is not null)
-        {
-            await Dialogs.RevealSecretAsync("Your signing secret", secret,
-                "Use this secret to check that events really come from NexaVerify. Copy it now: it is shown only once and cannot be shown again.");
         }
     }
 

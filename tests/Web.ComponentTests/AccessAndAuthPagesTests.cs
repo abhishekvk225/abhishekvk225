@@ -347,6 +347,7 @@ public class UserMenuTests : PageTestBase
         popovers.FindAll(".mud-menu-item,.mud-list-item").First(i => i.TextContent.Contains("Sign out")).Click();
 
         var nav = (Bunit.TestDoubles.BunitNavigationManager)Services.GetRequiredService<NavigationManager>();
+        popovers.WaitForAssertion(() => nav.History.Count.ShouldBeGreaterThan(0));
         nav.History.First().Uri.ShouldBe("/auth/signed-out");
         nav.History.First().Options.ForceLoad.ShouldBeTrue();
         User.IsSignedIn.ShouldBeFalse();
