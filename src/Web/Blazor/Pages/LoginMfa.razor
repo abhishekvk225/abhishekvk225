@@ -1,0 +1,58 @@
+@page "/login/mfa"
+@layout AuthLayout
+@using Microsoft.Extensions.Options
+@using NexaVerify.Web.Security
+@inject NavigationManager Nav
+@inject IOptions<CookieSecurityOptions> Cookies
+
+<PageTitle>Two-step verification · NexaVerify</PageTitle>
+
+@* Second step of sign-in. A plain static form posting to /auth/mfa (antiforgery-protected): the API's challenge token is parked on the
+   server and only an opaque cookie reaches the browser, so nothing on this page can reveal or replay it. *@
+<h1 class="mud-typography mud-typography-h2">Two-step verification</h1>
+<p class="mud-typography mud-typography-body1 nv-muted nv-form-lead">
+    Open your authenticator app and enter the 6-digit code for NexaVerify. Lost your phone? Enter one of your recovery codes instead.
+</p>
+
+@if (!string.IsNullOrEmpty(Message))
+{
+    <div class="nv-alert nv-alert-error" role="alert" data-testid="mfa-error"><span>@Message</span></div>
+}
+
+<form method="post" action="/auth/mfa" class="nv-form" novalidate data-testid="mfa-form">
+    <AntiforgeryToken />
+    <div class="nv-field">
+        <label for="mfa-code" class="nv-label">Verification code</label>
+        <input id="mfa-code" name="code" type="text" inputmode="text" class="nv-input" autocomplete="one-time-code" required maxlength="32" autofocus
+               autocapitalize="characters" spellcheck="false" />
+    </div>
+
+    <button type="submit" class="nv-btn nv-btn-primary" data-testid="mfa-submit">Verify and sign in</button>
+</form>
+
+<div class="nv-form-row">
+    <a href="/login" class="nv-link" data-testid="mfa-back">Back to sign in</a>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "error")] public string? Error { get; set; }
+
+    [CascadingParameter] private HttpContext? Http { get; set; }
+
+    private string? Message => Error switch
+    {
+        LoginErrors.MfaInvalid => LoginErrors.MessageFor(LoginErrors.MfaInvalid),
+        LoginErrors.Throttled => LoginErrors.MessageFor(LoginErrors.Throttled),
+        LoginErrors.Unavailable => LoginErrors.MessageFor(LoginErrors.Unavailable),
+        _ => null,
+    };
+
+    protected override void OnInitialized()
+    {
+        // Nothing parked for this browser (cookie missing): there is no second step to take.
+        if (Http is not null && !Http.Request.Cookies.ContainsKey(AuthEndpoints.MfaCookieName(Cookies.Value.RequireSecure)))
+        {
+            Nav.NavigateTo("/login?error=" + LoginErrors.MfaExpired);
+        }
+    }
+}

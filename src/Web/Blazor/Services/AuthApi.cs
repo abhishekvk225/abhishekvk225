@@ -61,6 +61,13 @@ public sealed class ChangePasswordModel
     public string ConfirmPassword { get; set; } = string.Empty;
 }
 
+public sealed class MfaCodeModel
+{
+    [Required(ErrorMessage = "Enter the 6-digit code from your authenticator app.")]
+    [StringLength(8, MinimumLength = 6, ErrorMessage = "Enter the 6-digit code from your authenticator app.")]
+    public string Code { get; set; } = string.Empty;
+}
+
 /// <summary>
 /// Typed client for <c>/api/v1/auth</c> (docs/03 section 2). Login-style calls are anonymous or carry an explicit token;
 /// everything else rides on the session through <see cref="IApiGateway"/>.
@@ -80,4 +87,13 @@ public interface IAuthApiClient
 
     /// <summary>Changes the password for the given session; the API answers with a fresh token pair.</summary>
     Task<ApiResult<LoginResponse>> ChangePasswordAsync(string sessionId, ChangePasswordRequest request, CancellationToken ct = default);
+
+    /// <summary>Second sign-in step: the challenge the API issued after the password, plus an authenticator or recovery code.</summary>
+    Task<ApiResult<LoginResponse>> VerifyMfaAsync(VerifyMfaRequest request, CancellationToken ct = default, string? clientIp = null);
+
+    /// <summary>Starts two-factor enrolment for the session's user; the secret is returned once.</summary>
+    Task<ApiResult<MfaEnrolmentDto>> BeginMfaEnrolmentAsync(string sessionId, CancellationToken ct = default);
+
+    /// <summary>Confirms enrolment with a code; the API answers with the one-time recovery codes and a fresh session.</summary>
+    Task<ApiResult<MfaEnabledDto>> ConfirmMfaEnrolmentAsync(string sessionId, ConfirmMfaRequest request, CancellationToken ct = default);
 }

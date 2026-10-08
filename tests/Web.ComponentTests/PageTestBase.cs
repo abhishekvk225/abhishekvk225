@@ -157,10 +157,12 @@ public sealed class FakeLicensingApi : ILicensingApiClient
         return Task.FromResult(ApiResult<LicenseDto>.Ok(License()));
     }
 
-    public Task<ApiResult<LicenseDto>> AdjustAsync(Guid id, AdjustLicenseRequest request, CancellationToken ct = default)
+    public Func<AdjustLicenseRequest, AdjustOutcome>? AdjustOutcomeFor { get; set; }
+
+    public Task<ApiResult<AdjustOutcome>> AdjustAsync(Guid id, AdjustLicenseRequest request, CancellationToken ct = default)
     {
         Calls.Add($"adjust:{request.Credits}:{request.Reason}");
-        return Task.FromResult(ApiResult<LicenseDto>.Ok(License()));
+        return Task.FromResult(ApiResult<AdjustOutcome>.Ok(AdjustOutcomeFor?.Invoke(request) ?? new AdjustOutcome(License(), null)));
     }
 
     public Task<ApiResult<PagedResult<LicenseTransactionDto>>> GetTransactionsAsync(Guid id, PageRequest page, CancellationToken ct = default) =>

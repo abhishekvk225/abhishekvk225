@@ -180,6 +180,14 @@ public class AuthPagesTests : PageTestBase
 
         public Task<ApiResult<PortalSession>> SignInAsync(string email, string password, CancellationToken ct = default, string? clientIp = null) => throw new NotSupportedException();
 
+        public Task<ApiResult<SignInStep>> BeginSignInAsync(string email, string password, CancellationToken ct = default, string? clientIp = null) => throw new NotSupportedException();
+
+        public Task<ApiResult<PortalSession>> CompleteMfaSignInAsync(MfaPending pending, string code, CancellationToken ct = default) => throw new NotSupportedException();
+
+        public Task<ApiResult<NexaVerify.Contracts.Identity.MfaEnrolmentDto>> BeginMfaEnrolmentAsync(string sessionId, CancellationToken ct = default) => throw new NotSupportedException();
+
+        public Task<ApiResult<IReadOnlyList<string>>> ConfirmMfaEnrolmentAsync(string sessionId, string code, CancellationToken ct = default) => throw new NotSupportedException();
+
         public Task<ApiResult<bool>> ChangePasswordAsync(string sessionId, ChangePasswordModel model, CancellationToken ct = default)
         {
             Changes.Add(model);

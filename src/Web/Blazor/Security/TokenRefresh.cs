@@ -152,6 +152,7 @@ public sealed class TokenRefreshCoordinator(
                 AccessTokenExpiresAt = clock.GetUtcNow().AddSeconds(tokens.ExpiresIn),
                 RefreshToken = tokens.RefreshToken,
                 MustChangePassword = tokens.MustChangePassword,
+                MfaEnrolmentRequired = tokens.MfaEnrolmentRequired,
             }, CancellationToken.None);
             if (updated is null)
             {

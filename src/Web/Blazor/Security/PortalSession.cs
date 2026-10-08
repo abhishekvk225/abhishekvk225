@@ -35,6 +35,9 @@ public sealed record PortalSession
 
     public bool MustChangePassword { get; init; }
 
+    /// <summary>The account must set up two-factor authentication before it may do anything else (the API issued an enrolment-only token).</summary>
+    public bool MfaEnrolmentRequired { get; init; }
+
     /// <summary>The address the person signed in from (forwarded to the API on refresh so limits apply to them, not the portal).</summary>
     public string? ClientIp { get; init; }
 
@@ -66,6 +69,7 @@ public static class PortalClaims
     public const string Permission = "nv:perm";
     public const string ClientName = "nv:client-name";
     public const string MustChangePassword = "nv:mcp";
+    public const string MfaEnrolmentRequired = "nv:mfa";
     public const string DisplayName = "nv:display-name";
     public const string RoleName = "nv:role";
 }

@@ -49,6 +49,7 @@ public static class PortalServiceExtensions
 
         services.AddDistributedMemoryCache();
         services.AddSingleton<ISessionStore, DistributedSessionStore>();
+        services.AddSingleton<IMfaPendingStore, DistributedMfaPendingStore>();
         services.AddSingleton<IRefreshTokenExchange, HttpRefreshTokenExchange>();
         services.AddSingleton<TokenRefreshCoordinator>();
         services.AddTransient<SessionBearerHandler>(); // stateless: every dependency is a singleton, so handler lifetime does not matter

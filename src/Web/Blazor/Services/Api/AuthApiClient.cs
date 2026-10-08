@@ -22,4 +22,13 @@ public sealed class AuthApiClient(IApiGateway api) : IAuthApiClient
 
     public Task<ApiResult<LoginResponse>> ChangePasswordAsync(string sessionId, ChangePasswordRequest request, CancellationToken ct = default) =>
         api.SendAsync<LoginResponse>(HttpMethod.Post, "auth/change-password", request, ct, new ApiCallOptions { SessionId = sessionId });
+
+    public Task<ApiResult<LoginResponse>> VerifyMfaAsync(VerifyMfaRequest request, CancellationToken ct = default, string? clientIp = null) =>
+        api.SendAsync<LoginResponse>(HttpMethod.Post, "auth/mfa/verify", request, ct, ApiCallOptions.None with { ClientIp = clientIp });
+
+    public Task<ApiResult<MfaEnrolmentDto>> BeginMfaEnrolmentAsync(string sessionId, CancellationToken ct = default) =>
+        api.SendAsync<MfaEnrolmentDto>(HttpMethod.Post, "auth/mfa/enroll", null, ct, new ApiCallOptions { SessionId = sessionId });
+
+    public Task<ApiResult<MfaEnabledDto>> ConfirmMfaEnrolmentAsync(string sessionId, ConfirmMfaRequest request, CancellationToken ct = default) =>
+        api.SendAsync<MfaEnabledDto>(HttpMethod.Post, "auth/mfa/enroll/confirm", request, ct, new ApiCallOptions { SessionId = sessionId });
 }

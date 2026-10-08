@@ -1,3 +1,4 @@
+using System.Text.Json;
 using NexaVerify.Contracts.Common;
 using NexaVerify.Contracts.Identity;
 using NexaVerify.Contracts.Licensing;
@@ -95,6 +96,9 @@ public sealed class ClientsApiClient(IApiGateway api) : IClientsApiClient
         ApiQuery.With(path, ("page", q.Page), ("pageSize", q.PageSize), ("from", q.From?.ToString("O")), ("to", q.To?.ToString("O")), ("action", q.Action), ("outcome", q.Outcome));
 }
 
+/// <summary>What an adjustment request produced: the changed license, or (above the per-action cap) a request waiting for a second approver.</summary>
+public sealed record AdjustOutcome(LicenseDto? License, AdjustmentRequestDto? Pending);
+
 /// <summary>Licenses, plans, cost rules and ledger tools (<c>/admin/licenses</c>, <c>/admin/plans</c>, <c>/admin/cost-rules</c>).</summary>
 public interface ILicensingApiClient
 {
@@ -116,7 +120,8 @@ public interface ILicensingApiClient
 
     Task<ApiResult<LicenseDto>> RenewAsync(Guid id, RenewLicenseRequest request, CancellationToken ct = default);
 
-    Task<ApiResult<LicenseDto>> AdjustAsync(Guid id, AdjustLicenseRequest request, CancellationToken ct = default);
+    /// <summary>Applies the adjustment, or — above the platform's per-action cap — files it for a second person to approve (see <see cref="AdjustOutcome.Pending"/>).</summary>
+    Task<ApiResult<AdjustOutcome>> AdjustAsync(Guid id, AdjustLicenseRequest request, CancellationToken ct = default);
 
     Task<ApiResult<PagedResult<LicenseTransactionDto>>> GetTransactionsAsync(Guid id, PageRequest page, CancellationToken ct = default);
 
@@ -124,6 +129,7 @@ public interface ILicensingApiClient
 
     Task<ApiResult<LedgerVerificationDto>> VerifyLedgerAsync(Guid id, CancellationToken ct = default);
 
+    /// <summary>Starts the platform-wide ledger check (the API answers at once) and waits for its result by polling the run.</summary>
     Task<ApiResult<LedgerVerificationReportDto>> VerifyAllLedgersAsync(CancellationToken ct = default);
 
     Task<ApiResult<IReadOnlyList<PlanDto>>> ListPlansAsync(CancellationToken ct = default);
@@ -172,8 +178,23 @@ public sealed class LicensingApiClient(IApiGateway api) : ILicensingApiClient
     public Task<ApiResult<LicenseDto>> RenewAsync(Guid id, RenewLicenseRequest request, CancellationToken ct = default) =>
         api.SendAsync<LicenseDto>(HttpMethod.Post, $"admin/licenses/{id}/renew", request, ct);
 
-    public Task<ApiResult<LicenseDto>> AdjustAsync(Guid id, AdjustLicenseRequest request, CancellationToken ct = default) =>
-        api.SendAsync<LicenseDto>(HttpMethod.Post, $"admin/licenses/{id}/adjust", request, ct);
+    public async Task<ApiResult<AdjustOutcome>> AdjustAsync(Guid id, AdjustLicenseRequest request, CancellationToken ct = default)
+    {
+        // 200 carries the license, 202 the pending request: tell them apart by what the body is.
+        var result = await api.SendAsync<System.Text.Json.JsonElement>(HttpMethod.Post, $"admin/licenses/{id}/adjust", request, ct);
+        if (!result.IsSuccess)
+        {
+            return ApiResult<AdjustOutcome>.Fail(result.Error!);
+        }
+
+        var body = result.Value;
+        if (body.ValueKind == System.Text.Json.JsonValueKind.Object && body.TryGetProperty("requestedBy", out _))
+        {
+            return ApiResult<AdjustOutcome>.Ok(new AdjustOutcome(null, body.Deserialize<AdjustmentRequestDto>(ApiGateway.Json)));
+        }
+
+        return ApiResult<AdjustOutcome>.Ok(new AdjustOutcome(body.Deserialize<LicenseDto>(ApiGateway.Json), null));
+    }
 
     public Task<ApiResult<PagedResult<LicenseTransactionDto>>> GetTransactionsAsync(Guid id, PageRequest page, CancellationToken ct = default) =>
         api.GetAsync<PagedResult<LicenseTransactionDto>>(ApiQuery.With($"admin/licenses/{id}/transactions", ("page", page.Page), ("pageSize", page.PageSize), ("sort", page.Sort)), ct);
@@ -184,8 +205,35 @@ public sealed class LicensingApiClient(IApiGateway api) : ILicensingApiClient
     public Task<ApiResult<LedgerVerificationDto>> VerifyLedgerAsync(Guid id, CancellationToken ct = default) =>
         api.GetAsync<LedgerVerificationDto>($"admin/licenses/{id}/verify-ledger", ct);
 
-    public Task<ApiResult<LedgerVerificationReportDto>> VerifyAllLedgersAsync(CancellationToken ct = default) =>
-        api.SendAsync<LedgerVerificationReportDto>(HttpMethod.Post, "admin/licensing/verify-ledger", null, ct, new ApiCallOptions { LongRunning = true });
+    /// <summary>How often a running ledger check is asked for its progress.</summary>
+    internal static TimeSpan LedgerPollInterval { get; set; } = TimeSpan.FromSeconds(2);
+
+    public async Task<ApiResult<LedgerVerificationReportDto>> VerifyAllLedgersAsync(CancellationToken ct = default)
+    {
+        var started = await api.SendAsync<LedgerRunDto>(HttpMethod.Post, "admin/licensing/verify-ledger", null, ct);
+        if (!started.IsSuccess)
+        {
+            return ApiResult<LedgerVerificationReportDto>.Fail(started.Error!);
+        }
+
+        var run = started.Value;
+        while (run.Status == "Running")
+        {
+            await Task.Delay(LedgerPollInterval, ct);
+            var next = await api.GetAsync<LedgerRunDto>($"admin/licensing/verify-ledger/runs/{run.Id}", ct);
+            if (!next.IsSuccess)
+            {
+                return ApiResult<LedgerVerificationReportDto>.Fail(next.Error!);
+            }
+
+            run = next.Value;
+        }
+
+        return run.Status == "Completed"
+            ? ApiResult<LedgerVerificationReportDto>.Ok(new LedgerVerificationReportDto(
+                run.StartedAt, run.FinishedAt ?? run.StartedAt, run.LicensesChecked, run.EntriesChecked, run.BrokenLicenses, run.Breaks))
+            : ApiResult<LedgerVerificationReportDto>.Fail("LEDGER_CHECK_FAILED", run.Error ?? "The check could not be completed. Please try again.", null, 500);
+    }
 
     public Task<ApiResult<IReadOnlyList<PlanDto>>> ListPlansAsync(CancellationToken ct = default) =>
         api.GetAsync<IReadOnlyList<PlanDto>>("admin/plans", ct);

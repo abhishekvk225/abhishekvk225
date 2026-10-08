@@ -1,0 +1,174 @@
+@page "/mfa/enroll"
+@layout AuthLayout
+@using NexaVerify.Web.Security
+@using NexaVerify.Contracts.Identity
+@using Microsoft.AspNetCore.Components.Authorization
+@attribute [Authorize(Policy = Policies.SignedIn)]
+@inject IPortalAuth PortalAuth
+@inject ICurrentSession Session
+@inject NavigationManager Nav
+@inject IDialogService Dialogs
+@inject IAppSnackbar Snackbar
+
+<PageTitle>Set up two-step verification · NexaVerify</PageTitle>
+
+<MudText Typo="Typo.h2" HtmlTag="h1">@(_required ? "Set up two-step verification" : "Two-step verification")</MudText>
+<MudText Typo="Typo.body1" Class="nv-muted mb-5">
+    @(_required
+        ? "Your account needs a second sign-in step before you continue. It takes a minute and uses an authenticator app on your phone."
+        : "Add a second sign-in step with an authenticator app on your phone.")
+</MudText>
+
+@if (_error is not null)
+{
+    <MudAlert Severity="Severity.Error" Dense="true" Class="mb-4" role="alert" data-testid="mfa-enroll-error">
+        @_error.Message
+        @if (!string.IsNullOrWhiteSpace(_error.CorrelationId))
+        {
+            <MudText Typo="Typo.caption" Class="d-block">Reference: @_error.CorrelationId</MudText>
+        }
+    </MudAlert>
+}
+
+@if (_enrolment is null)
+{
+    @if (_loading)
+    {
+        <MudProgressCircular Indeterminate="true" Size="Size.Small" aria-label="Preparing" />
+    }
+    else
+    {
+        <MudButton Variant="Variant.Outlined" OnClick="StartAsync" data-testid="mfa-retry">Try again</MudButton>
+    }
+}
+else
+{
+    <ol class="nv-steps">
+        <li>Install an authenticator app (such as Microsoft Authenticator, Google Authenticator or 1Password) if you do not have one.</li>
+        <li>Scan this code with the app.</li>
+    </ol>
+    <div class="d-flex justify-center mb-3">
+        <QrSvg Value="@_enrolment.OtpauthUri" Label="QR code for your authenticator app" Pixels="200" />
+    </div>
+    <MudText Typo="Typo.body2" Class="mb-1">Cannot scan it? Enter this key in the app instead:</MudText>
+    <div class="nv-secret mb-2" data-testid="mfa-secret" tabindex="0">@Grouped(_enrolment.SecretBase32)</div>
+    <details class="mb-4">
+        <summary class="mud-typography mud-typography-caption">Setup link (advanced)</summary>
+        <div class="nv-secret mt-1" data-testid="mfa-uri">@_enrolment.OtpauthUri</div>
+    </details>
+
+    <EditForm Model="_model" OnValidSubmit="ConfirmAsync" novalidate>
+        <DataAnnotationsValidator />
+        <MudTextField T="string" @bind-Value="_model.Code" For="() => _model.Code" Label="6-digit code from the app" InputMode="InputMode.numeric"
+                      Variant="Variant.Outlined" Immediate="true" Class="mb-4" Disabled="_busy" AutoFocus="true" autocomplete="one-time-code" />
+        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Size="Size.Large" Disabled="_busy" data-testid="mfa-confirm">
+            @(_busy ? "Checking…" : "Turn on two-step verification")
+        </MudButton>
+    </EditForm>
+}
+
+@code {
+    private readonly MfaCodeModel _model = new();
+    private MfaEnrolmentDto? _enrolment;
+    private ApiError? _error;
+    private bool _busy;
+    private bool _loading = true;
+    private bool _required;
+
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is not null)
+        {
+            var user = (await AuthState).User;
+            _required = user.HasClaim(PortalClaims.MfaEnrolmentRequired, "true");
+        }
+    }
+
+    // Started after the first interactive render, not during prerendering: starting twice would create (and show) two different secrets.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await StartAsync();
+        }
+    }
+
+    private async Task StartAsync()
+    {
+        _loading = true;
+        _error = null;
+        StateHasChanged();
+        try
+        {
+            var sessionId = await Session.GetSessionIdAsync();
+            if (sessionId is null)
+            {
+                Nav.NavigateTo("/login", forceLoad: true);
+                return;
+            }
+
+            var result = await PortalAuth.BeginMfaEnrolmentAsync(sessionId);
+            if (result.IsSuccess)
+            {
+                _enrolment = result.Value;
+            }
+            else
+            {
+                _error = result.Error;
+            }
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ConfirmAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            var sessionId = await Session.GetSessionIdAsync();
+            if (sessionId is null)
+            {
+                Nav.NavigateTo("/login", forceLoad: true);
+                return;
+            }
+
+            var result = await PortalAuth.ConfirmMfaEnrolmentAsync(sessionId, _model.Code);
+            if (!result.IsSuccess)
+            {
+                _error = result.Error;
+                _model.Code = string.Empty;
+                if (result.Error!.Status == 409)
+                {
+                    _enrolment = null; // the attempt budget is used up: a new secret is needed
+                    _loading = false;
+                }
+
+                return;
+            }
+
+            // From here the secret has served its purpose; drop it so it is not rendered again.
+            _enrolment = null;
+            var codes = result.Value;
+            await Dialogs.RevealSecretAsync(
+                "Save your recovery codes",
+                string.Join('\n', codes),
+                "Each code works once if you lose your phone. Store them somewhere safe, apart from your phone and password. They cannot be shown again.");
+            Snackbar.Success("Two-step verification is on.");
+            var portal = AuthState is null ? PortalKinds.Client : (await AuthState).User.FindFirst(PortalClaims.Portal)?.Value ?? PortalKinds.Client;
+            Nav.NavigateTo(ReturnUrl.HomeFor(portal), forceLoad: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string Grouped(string secret) => string.Join(' ', Enumerable.Range(0, (secret.Length + 3) / 4).Select(i => secret.Substring(i * 4, Math.Min(4, secret.Length - (i * 4)))));
+}

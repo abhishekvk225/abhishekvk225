@@ -49,6 +49,37 @@ public sealed class FakeAuthApi : IAuthApiClient
         Calls.Add("change:" + sessionId);
         return Task.FromResult(Change);
     }
+
+    public ApiResult<LoginResponse> Verify { get; set; } = FakeExchange.Tokens("access-mfa", "refresh-mfa");
+
+    public VerifyMfaRequest? LastVerify { get; private set; }
+
+    public Task<ApiResult<LoginResponse>> VerifyMfaAsync(VerifyMfaRequest request, CancellationToken ct = default, string? clientIp = null)
+    {
+        Calls.Add("verify-mfa");
+        LastVerify = request;
+        LastClientIp = clientIp;
+        return Task.FromResult(Verify);
+    }
+
+    public ApiResult<MfaEnrolmentDto> Enrolment { get; set; } = ApiResult<MfaEnrolmentDto>.Ok(
+        new MfaEnrolmentDto("JBSWY3DPEHPK3PXP", "otpauth://totp/NexaVerify:ada%40nexaverify.test?secret=JBSWY3DPEHPK3PXP&issuer=NexaVerify&algorithm=SHA1&digits=6&period=30", "NexaVerify", "ada@nexaverify.test", "SHA1", 6, 30));
+
+    public ApiResult<MfaEnabledDto> Enabled { get; set; } = ApiResult<MfaEnabledDto>.Ok(
+        new MfaEnabledDto(["ABCDE-FGHJK", "LMNPQ-RSTUV"], new LoginResponse("access-enabled", "Bearer", 900, "refresh-enabled", false,
+            new UserSummary(Guid.NewGuid(), "ada@nexaverify.test", "Ada Admin", true, null, ["SuperAdmin"]))));
+
+    public Task<ApiResult<MfaEnrolmentDto>> BeginMfaEnrolmentAsync(string sessionId, CancellationToken ct = default)
+    {
+        Calls.Add("mfa-begin:" + sessionId);
+        return Task.FromResult(Enrolment);
+    }
+
+    public Task<ApiResult<MfaEnabledDto>> ConfirmMfaEnrolmentAsync(string sessionId, ConfirmMfaRequest request, CancellationToken ct = default)
+    {
+        Calls.Add("mfa-confirm:" + request.Code);
+        return Task.FromResult(Enabled);
+    }
 }
 
 public class PortalAuthTests

@@ -206,10 +206,29 @@
         SaveLicenseAsync(new RenewLicenseForm { ExpiresAt = license.ExpiresAt.AddYears(1) }, m => @<LicenseActionFields Renew="m" />,
             "Renew license", "Renew", m => Api.RenewAsync(license.Id, m.ToRequest()), _ => "The license was renewed.", ledgerChanged: true);
 
-    private Task AdjustAsync(LicenseDto license) =>
-        SaveLicenseAsync(new AdjustLicenseForm(), m => @<LicenseActionFields Adjust="m" />,
-            "Adjust credits", "Apply adjustment", m => Api.AdjustAsync(license.Id, m.ToRequest()),
-            m => m.Credits > 0 ? $"{UiText.Number(m.Credits)} credits were added." : $"{UiText.Number(-m.Credits)} credits were removed.", ledgerChanged: true);
+    private bool _adjustmentSentForApproval;
+
+    private Task AdjustAsync(LicenseDto license)
+    {
+        _adjustmentSentForApproval = false;
+        return SaveLicenseAsync(new AdjustLicenseForm(), m => @<LicenseActionFields Adjust="m" />,
+            "Adjust credits", "Apply adjustment",
+            async m =>
+            {
+                var result = await Api.AdjustAsync(license.Id, m.ToRequest());
+                if (!result.IsSuccess)
+                {
+                    return ApiResult<LicenseDto>.Fail(result.Error!);
+                }
+
+                _adjustmentSentForApproval = result.Value.Pending is not null;
+                return ApiResult<LicenseDto>.Ok(result.Value.License ?? license); // nothing changed yet when it is waiting for approval
+            },
+            m => _adjustmentSentForApproval
+                ? "This adjustment is above the limit one person can apply. It was sent for approval: another administrator has 24 hours to approve it."
+                : m.Credits > 0 ? $"{UiText.Number(m.Credits)} credits were added." : $"{UiText.Number(-m.Credits)} credits were removed.",
+            ledgerChanged: true);
+    }
 
     private async Task ApplyStatusAsync(Task<ApiResult<LicenseDto>?> action)
     {

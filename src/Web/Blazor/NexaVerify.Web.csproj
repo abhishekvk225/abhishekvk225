@@ -5,6 +5,7 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="MudBlazor" />
+    <PackageReference Include="QRCoder" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="NexaVerify.Web.ComponentTests" />

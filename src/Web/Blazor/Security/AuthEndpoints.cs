@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.Extensions.Options;
 using NexaVerify.Web.Services;
 
 namespace NexaVerify.Web.Security;
@@ -16,6 +17,8 @@ public static class LoginErrors
     public const string Unavailable = "unavailable";
     public const string Expired = "expired";
     public const string SessionEnded = "ended";
+    public const string MfaInvalid = "mfa-invalid";
+    public const string MfaExpired = "mfa-expired";
 
     public static string FromStatus(int? status) => status switch
     {
@@ -33,6 +36,8 @@ public static class LoginErrors
         Unavailable => "We couldn't sign you in right now. Please try again in a moment.",
         Expired => "Your sign-in page expired. Please try again.",
         SessionEnded => "You were signed out because your session ended. Please sign in again.",
+        MfaInvalid => "That code is not right. Check your authenticator app (or use a recovery code) and try again.",
+        MfaExpired => "Your sign-in timed out or was used up. Please sign in again.",
         _ => string.Empty,
     };
 }
@@ -48,13 +53,19 @@ public static partial class AuthEndpoints
     public static void MapPortalAuth(this IEndpointRouteBuilder app)
     {
         app.MapPost("/auth/login", LoginAsync).DisableAntiforgery().AllowAnonymous();
+        app.MapPost("/auth/mfa", MfaAsync).DisableAntiforgery().AllowAnonymous();
         app.MapGet("/auth/signed-out", SignOutAsync).AllowAnonymous();
     }
 
     /// <summary>A correlation reference is shown as text on the login page; only a conservative shape is accepted.</summary>
     public static string? SanitiseReference(string? value) => value is not null && ReferencePattern.IsMatch(value) ? value : null;
 
-    private static async Task<IResult> LoginAsync(HttpContext http, IAntiforgery antiforgery, IPortalAuth auth, ISessionStore store, TimeProvider clock, ILoggerFactory loggers)
+    /// <summary>Name of the opaque cookie that names the parked second-factor step (never the challenge itself).</summary>
+    public static string MfaCookieName(bool secure) => secure ? "__Host-nv.mfa" : "nv.mfa";
+
+    private static async Task<IResult> LoginAsync(
+        HttpContext http, IAntiforgery antiforgery, IPortalAuth auth, ISessionStore store, IMfaPendingStore pendingStore,
+        IOptions<CookieSecurityOptions> cookies, TimeProvider clock, ILoggerFactory loggers)
     {
         var logger = loggers.CreateLogger("NexaVerify.Web.Login");
         if (!http.Request.HasFormContentType)
@@ -82,7 +93,7 @@ public static partial class AuthEndpoints
             return Results.Redirect(LoginUrl(LoginErrors.Invalid, null, safeReturn));
         }
 
-        var result = await auth.SignInAsync(email, password, http.RequestAborted, http.Connection.RemoteIpAddress?.ToString());
+        var result = await auth.BeginSignInAsync(email, password, http.RequestAborted, http.Connection.RemoteIpAddress?.ToString());
         if (!result.IsSuccess)
         {
             var code = LoginErrors.FromStatus(result.Error!.Status);
@@ -90,6 +101,81 @@ public static partial class AuthEndpoints
             return Results.Redirect(LoginUrl(code, SanitiseReference(result.Error.CorrelationId), safeReturn));
         }
 
+        if (result.Value.Pending is { } pending)
+        {
+            // Password accepted, second factor still to come. The API's challenge stays on the server; the browser only gets an opaque
+            // cookie naming it. Nothing identifies the person yet, so there is no session and no authenticated state.
+            var id = await pendingStore.CreateAsync(pending with { ReturnUrl = safeReturn }, http.RequestAborted);
+            AppendMfaCookie(http, cookies.Value, id, pending.ExpiresAt);
+            return Results.Redirect("/login/mfa");
+        }
+
+        return await CompleteSignInAsync(http, store, result.Value.Session!, safeReturn);
+    }
+
+    private static async Task<IResult> MfaAsync(
+        HttpContext http, IAntiforgery antiforgery, IPortalAuth auth, ISessionStore store, IMfaPendingStore pendingStore,
+        IOptions<CookieSecurityOptions> cookies, ILoggerFactory loggers)
+    {
+        var logger = loggers.CreateLogger("NexaVerify.Web.Login");
+        if (!http.Request.HasFormContentType)
+        {
+            return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+        }
+
+        try
+        {
+            await antiforgery.ValidateRequestAsync(http);
+        }
+        catch (AntiforgeryValidationException)
+        {
+            return Results.Redirect(LoginUrl(LoginErrors.Expired, null, null));
+        }
+
+        var cookieName = MfaCookieName(cookies.Value.RequireSecure);
+        var pendingId = http.Request.Cookies[cookieName];
+        var pending = await pendingStore.GetAsync(pendingId, http.RequestAborted);
+        if (pending is null)
+        {
+            http.Response.Cookies.Delete(cookieName);
+            return Results.Redirect(LoginUrl(LoginErrors.MfaExpired, null, null));
+        }
+
+        var form = await http.Request.ReadFormAsync(http.RequestAborted);
+        var code = form["code"].ToString().Trim();
+        if (code.Length is 0 or > 32)
+        {
+            return Results.Redirect("/login/mfa?error=" + LoginErrors.MfaInvalid);
+        }
+
+        var result = await auth.CompleteMfaSignInAsync(pending, code, http.RequestAborted);
+        if (!result.IsSuccess)
+        {
+            var error = result.Error!;
+            logger.LogInformation("Portal second factor failed (status {Status}, code {Code}).", error.Status, error.Code);
+            if (error.Code == "MFA_CODE_INVALID" || error.Status == 400)
+            {
+                return Results.Redirect("/login/mfa?error=" + LoginErrors.MfaInvalid); // the challenge is still alive: try again
+            }
+
+            if (error.Status is 429 or >= 500 or null)
+            {
+                return Results.Redirect("/login/mfa?error=" + LoginErrors.FromStatus(error.Status));
+            }
+
+            // The challenge is dead (expired, used up, or the account was locked/blocked meanwhile): start over.
+            await pendingStore.RemoveAsync(pendingId, CancellationToken.None);
+            http.Response.Cookies.Delete(cookieName);
+            return Results.Redirect(LoginUrl(error.Status == 403 ? LoginErrors.Blocked : LoginErrors.MfaExpired, SanitiseReference(error.CorrelationId), pending.ReturnUrl));
+        }
+
+        await pendingStore.RemoveAsync(pendingId, CancellationToken.None);
+        http.Response.Cookies.Delete(cookieName);
+        return await CompleteSignInAsync(http, store, result.Value, pending.ReturnUrl);
+    }
+
+    private static async Task<IResult> CompleteSignInAsync(HttpContext http, ISessionStore store, PortalSession session, string? safeReturn)
+    {
         // A browser that was still signed in as someone else loses that session now.
         var previous = http.User.FindFirst(PortalClaims.SessionId)?.Value;
         if (!string.IsNullOrEmpty(previous))
@@ -97,15 +183,27 @@ public static partial class AuthEndpoints
             await store.RemoveAsync(previous);
         }
 
-        var session = result.Value;
         await http.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme,
             PortalPrincipalFactory.ForCookie(session.Id),
             new AuthenticationProperties { IsPersistent = false, AllowRefresh = false, ExpiresUtc = session.AbsoluteExpiresAt });
 
-        var target = session.MustChangePassword ? "/change-password" : ReturnUrl.ResolveForPortal(safeReturn, session.Portal);
+        var target = session.MustChangePassword ? "/change-password"
+            : session.MfaEnrolmentRequired ? "/mfa/enroll"
+            : ReturnUrl.ResolveForPortal(safeReturn, session.Portal);
         return Results.Redirect(target);
     }
+
+    private static void AppendMfaCookie(HttpContext http, CookieSecurityOptions cookies, string id, DateTimeOffset expires) =>
+        http.Response.Cookies.Append(MfaCookieName(cookies.RequireSecure), id, new CookieOptions
+        {
+            HttpOnly = true,
+            IsEssential = true,
+            Path = "/",
+            Secure = cookies.RequireSecure,
+            SameSite = cookies.SameSiteMode,
+            Expires = expires,
+        });
 
     private static async Task<IResult> SignOutAsync(HttpContext http, IPortalAuth auth, string? reason)
     {

@@ -22,6 +22,7 @@ public static class PortalPrincipalFactory
     public static bool SameAuthorization(ClaimsPrincipal user, PortalSession session) =>
         user.HasClaim(PortalClaims.Portal, session.Portal)
         && user.HasClaim(PortalClaims.MustChangePassword, "true") == session.MustChangePassword
+        && user.HasClaim(PortalClaims.MfaEnrolmentRequired, "true") == session.MfaEnrolmentRequired
         && user.FindAll(PortalClaims.Permission).Select(c => c.Value).ToHashSet(StringComparer.Ordinal).SetEquals(session.Permissions)
         && user.FindAll(ClaimTypes.Role).Select(c => c.Value).ToHashSet(StringComparer.Ordinal).SetEquals(session.Roles);
 
@@ -46,6 +47,11 @@ public static class PortalPrincipalFactory
         if (session.MustChangePassword)
         {
             claims.Add(new Claim(PortalClaims.MustChangePassword, "true"));
+        }
+
+        if (session.MfaEnrolmentRequired)
+        {
+            claims.Add(new Claim(PortalClaims.MfaEnrolmentRequired, "true"));
         }
 
         return new ClaimsPrincipal(new ClaimsIdentity(claims, AuthenticationType, ClaimTypes.Name, ClaimTypes.Role));
@@ -87,7 +93,7 @@ public static class Policies
     public const string PlatformPortal = "PlatformPortal";
     public const string ClientPortal = "ClientPortal";
 
-    /// <summary>Signed in, even while a forced password change is pending (the change-password page).</summary>
+    /// <summary>Signed in, even while a forced password change or a required two-factor enrolment is pending (those two pages).</summary>
     public const string SignedIn = "SignedIn";
 
     public const string PermissionPrefix = "perm:";
@@ -115,7 +121,8 @@ public sealed class PortalRequirementHandler : AuthorizationHandler<PortalRequir
             return Task.CompletedTask;
         }
 
-        if (!requirement.AllowPendingPasswordChange && user.HasClaim(PortalClaims.MustChangePassword, "true"))
+        if (!requirement.AllowPendingPasswordChange
+            && (user.HasClaim(PortalClaims.MustChangePassword, "true") || user.HasClaim(PortalClaims.MfaEnrolmentRequired, "true")))
         {
             return Task.CompletedTask;
         }
@@ -182,22 +189,32 @@ public sealed class SessionAuthenticationStateProvider(ILoggerFactory loggerFact
     }
 }
 
-/// <summary>While a forced password change is pending, every page request goes to the change-password page.</summary>
+/// <summary>
+/// While a forced password change is pending, every page request goes to the change-password page; while a required two-factor
+/// enrolment is pending (and the password is settled), to the enrolment page.
+/// </summary>
 public sealed class ForcePasswordChangeMiddleware(RequestDelegate next)
 {
     private static readonly string[] AllowedPrefixes =
     [
-        "/change-password", "/auth/", "/login", "/_blazor", "/_framework", "/_content", "/js", "/app.css", "/favicon", "/error", "/not-found", "/forbidden",
+        "/change-password", "/mfa/", "/auth/", "/login", "/_blazor", "/_framework", "/_content", "/js", "/app.css", "/favicon", "/error", "/not-found", "/forbidden",
     ];
 
     public Task InvokeAsync(HttpContext context)
     {
-        if (context.User.HasClaim(PortalClaims.MustChangePassword, "true")
-            && HttpMethods.IsGet(context.Request.Method)
-            && !AllowedPrefixes.Any(p => context.Request.Path.Value!.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
+        if (HttpMethods.IsGet(context.Request.Method) && !AllowedPrefixes.Any(p => context.Request.Path.Value!.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
         {
-            context.Response.Redirect("/change-password");
-            return Task.CompletedTask;
+            if (context.User.HasClaim(PortalClaims.MustChangePassword, "true"))
+            {
+                context.Response.Redirect("/change-password");
+                return Task.CompletedTask;
+            }
+
+            if (context.User.HasClaim(PortalClaims.MfaEnrolmentRequired, "true"))
+            {
+                context.Response.Redirect("/mfa/enroll");
+                return Task.CompletedTask;
+            }
         }
 
         return next(context);

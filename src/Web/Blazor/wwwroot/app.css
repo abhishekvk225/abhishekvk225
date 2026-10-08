@@ -112,7 +112,7 @@ body { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; 
 .nv-video { width: 100%; max-width: 520px; aspect-ratio: 4 / 3; background: #000; border-radius: var(--nv-radius); object-fit: cover; transform: scaleX(-1); }
 .nv-preview { width: 100%; max-width: 520px; aspect-ratio: 4 / 3; border-radius: var(--nv-radius); object-fit: cover; }
 
-.nv-secret { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; word-break: break-all; padding: var(--nv-space-3) var(--nv-space-4); border-radius: var(--nv-radius); background: var(--mud-palette-background); border: 1px dashed var(--mud-palette-lines-inputs); }
+.nv-secret { white-space: pre-line; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; word-break: break-all; padding: var(--nv-space-3) var(--nv-space-4); border-radius: var(--nv-radius); background: var(--mud-palette-background); border: 1px dashed var(--mud-palette-lines-inputs); }
 
 /* Code samples (API docs) */
 .nv-code { margin: 0 0 var(--nv-space-4); border: 1px solid var(--mud-palette-lines-default); border-radius: var(--nv-radius); overflow: hidden; }

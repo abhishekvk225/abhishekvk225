@@ -54,4 +54,13 @@ public sealed class StubAuthApiClient : IAuthApiClient
 
     public Task<ApiResult<LoginResponse>> ChangePasswordAsync(string sessionId, ChangePasswordRequest request, CancellationToken ct = default) =>
         Task.FromResult(ApiResult<LoginResponse>.Fail("NOT_AVAILABLE", "Not available in the preview build.", null, 400));
+
+    public Task<ApiResult<LoginResponse>> VerifyMfaAsync(VerifyMfaRequest request, CancellationToken ct = default, string? clientIp = null) =>
+        Task.FromResult(ApiResult<LoginResponse>.Fail("NOT_AVAILABLE", "Not available in the preview build.", null, 400));
+
+    public Task<ApiResult<MfaEnrolmentDto>> BeginMfaEnrolmentAsync(string sessionId, CancellationToken ct = default) =>
+        Task.FromResult(ApiResult<MfaEnrolmentDto>.Fail("NOT_AVAILABLE", "Not available in the preview build.", null, 400));
+
+    public Task<ApiResult<MfaEnabledDto>> ConfirmMfaEnrolmentAsync(string sessionId, ConfirmMfaRequest request, CancellationToken ct = default) =>
+        Task.FromResult(ApiResult<MfaEnabledDto>.Fail("NOT_AVAILABLE", "Not available in the preview build.", null, 400));
 }

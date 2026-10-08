@@ -1,0 +1,24 @@
+@using QRCoder
+
+@* An inline SVG QR code, drawn by this component from the module matrix. No markup string, no external image service and no
+   data leaves the server: the secret in the code is rendered into the page the signed-in user is already looking at. *@
+<svg xmlns="http://www.w3.org/2000/svg" class="nv-qr" viewBox="0 0 @_size @_size" width="@Pixels" height="@Pixels" role="img" aria-label="@Label"
+     shape-rendering="crispEdges" data-testid="qr-code">
+    <rect width="@_size" height="@_size" fill="#ffffff" />
+    <path d="@_path" fill="#000000" />
+</svg>
+
+@code {
+    private int _size;
+    private string _path = string.Empty;
+
+    /// <summary>The text to encode (for MFA: the otpauth:// URI).</summary>
+    [Parameter, EditorRequired] public string Value { get; set; } = string.Empty;
+
+    [Parameter] public string Label { get; set; } = "QR code";
+
+    /// <summary>Rendered width and height in CSS pixels.</summary>
+    [Parameter] public int Pixels { get; set; } = 200;
+
+    protected override void OnParametersSet() => (_size, _path) = QrMatrix.Draw(Value);
+}
