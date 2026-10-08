@@ -160,6 +160,13 @@ public sealed class LedgerVerificationOptions
 
     [Range(0, 5000)]
     public int RecheckDelayMilliseconds { get; set; } = 250;
+
+    /// <summary>
+    /// A break that stays unresolved raises the operator alert (Critical log, event 7001) when it is first found and then only as a
+    /// reminder every this many days; in between every run logs a Warning (event 7003). 0 = alert once and never remind.
+    /// </summary>
+    [Range(0, 365)]
+    public int ReminderDays { get; set; } = 7;
 }
 
 public sealed record LicenseLedgerHead(Guid LicenseId, Guid ClientId, int Remaining);
@@ -226,6 +233,9 @@ public interface ILedgerVerificationService
     Task<Result<LedgerRunDto>> GetRunAsync(Guid id, CancellationToken cancellationToken);
 
     Task<Result<IReadOnlyList<LedgerRunDto>>> ListRunsAsync(CancellationToken cancellationToken);
+
+    /// <summary>Findings that are still open (the operator-visible alert list), oldest first.</summary>
+    Task<Result<IReadOnlyList<LedgerOpenBreakDto>>> ListOpenBreaksAsync(CancellationToken cancellationToken);
 
     /// <summary>Runs a verification to completion in the caller's context (the nightly job, tests) under the same one-at-a-time lease.</summary>
     Task<Result<LedgerVerificationReportDto>> RunAsync(string trigger, Guid? licenseId, CancellationToken cancellationToken);
@@ -360,6 +370,12 @@ public sealed partial class LedgerVerificationService : ILedgerVerificationServi
 
     public async Task<Result<IReadOnlyList<LedgerRunDto>>> ListRunsAsync(CancellationToken cancellationToken) =>
         Result<IReadOnlyList<LedgerRunDto>>.Success((await _store.ListRecentRunsAsync(20, cancellationToken)).Select(ToDto).ToList());
+
+    public async Task<Result<IReadOnlyList<LedgerOpenBreakDto>>> ListOpenBreaksAsync(CancellationToken cancellationToken) =>
+        Result<IReadOnlyList<LedgerOpenBreakDto>>.Success((await _store.ListOpenBreaksAsync(cancellationToken))
+            .OrderBy(r => r.FirstSeenAt).ThenBy(r => r.LicenseId)
+            .Select(r => new LedgerOpenBreakDto(r.LicenseId, r.ClientId, r.BreakKey, r.Reason, r.FirstSeenAt, r.LastSeenAt, r.TimesSeen, r.AlertedAt, r.LastReminderAt))
+            .ToList());
 
     public async Task<Result<LedgerVerificationReportDto>> RunAsync(string trigger, Guid? licenseId, CancellationToken cancellationToken)
     {
@@ -586,24 +602,37 @@ public sealed partial class LedgerVerificationService : ILedgerVerificationServi
     }
 
     /// <summary>
-    /// Every run logs each break at Critical (the operator alert), but the audit trail gets ONE entry per (license, broken thing):
-    /// a break that stays broken is counted on its record, not re-audited every night. A license that verifies clean again closes its records.
+    /// The operator alert (Critical log, event 7001) and the audit entry fire ONCE per (license, broken thing), when it is first found.
+    /// A break that stays broken is counted on its record and re-announced only as a reminder every <c>ReminderDays</c>; quiet runs
+    /// log a Warning (7003). The open records are the operator-visible list (<c>GET .../ledger-breaks</c>). A license that verifies
+    /// clean again closes its records.
     /// </summary>
     private async Task ReportBreaksAsync(IReadOnlyList<Found> breaks, HashSet<Guid>? onlyChecked, CancellationToken cancellationToken)
     {
         var now = Now;
+        var reminderAfter = TimeSpan.FromDays(_options.Value.ReminderDays);
         var open = (await _store.ListOpenBreaksAsync(cancellationToken)).ToDictionary(r => (r.LicenseId, r.BreakKey));
         var current = breaks.Select(b => (b.Dto.LicenseId, b.Key)).ToHashSet();
 
         foreach (var b in breaks)
         {
-            LogBreak(_logger, b.Dto.LicenseId, b.Dto.ClientId, b.Dto.FirstBrokenEntryId, b.Dto.Reason);
             if (open.TryGetValue((b.Dto.LicenseId, b.Key), out var existing))
             {
                 existing.Seen(now);
+                if (existing.ReminderDue(now, reminderAfter))
+                {
+                    existing.MarkAlerted(now);
+                    LogBreak(_logger, b.Dto.LicenseId, b.Dto.ClientId, b.Dto.FirstBrokenEntryId, b.Dto.Reason);
+                }
+                else
+                {
+                    LogStillBroken(_logger, b.Dto.LicenseId, b.Dto.ClientId, existing.TimesSeen, existing.FirstSeenAt);
+                }
+
                 continue;
             }
 
+            LogBreak(_logger, b.Dto.LicenseId, b.Dto.ClientId, b.Dto.FirstBrokenEntryId, b.Dto.Reason);
             _store.Add(LedgerBreakRecord.Open(b.Dto.LicenseId, b.Dto.ClientId, b.Key, b.Dto.Reason, now));
             _audit.Record(new AuditEntry("ledger.verification_failed", nameof(License), b.Dto.LicenseId.ToString(), b.Dto.ClientId,
                 NewValues: new { b.Dto.FirstBrokenEntryId, b.Dto.Reason, BreakKey = b.Key }));
@@ -632,6 +661,10 @@ public sealed partial class LedgerVerificationService : ILedgerVerificationServi
     [LoggerMessage(EventId = 7001, Level = LogLevel.Critical,
         Message = "LEDGER TAMPERING SUSPECTED: license {LicenseId} (client {ClientId}) fails verification at entry {EntryId}: {Reason}")]
     private static partial void LogBreak(ILogger logger, Guid licenseId, Guid clientId, long? entryId, string reason);
+
+    [LoggerMessage(EventId = 7003, Level = LogLevel.Warning,
+        Message = "Ledger break still unresolved: license {LicenseId} (client {ClientId}), seen in {TimesSeen} runs since {FirstSeenAt:yyyy-MM-dd} (alerted when first found)")]
+    private static partial void LogStillBroken(ILogger logger, Guid licenseId, Guid clientId, int timesSeen, DateTime firstSeenAt);
 
     // Shipped to the log pipeline on purpose: it is an off-database copy of the anchor (the MAC is not secret, the key is).
     [LoggerMessage(EventId = 7002, Level = LogLevel.Information,

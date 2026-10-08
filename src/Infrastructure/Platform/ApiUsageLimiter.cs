@@ -9,14 +9,15 @@ using NexaVerify.Application.Common;
 using NexaVerify.Application.Tenancy;
 using NexaVerify.Contracts.Common;
 using NexaVerify.Contracts.Tenancy;
+using NexaVerify.Domain.Api;
 using NexaVerify.Infrastructure.Persistence;
 
 namespace NexaVerify.Infrastructure.Platform;
 
 /// <summary>
-/// Layer 2 (per credential, per minute) and layer 3 (per client, per UTC day) of the throttling design. Counters live in memory
-/// per node (v1); limits come from the client's settings (cached 30 s) — never from literals. A key may lower or raise its own
-/// per-minute limit.
+/// Layer 2 (per credential, per minute) and layer 3 (per client, per UTC day) of the throttling design. The counters are shared
+/// between API nodes through <see cref="SharedWindowCounters"/> (SQL Server, atomic, bucketed and purged) with an in-memory fast path;
+/// limits come from the client's settings (cached 30 s) — never from literals. A key may lower its own per-minute limit, never raise it.
 /// </summary>
 public sealed class ApiUsageLimiter : IApiUsageLimiter
 {
@@ -24,82 +25,37 @@ public sealed class ApiUsageLimiter : IApiUsageLimiter
 
     private readonly IServiceScopeFactory _scopes;
     private readonly TimeProvider _time;
+    private readonly SharedWindowCounters _counters;
     private readonly ConcurrentDictionary<Guid, (DateTime LoadedAt, int PerMinute, long PerDay)> _limits = new();
-    private readonly ConcurrentDictionary<Guid, Window> _minute = new();
-    private readonly ConcurrentDictionary<Guid, Day> _day = new();
-    private long _lastSweepTicks;
 
-    public ApiUsageLimiter(IServiceScopeFactory scopes, TimeProvider time)
+    public ApiUsageLimiter(IServiceScopeFactory scopes, TimeProvider time, SharedWindowCounters counters)
     {
         _scopes = scopes;
         _time = time;
-    }
-
-    private sealed class Window
-    {
-        public long Start;
-        public int Count;
-        public readonly object Gate = new();
-    }
-
-    private sealed class Day
-    {
-        public DateOnly Date;
-        public long Count;
-        public readonly object Gate = new();
+        _counters = counters;
     }
 
     public async Task<(Error? Error, TimeSpan RetryAfter)> TryAcquireAsync(Guid clientId, Guid credentialId, int? credentialLimitPerMinute, CancellationToken cancellationToken)
     {
         var now = _time.GetUtcNow().UtcDateTime;
         var (perMinute, perDay) = await LimitsAsync(clientId, now, cancellationToken);
-        Sweep(now);
 
-        // Daily quota first: it is the cheaper check to fail and it must not be consumed by calls that the minute limit rejects.
-        var today = DateOnly.FromDateTime(now);
-        var day = _day.GetOrAdd(clientId, _ => new Day { Date = today });
-        var minuteWindow = _minute.GetOrAdd(credentialId, _ => new Window { Start = MinuteOf(now) });
         // A credential may be tighter than the account limit, never looser (a client admin cannot raise their own ceiling).
         var limit = credentialLimitPerMinute is { } own ? Math.Min(own, perMinute) : perMinute;
-        var windowStart = MinuteOf(now);
+        var minute = now.Ticks / TimeSpan.TicksPerMinute;
+        var day = DateOnly.FromDateTime(now).DayNumber;
 
-        lock (minuteWindow.Gate)
+        if (!await _counters.TryTakeAsync(UsageCounterKinds.Minute, credentialId, minute, limit, cancellationToken))
         {
-            if (minuteWindow.Start != windowStart)
-            {
-                minuteWindow.Start = windowStart;
-                minuteWindow.Count = 0;
-            }
-
-            if (minuteWindow.Count >= limit)
-            {
-                var retry = TimeSpan.FromSeconds(60 - (now.Second + (now.Millisecond / 1000.0)));
-                return (Error.TooManyRequests(ErrorCodes.RateLimited, "Rate limit exceeded for this credential. Retry after the indicated time."), retry);
-            }
-
-            minuteWindow.Count++;
+            var retry = TimeSpan.FromSeconds(60 - (now.Second + (now.Millisecond / 1000.0)));
+            return (Error.TooManyRequests(ErrorCodes.RateLimited, "Rate limit exceeded for this credential. Retry after the indicated time."), retry);
         }
 
-        lock (day.Gate)
+        if (!await _counters.TryTakeAsync(UsageCounterKinds.Day, clientId, day, perDay, cancellationToken))
         {
-            if (day.Date != today)
-            {
-                day.Date = today;
-                day.Count = 0;
-            }
-
-            if (day.Count >= perDay)
-            {
-                lock (minuteWindow.Gate)
-                {
-                    minuteWindow.Count--; // a rejected call must not also eat the minute budget
-                }
-
-                var retry = today.AddDays(1).ToDateTime(TimeOnly.MinValue) - now;
-                return (Error.TooManyRequests(ErrorCodes.DailyQuotaExceeded, "The daily request quota for this account has been used up."), retry);
-            }
-
-            day.Count++;
+            _counters.Return(UsageCounterKinds.Minute, credentialId, minute); // a rejected call must not also eat the minute budget
+            var retry = DateOnly.FromDateTime(now).AddDays(1).ToDateTime(TimeOnly.MinValue) - now;
+            return (Error.TooManyRequests(ErrorCodes.DailyQuotaExceeded, "The daily request quota for this account has been used up."), retry);
         }
 
         return (null, TimeSpan.Zero);
@@ -155,36 +111,6 @@ public sealed class ApiUsageLimiter : IApiUsageLimiter
         catch (JsonException)
         {
             return false;
-        }
-    }
-
-    private static long MinuteOf(DateTime now) => now.Ticks / TimeSpan.TicksPerMinute;
-
-    /// <summary>Drops counters of credentials that went quiet so the maps cannot grow without bound.</summary>
-    private void Sweep(DateTime now)
-    {
-        var last = Interlocked.Read(ref _lastSweepTicks);
-        if (now.Ticks - last < TimeSpan.TicksPerMinute * 5 || Interlocked.CompareExchange(ref _lastSweepTicks, now.Ticks, last) != last)
-        {
-            return;
-        }
-
-        var current = MinuteOf(now);
-        foreach (var (id, window) in _minute)
-        {
-            if (current - window.Start > 5)
-            {
-                _minute.TryRemove(id, out _);
-            }
-        }
-
-        var today = DateOnly.FromDateTime(now);
-        foreach (var (id, day) in _day)
-        {
-            if (day.Date != today)
-            {
-                _day.TryRemove(id, out _);
-            }
         }
     }
 }

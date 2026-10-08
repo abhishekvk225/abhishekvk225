@@ -51,6 +51,35 @@ public sealed class SqlServerFixture : IAsyncLifetime
         return new SqlConnectionStringBuilder(_adminConnectionString) { InitialCatalog = name }.ConnectionString;
     }
 
+    /// <summary>
+    /// Drops a database created by <see cref="CreateDatabaseAsync"/> (best effort). Every test class gets its own database and each costs
+    /// tens of megabytes, so a long run would otherwise fill the container's disk.
+    /// </summary>
+    public static async Task TryDropDatabaseAsync(string connectionString)
+    {
+        try
+        {
+            var builder = new SqlConnectionStringBuilder(connectionString);
+            var name = builder.InitialCatalog;
+            if (!name.StartsWith("nv_", StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            builder.InitialCatalog = "master";
+            builder.Pooling = false;
+            await using var connection = new SqlConnection(builder.ConnectionString);
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"IF DB_ID(N'{name}') IS NOT NULL BEGIN ALTER DATABASE [{name}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [{name}]; END";
+            await command.ExecuteNonQueryAsync();
+        }
+        catch (Exception ex) when (ex is SqlException or InvalidOperationException)
+        {
+            // cleanup only: never fail a test because the database could not be dropped
+        }
+    }
+
     /// <summary>A connection string that can never reach a server (for readiness-failure tests).</summary>
     public static string UnreachableConnectionString =>
         "Server=127.0.0.1,1;Database=none;User Id=x;Password=x;Encrypt=False;Connect Timeout=2";

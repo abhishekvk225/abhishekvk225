@@ -97,6 +97,8 @@ public class AppDbContext : DbContext, IUnitOfWork
 
     public DbSet<Domain.Api.ApiRequestLog> ApiRequestLogs => Set<Domain.Api.ApiRequestLog>();
 
+    public DbSet<Domain.Api.UsageCounter> UsageCounters => Set<Domain.Api.UsageCounter>();
+
     public DbSet<Domain.Api.WebhookEndpoint> WebhookEndpoints => Set<Domain.Api.WebhookEndpoint>();
 
     public DbSet<Domain.Api.WebhookDelivery> WebhookDeliveries => Set<Domain.Api.WebhookDelivery>();

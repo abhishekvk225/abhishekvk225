@@ -47,7 +47,7 @@ public static class PortalServiceExtensions
             dataProtection.PersistKeysToFileSystem(new DirectoryInfo(keyPath));
         }
 
-        services.AddDistributedMemoryCache();
+        services.AddPortalCache(configuration);
         services.AddSingleton<ISessionStore, DistributedSessionStore>();
         services.AddSingleton<IMfaPendingStore, DistributedMfaPendingStore>();
         services.AddSingleton<IRefreshTokenExchange, HttpRefreshTokenExchange>();
@@ -105,7 +105,10 @@ public static class PortalServiceExtensions
                 options.Events.OnValidatePrincipal = SessionCookieEvents.ValidateAsync;
             });
 
-        services.AddSingleton<DownloadThrottle>();
+        var cacheOptions = configuration.GetSection(PortalCacheOptions.Section).Get<PortalCacheOptions>() ?? new PortalCacheOptions();
+        services.AddSingleton(sp => new DownloadThrottle(
+            sp.GetRequiredService<TimeProvider>(),
+            cacheOptions.IsShared ? sp.GetRequiredService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>() : null));
         services.AddPortalAuthorization();
         services.AddCascadingAuthenticationState();
         services.AddScoped<AuthenticationStateProvider, SessionAuthenticationStateProvider>();

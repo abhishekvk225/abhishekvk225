@@ -156,13 +156,23 @@ public static class DependencyInjection
         services.AddScoped<ITransactionLock, SqlTransactionLock>();
         services.AddScoped<IApiKeyAuthenticator, ApiKeyAuthenticator>();
         services.AddScoped<IWebhookRepository, WebhookRepository>();
-        services.AddOptions<WebhookOptions>().Bind(configuration.GetSection(WebhookOptions.SectionName));
+        services.AddOptions<WebhookOptions>().Bind(configuration.GetSection(WebhookOptions.SectionName)).ValidateDataAnnotations()
+            .Validate(o => o.LeaseSeconds == 0 || o.LeaseSeconds >= o.DerivedLease.TotalSeconds, "Webhooks:LeaseSeconds is shorter than the worst case of one dispatch cycle (raise it, or leave it 0).")
+            .ValidateOnStart();
         services.AddSingleton<IWebhookUrlGuard, WebhookUrlGuard>();
         services.AddScoped<IWebhookPublisher, WebhookPublisher>();
         services.AddScoped<WebhookStore>();
         services.AddSingleton<WebhookDispatcher>();
         services.AddHostedService(sp => sp.GetRequiredService<WebhookDispatcher>());
+        services.AddOptions<SharedCounterOptions>().Bind(configuration.GetSection(SharedCounterOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
+        services.AddOptions<ThrottleOptions>().Bind(configuration.GetSection(ThrottleOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
+        services.AddSingleton(new SharedCounterConnection(connectionString));
+        services.AddSingleton<ICounterBackend, SqlCounterBackend>();
+        services.AddSingleton<SharedWindowCounters>();
         services.AddSingleton<IApiUsageLimiter, ApiUsageLimiter>();
+        services.AddSingleton<IPrincipalThrottle, PrincipalThrottle>();
+        services.AddSingleton<UsageCounterPurger>();
+        services.AddHostedService(sp => sp.GetRequiredService<UsageCounterPurger>());
         services.AddOptions<ApiLogOptions>().Bind(configuration.GetSection(ApiLogOptions.SectionName));
         services.AddSingleton<ApiRequestLogWriter>();
         services.AddSingleton<IApiRequestLogSink>(sp => sp.GetRequiredService<ApiRequestLogWriter>());

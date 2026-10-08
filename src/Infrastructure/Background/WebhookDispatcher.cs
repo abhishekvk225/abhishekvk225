@@ -21,8 +21,6 @@ namespace NexaVerify.Infrastructure.Background;
 /// </summary>
 public sealed class WebhookDispatcher : BackgroundService
 {
-    private const int BatchSize = 50;
-    private const int Parallelism = 8;
     private const int PoisonMaxAttempts = 3;
     private static readonly TimeSpan SuspendedRecheck = TimeSpan.FromMinutes(5);
 
@@ -42,8 +40,23 @@ public sealed class WebhookDispatcher : BackgroundService
 
         // The lease must outlive the worst-case batch (every slot waiting for its full timeout), or another node could claim a
         // row that is still in flight and send it twice.
-        var worstCaseRounds = (int)Math.Ceiling(BatchSize / (double)Parallelism);
-        _lease = TimeSpan.FromSeconds((worstCaseRounds * (Math.Clamp(_options.TimeoutSeconds, 1, 30) + 5)) + 30);
+        _lease = ResolveLease(_options);
+    }
+
+    /// <summary>The configured lease, or the worst-case derived one. A configured lease shorter than the worst case is refused.</summary>
+    public static TimeSpan ResolveLease(WebhookOptions options)
+    {
+        var derived = options.DerivedLease;
+        if (options.LeaseSeconds == 0)
+        {
+            return derived;
+        }
+
+        var configured = TimeSpan.FromSeconds(options.LeaseSeconds);
+        return configured >= derived
+            ? configured
+            : throw new InvalidOperationException(
+                $"Webhooks:LeaseSeconds ({options.LeaseSeconds}) is shorter than the worst case of one dispatch cycle ({(int)Math.Ceiling(derived.TotalSeconds)} s for BatchSize {options.BatchSize}, Parallelism {options.Parallelism}, TimeoutSeconds {options.TimeoutSeconds}). Raise it, or leave it 0 to derive it.");
     }
 
     private readonly TimeSpan _lease;
@@ -79,7 +92,7 @@ public sealed class WebhookDispatcher : BackgroundService
                 }
             },
         };
-        return new HttpClient(handler, disposeHandler: true) { Timeout = TimeSpan.FromSeconds(Math.Clamp(options.TimeoutSeconds, 1, 30)) };
+        return new HttpClient(handler, disposeHandler: true) { Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds) };
     }
 
     private const int DeliveryRetentionDays = 30;
@@ -140,10 +153,10 @@ public sealed class WebhookDispatcher : BackgroundService
         await using (var scope = _scopes.CreateAsyncScope())
         {
             using var platform = scope.ServiceProvider.GetRequiredService<ITenantScope>().BeginPlatform("webhook claim");
-            ids = await scope.ServiceProvider.GetRequiredService<WebhookStore>().ClaimDueAsync(BatchSize, _time.GetUtcNow().UtcDateTime, _lease, cancellationToken);
+            ids = await scope.ServiceProvider.GetRequiredService<WebhookStore>().ClaimDueAsync(_options.BatchSize, _options.MaxPerEndpointPerCycle, _time.GetUtcNow().UtcDateTime, _lease, cancellationToken);
         }
 
-        await Parallel.ForEachAsync(ids, new ParallelOptions { MaxDegreeOfParallelism = Parallelism, CancellationToken = cancellationToken },
+        await Parallel.ForEachAsync(ids, new ParallelOptions { MaxDegreeOfParallelism = _options.Parallelism, CancellationToken = cancellationToken },
             async (id, token) =>
             {
                 try
@@ -244,7 +257,10 @@ public sealed class WebhookDispatcher : BackgroundService
         }
 
         await db.SaveChangesAsync(cancellationToken);
-        if (delivery.EventType != WebhookEvents.Test)
+
+        // Count failed EVENTS, not attempts: an event counts once, when its first attempt fails (its retries do not pile on), so
+        // an endpoint is switched off after DisableAfterFailedEvents different events failed in a row, and any success resets it.
+        if (delivery.EventType != WebhookEvents.Test && delivery.Attempts == 1)
         {
             await RecordEndpointFailureAsync(db, endpoint, finished, cancellationToken);
         }
@@ -252,10 +268,11 @@ public sealed class WebhookDispatcher : BackgroundService
 
     private async Task RecordEndpointFailureAsync(AppDbContext db, WebhookEndpoint endpoint, DateTime now, CancellationToken cancellationToken)
     {
+        var limit = _options.DisableAfterFailedEvents;
         await db.WebhookEndpoints.Where(e => e.Id == endpoint.Id)
             .ExecuteUpdateAsync(s => s.SetProperty(e => e.FailureCount, e => e.FailureCount + 1), cancellationToken);
         var disabled = await db.WebhookEndpoints
-            .Where(e => e.Id == endpoint.Id && e.Status == WebhookStatus.Active && e.FailureCount >= WebhookEndpoint.DisableAfterConsecutiveFailures)
+            .Where(e => e.Id == endpoint.Id && e.Status == WebhookStatus.Active && e.FailureCount >= limit)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(e => e.Status, WebhookStatus.Disabled)
                 .SetProperty(e => e.DisabledAt, now)

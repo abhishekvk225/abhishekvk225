@@ -90,6 +90,13 @@ public sealed record SetCostRuleRequest(string Operation, int Credits, string Ch
 /// <summary>The first row of a license's ledger that fails verification (null when only the balance disagrees).</summary>
 public sealed record LedgerBreakDto(Guid LicenseId, Guid ClientId, long? FirstBrokenEntryId, string Reason);
 
+/// <summary>
+/// A ledger finding that is still open (not verified clean since). <c>AlertedAt</c> is when the operator was alerted; a persistent
+/// break is only re-announced as a reminder (<c>LastReminderAt</c>), never every night.
+/// </summary>
+public sealed record LedgerOpenBreakDto(
+    Guid LicenseId, Guid ClientId, string BreakKey, string Reason, DateTime FirstSeenAt, DateTime LastSeenAt, int TimesSeen, DateTime? AlertedAt, DateTime? LastReminderAt);
+
 /// <summary>Optional body of the on-demand check: a license id limits it to that license.</summary>
 public sealed record VerifyLedgerRequest(Guid? LicenseId);
 

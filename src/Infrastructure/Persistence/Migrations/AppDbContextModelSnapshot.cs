@@ -205,6 +205,31 @@ namespace NexaVerify.Infrastructure.Persistence.Migrations
                     b.ToTable("ApiRequestLogs", "api");
                 });
 
+            modelBuilder.Entity("NexaVerify.Domain.Api.UsageCounter", b =>
+                {
+                    b.Property<byte>("Kind")
+                        .HasColumnType("tinyint");
+
+                    b.Property<Guid>("KeyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Bucket")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<long>("Used")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Kind", "KeyId", "Bucket");
+
+                    b.HasIndex("Kind", "UpdatedAt");
+
+                    b.ToTable("UsageCounters", "api");
+                });
+
             modelBuilder.Entity("NexaVerify.Domain.Api.WebhookDelivery", b =>
                 {
                     b.Property<long>("Id")
@@ -1374,6 +1399,10 @@ namespace NexaVerify.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTime?>("AlertedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
                     b.Property<string>("BreakKey")
                         .IsRequired()
                         .HasMaxLength(60)
@@ -1388,6 +1417,10 @@ namespace NexaVerify.Infrastructure.Persistence.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime>("FirstSeenAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<DateTime?>("LastReminderAt")
                         .HasPrecision(3)
                         .HasColumnType("datetime2(3)");
 

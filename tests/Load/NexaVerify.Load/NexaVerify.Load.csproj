@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- A tool, not a test project: keeps tests/Directory.Build.props from adding xunit's entry point. -->
+    <IsTestSupport>true</IsTestSupport>
+    <IsTestProject>false</IsTestProject>
+    <RootNamespace>NexaVerify.Load</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" />
+  </ItemGroup>
+</Project>

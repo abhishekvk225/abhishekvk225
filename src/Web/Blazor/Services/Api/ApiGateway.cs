@@ -45,8 +45,14 @@ public sealed record ApiCallOptions
     /// </summary>
     public bool Passive { get; init; }
 
-    /// <summary>Extra request headers (for example <c>Idempotency-Key</c>). Never used for credentials.</summary>
+    /// <summary>
+    /// Extra request headers. Only the names in <see cref="AllowedHeaderNames"/> are accepted (anything else is a programming error and
+    /// throws), so a header can never be used to smuggle credentials, forwarding data or protocol framing past the gateway.
+    /// </summary>
     public IReadOnlyDictionary<string, string>? Headers { get; init; }
+
+    /// <summary>Header names a page may add to an API call.</summary>
+    public static IReadOnlySet<string> AllowedHeaderNames { get; } = new HashSet<string>(["Idempotency-Key"], StringComparer.OrdinalIgnoreCase);
 
     public static ApiCallOptions None { get; } = new() { Anonymous = true };
 }
@@ -186,6 +192,11 @@ public sealed class ApiGateway(
         {
             foreach (var (name, value) in options.Headers)
             {
+                if (!ApiCallOptions.AllowedHeaderNames.Contains(name))
+                {
+                    throw new ArgumentException($"The header '{name}' may not be set on an API call.", nameof(options));
+                }
+
                 request.Headers.TryAddWithoutValidation(name, value);
             }
         }

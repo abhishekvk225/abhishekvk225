@@ -2,6 +2,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Api\NexaVerify.Api.csproj" />
     <ProjectReference Include="..\TestSupport\NexaVerify.TestSupport.csproj" />
+    <ProjectReference Include="..\Load\NexaVerify.Load\NexaVerify.Load.csproj" />
     <!-- The portal (BFF) is exercised against the real API. Both web apps define a global Program class, hence the alias. -->
     <ProjectReference Include="..\..\src\Web\Blazor\NexaVerify.Web.csproj" Aliases="WebApp" />
   </ItemGroup>

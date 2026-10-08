@@ -73,9 +73,11 @@ public static class PortalStartupGuards
             throw new InvalidOperationException("DataProtection:KeyPath must point at a persistent, shared, access-restricted directory outside Development (otherwise every restart or second node invalidates all sessions).");
         }
 
-        if (!session.AllowInMemoryStore)
+        var cache = configuration.GetSection(PortalCacheOptions.Section).Get<PortalCacheOptions>() ?? new PortalCacheOptions();
+        PortalCacheRegistration.Validate(cache);
+        if (!cache.IsShared && !session.AllowInMemoryStore)
         {
-            throw new InvalidOperationException("Sessions are kept in this process's memory (lost on restart, not shared between nodes). Set Session:AllowInMemoryStore=true to accept that explicitly, for a single node or sticky sessions.");
+            throw new InvalidOperationException("Sessions are kept in this process's memory (lost on restart, not shared between nodes). Configure a shared store (PortalCache:Provider=SqlServer or Redis), or set Session:AllowInMemoryStore=true to accept per-node memory explicitly, for a single node or sticky sessions.");
         }
     }
 }

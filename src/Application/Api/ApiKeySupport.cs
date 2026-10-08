@@ -128,6 +128,22 @@ public interface IApiKeyAuthenticator
     void Invalidate(string prefix);
 }
 
+/// <summary>Names of the per-principal throttles (limits live in configuration, not here).</summary>
+public static class ThrottlePolicies
+{
+    public const string Dashboards = "dashboards";
+    public const string Exports = "exports";
+    public const string WebhookTest = "webhook-test";
+    public const string WebhookRetry = "webhook-retry";
+}
+
+/// <summary>Per-principal (signed-in user or API key) throttle on expensive operations; shared across API nodes.</summary>
+public interface IPrincipalThrottle
+{
+    /// <summary>Returns null when the call may proceed, otherwise the 429 error and how long to wait.</summary>
+    Task<(Error? Error, TimeSpan RetryAfter)> TryAcquireAsync(string policy, Guid principalId, CancellationToken cancellationToken);
+}
+
 /// <summary>Per-credential rate limit and per-client daily quota.</summary>
 public interface IApiUsageLimiter
 {

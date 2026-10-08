@@ -118,6 +118,38 @@ public class LedgerVerificationApiTests : UsageTestBase
     }
 
     [Fact]
+    public async Task A_persistent_break_is_alerted_once_and_listed_for_the_operator_until_it_is_fixed()
+    {
+        var a = await NewTenantAsync("V9", credits: 100);
+        await RunRecognitionsAsync(a, seed: 10);
+        var victim = (await EntryIdsAsync(a))[2];
+        await TamperWithReasonAsync(victim);
+
+        (await VerifyAsync()).BrokenLicenses.ShouldBe(1);
+        (await VerifyAsync()).BrokenLicenses.ShouldBe(1);
+        (await VerifyAsync()).BrokenLicenses.ShouldBe(1);
+
+        var open = await GetAsync<List<LedgerOpenBreakDto>>("/api/v1/admin/licensing/ledger-breaks", Platform.AccessToken);
+        var item = open.ShouldHaveSingleItem();
+        (item.LicenseId, item.ClientId, item.BreakKey).ShouldBe((a.LicenseId, a.ClientId, $"row:{victim}"));
+        item.TimesSeen.ShouldBe(3);
+        item.AlertedAt.ShouldNotBeNull();
+        item.LastReminderAt.ShouldBeNull("three runs in a row do not re-announce it");
+        (await App.WithDbAsync(db => db.AuditLogs.CountAsync(l => l.Action == "ledger.verification_failed"))).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task The_open_break_list_is_for_platform_operators_only_and_empty_on_a_healthy_platform()
+    {
+        const string url = "/api/v1/admin/licensing/ledger-breaks";
+        var a = await NewTenantAsync("V10", credits: 100);
+
+        (await App.GetAsync(url)).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await App.GetAsync(url, a.Token)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await GetAsync<List<LedgerOpenBreakDto>>(url, Platform.AccessToken)).ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task A_tamper_that_recomputes_the_whole_unkeyed_chain_is_still_caught_by_the_signed_checkpoint()
     {
         var a = await NewTenantAsync("V7", credits: 100);

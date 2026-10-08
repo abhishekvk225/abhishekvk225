@@ -255,5 +255,6 @@ public sealed class AuthApp : IAsyncDisposable
     {
         Client.Dispose();
         await Factory.DisposeAsync();
+        await SqlServerFixture.TryDropDatabaseAsync(ConnectionString);
     }
 }

@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using NexaVerify.Api.Authorization;
+using NexaVerify.Api.Filters;
+using NexaVerify.Application.Api;
 using NexaVerify.Api.Http;
 using NexaVerify.Application.Dashboards;
 using NexaVerify.Application.Licensing;
@@ -26,6 +28,7 @@ public sealed class ClientDashboardController : ApiControllerBase
     /// <summary>Credit balances, recognitions per day, success/no-match/error rates, credits consumed per day, API traffic and top keys.</summary>
     [HttpGet("dashboard")]
     [HasPermission(Permissions.Dashboard.Client)]
+    [Throttle(ThrottlePolicies.Dashboards)]
     [ProducesResponseType<ClientDashboardDto>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Dashboard([FromQuery] DashboardQuery query, CancellationToken cancellationToken) =>
         ToActionResult(await _dashboard.GetAsync(query, cancellationToken));
@@ -33,6 +36,7 @@ public sealed class ClientDashboardController : ApiControllerBase
     /// <summary>Daily usage as CSV (at most 92 days). Cells that could be run as formulas by a spreadsheet are neutralised; the export is audit-logged.</summary>
     [HttpGet("reports/usage.csv")]
     [HasPermission(Permissions.Usage.Read)]
+    [Throttle(ThrottlePolicies.Exports)]
     [Produces("text/csv")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> UsageCsv([FromQuery] UsageReportQuery query, CancellationToken cancellationToken)

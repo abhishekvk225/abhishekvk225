@@ -78,7 +78,8 @@ public sealed class LedgerCheckpoint : ITenantOwned, IAppendOnly
 
 /// <summary>
 /// One persistent ledger finding, remembered so that a break that stays broken is reported to the audit trail ONCE (per license and
-/// first broken row) instead of every night; the Critical log line is still written on every run.
+/// first broken row) instead of every night. The operator alert (Critical log event 7001) fires when the record is opened and then
+/// only as an occasional reminder; quiet runs log a Warning (event 7003).
 /// </summary>
 public sealed class LedgerBreakRecord : Entity, ITenantOwned
 {
@@ -104,10 +105,36 @@ public sealed class LedgerBreakRecord : Entity, ITenantOwned
     /// <summary>Set when a later run verified the license clean again.</summary>
     public DateTime? ClearedAt { get; private set; }
 
+    /// <summary>When the operator was alerted about this break (set when the record is opened; a persistent break is not re-alerted every run).</summary>
+    public DateTime? AlertedAt { get; private set; }
+
+    /// <summary>When the operator was last reminded that the break is still unresolved.</summary>
+    public DateTime? LastReminderAt { get; private set; }
+
     public void Seen(DateTime now)
     {
         LastSeenAt = now;
         TimesSeen++;
+    }
+
+    /// <summary>
+    /// True when the operator should be told again: never when <paramref name="reminderAfter"/> is zero (alert once), otherwise once
+    /// that long has passed since the last alert or reminder.
+    /// </summary>
+    public bool ReminderDue(DateTime now, TimeSpan reminderAfter) =>
+        reminderAfter > TimeSpan.Zero && now - (LastReminderAt ?? AlertedAt ?? FirstSeenAt) >= reminderAfter;
+
+    /// <summary>Records that the operator was alerted (first call) or reminded (later calls).</summary>
+    public void MarkAlerted(DateTime now)
+    {
+        if (AlertedAt is null)
+        {
+            AlertedAt = now;
+        }
+        else
+        {
+            LastReminderAt = now;
+        }
     }
 
     public void Clear(DateTime now) => ClearedAt = now;
@@ -121,6 +148,7 @@ public sealed class LedgerBreakRecord : Entity, ITenantOwned
         FirstSeenAt = now,
         LastSeenAt = now,
         TimesSeen = 1,
+        AlertedAt = now,
     };
 }
 

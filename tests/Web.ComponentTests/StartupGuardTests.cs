@@ -162,6 +162,23 @@ public class StartupGuardTests
     }
 
     [Fact]
+    public void A_shared_session_store_replaces_the_in_memory_opt_in_and_must_be_configured_completely()
+    {
+        var shared = With(v =>
+        {
+            v.Remove("Session:AllowInMemoryStore");
+            v["PortalCache:Provider"] = "SqlServer";
+            v["PortalCache:SqlServer:ConnectionString"] = "Server=db;Database=cache;Integrated Security=true";
+        });
+
+        Should.NotThrow(() => Validate("Production", shared));
+
+        shared.Remove("PortalCache:SqlServer:ConnectionString");
+        Should.Throw<InvalidOperationException>(() => Validate("Production", shared)).Message.ShouldContain("PortalCache:SqlServer:ConnectionString");
+        Should.Throw<InvalidOperationException>(() => Validate("Production", With(v => v.Remove("Session:AllowInMemoryStore")))).Message.ShouldContain("PortalCache:Provider");
+    }
+
+    [Fact]
     public void A_host_prefixed_cookie_name_needs_secure_cookies()
     {
         Should.Throw<InvalidOperationException>(() => Validate("Development", new()

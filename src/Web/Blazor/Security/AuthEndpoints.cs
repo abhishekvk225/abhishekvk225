@@ -257,9 +257,11 @@ public static partial class AuthEndpoints
 
 /// <summary>
 /// Caps how often one signed-in session may start an export through the portal (each one is a database-heavy report on the API).
-/// Fixed window per session id, bounded memory. The API still audits every export it serves.
+/// Fixed window per session id, bounded memory. The API still audits every export it serves and enforces the hard, cluster-wide
+/// per-principal cap (<c>Throttle:ExportsPerMinute</c>). With a shared portal cache (<c>PortalCache:Provider</c> other than Memory)
+/// the window is kept there, so all portal nodes count together (softly: see <see cref="SharedDownloadWindow"/>).
 /// </summary>
-public sealed class DownloadThrottle(TimeProvider clock)
+public sealed class DownloadThrottle(TimeProvider clock, Microsoft.Extensions.Caching.Distributed.IDistributedCache? shared = null)
 {
     public const int MaxPerWindow = 6;
 
@@ -274,6 +276,11 @@ public sealed class DownloadThrottle(TimeProvider clock)
     public bool TryAcquire(string key, out TimeSpan retryAfter)
     {
         var now = clock.GetUtcNow();
+        if (shared is not null)
+        {
+            return SharedDownloadWindow.TryAcquire(shared, key, now, Window, MaxPerWindow, out retryAfter);
+        }
+
         lock (_gate)
         {
             if (_windows.Count > PruneAbove)
@@ -359,7 +366,7 @@ public static class DownloadEndpoints
 
         var sessionId = http.User.FindFirst(PortalClaims.SessionId)?.Value;
         var path = apiPath + (query.Count > 0 ? "?" + string.Join('&', query) : string.Empty);
-        var result = await api.OpenStreamAsync(path, http.RequestAborted, new ApiCallOptions { SessionId = sessionId });
+        var result = await api.OpenStreamAsync(path, http.RequestAborted, new ApiCallOptions { SessionId = sessionId, ClientIp = http.Connection.RemoteIpAddress?.ToString() });
         if (!result.IsSuccess)
         {
             var error = result.Error!;
@@ -373,7 +380,16 @@ public static class DownloadEndpoints
         http.Response.ContentType = "text/csv; charset=utf-8";
         http.Response.Headers.ContentDisposition = $"attachment; filename=\"nexaverify-usage-{DateTime.UtcNow:yyyyMMdd}.csv\"";
         http.Response.Headers.CacheControl = "no-store";
-        await using var body = await upstream.Content.ReadAsStreamAsync(http.RequestAborted);
-        await body.CopyToAsync(http.Response.Body, http.RequestAborted);
+        try
+        {
+            await using var body = await upstream.Content.ReadAsStreamAsync(http.RequestAborted);
+            await body.CopyToAsync(http.Response.Body, http.RequestAborted);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException)
+        {
+            // The API stopped mid-file. The status line is gone already, so end the transfer as FAILED instead of delivering a
+            // truncated file that looks complete.
+            http.Abort();
+        }
     }
 }

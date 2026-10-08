@@ -275,8 +275,19 @@ public class LedgerVerificationTests
             Entries.Add((logLevel, formatter(state, exception)));
     }
 
+    private sealed class AdjustableClock : TimeProvider
+    {
+        private DateTimeOffset _now = new(2026, 3, 1, 3, 0, 0, TimeSpan.Zero);
+
+        public override DateTimeOffset GetUtcNow() => _now;
+
+        public void Advance(TimeSpan by) => _now += by;
+    }
+
     private sealed class Harness
     {
+        public AdjustableClock Clock { get; } = new();
+
         public FakeStore Store { get; } = new();
 
         public RecordingAudit Audit { get; } = new();
@@ -292,8 +303,8 @@ public class LedgerVerificationTests
         public TestCrypto Crypto { get; } = new();
 
         public LedgerVerificationService Service(LedgerVerificationGate? gate = null, IDistributedLock? distributedLock = null) =>
-            new(Store, new LedgerAnchorService(Crypto, Store, TimeProvider.System), gate ?? new LedgerVerificationGate(), Launcher, new NoUser(), Audit, Uow,
-                Microsoft.Extensions.Options.Options.Create(Options), TimeProvider.System, Log, distributedLock);
+            new(Store, new LedgerAnchorService(Crypto, Store, Clock), gate ?? new LedgerVerificationGate(), Launcher, new NoUser(), Audit, Uow,
+                Microsoft.Extensions.Options.Options.Create(Options), Clock, Log, distributedLock);
 
         public Guid Add(License license, List<LicenseTransaction> entries)
         {
@@ -549,7 +560,7 @@ public class LedgerVerificationTests
     // ---- alert de-duplication ----
 
     [Fact]
-    public async Task A_persistent_break_is_audited_once_but_logged_critical_on_every_run()
+    public async Task A_persistent_break_is_audited_and_alerted_once_not_every_night()
     {
         var h = new Harness();
         var (bad, badEntries) = Chain();
@@ -559,13 +570,83 @@ public class LedgerVerificationTests
         for (var run = 0; run < 3; run++)
         {
             await h.Service().RunAsync("test", null, default);
+            h.Clock.Advance(TimeSpan.FromHours(24));
         }
 
         h.Audit.Entries.Count(e => e.Action == "ledger.verification_failed").ShouldBe(1);
-        h.Log.Entries.Count(e => e.Level == LogLevel.Critical).ShouldBe(3);
+        h.Log.Entries.Count(e => e.Level == LogLevel.Critical).ShouldBe(1, "the operator alert fires when the break is first found");
+        h.Log.Entries.Count(e => e.Level == LogLevel.Warning).ShouldBe(2, "later nights only note that it is still unresolved");
         var record = h.Store.Breaks.ShouldHaveSingleItem();
         record.TimesSeen.ShouldBe(3);
+        record.AlertedAt.ShouldNotBeNull();
+        record.LastReminderAt.ShouldBeNull();
         record.BreakKey.ShouldBe($"row:{badEntries[2].Id}");
+    }
+
+    [Fact]
+    public async Task A_break_that_stays_unresolved_is_re_announced_only_as_a_periodic_reminder()
+    {
+        var h = new Harness();
+        h.Options.ReminderDays = 7;
+        var (bad, badEntries) = Chain();
+        Tamper(badEntries[2], nameof(LicenseTransaction.Credits), -9);
+        h.Add(bad, badEntries);
+
+        for (var night = 0; night < 15; night++)
+        {
+            await h.Service().RunAsync("test", null, default);
+            h.Clock.Advance(TimeSpan.FromHours(24));
+        }
+
+        h.Log.Entries.Count(e => e.Level == LogLevel.Critical).ShouldBe(3, "day 0, then reminders on day 7 and day 14");
+        h.Audit.Entries.Count(e => e.Action == "ledger.verification_failed").ShouldBe(1);
+        h.Store.Breaks.Single().LastReminderAt.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task Reminders_can_be_switched_off_so_a_break_alerts_exactly_once()
+    {
+        var h = new Harness();
+        h.Options.ReminderDays = 0;
+        var (bad, badEntries) = Chain();
+        Tamper(badEntries[2], nameof(LicenseTransaction.Credits), -9);
+        h.Add(bad, badEntries);
+
+        for (var night = 0; night < 40; night++)
+        {
+            await h.Service().RunAsync("test", null, default);
+            h.Clock.Advance(TimeSpan.FromHours(24));
+        }
+
+        h.Log.Entries.Count(e => e.Level == LogLevel.Critical).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Open_breaks_are_listed_for_the_operator_oldest_first_and_disappear_once_the_license_verifies_clean()
+    {
+        var h = new Harness();
+        var (first, firstEntries) = Chain();
+        var (second, secondEntries) = Chain();
+        var original = firstEntries[1].Credits;
+        Tamper(firstEntries[1], nameof(LicenseTransaction.Credits), -9);
+        h.Add(first, firstEntries);
+        await h.Service().RunAsync("test", null, default);
+        h.Clock.Advance(TimeSpan.FromDays(1));
+        Tamper(secondEntries[2], nameof(LicenseTransaction.Credits), -9);
+        h.Add(second, secondEntries);
+        await h.Service().RunAsync("test", null, default);
+
+        var open = (await h.Service().ListOpenBreaksAsync(default)).Value;
+
+        open.Select(b => b.LicenseId).ShouldBe([first.Id, second.Id]);
+        open[0].TimesSeen.ShouldBe(2);
+        open[0].AlertedAt.ShouldNotBeNull();
+        open[0].Reason.ShouldNotBeNullOrWhiteSpace();
+
+        Tamper(firstEntries[1], nameof(LicenseTransaction.Credits), original);
+        await h.Service().RunAsync("test", null, default);
+
+        (await h.Service().ListOpenBreaksAsync(default)).Value.Select(b => b.LicenseId).ShouldBe([second.Id]);
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using NexaVerify.Api.Authorization;
+using NexaVerify.Api.Filters;
 using NexaVerify.Api.Http;
 using NexaVerify.Application.Api;
 using NexaVerify.Contracts.Api;
@@ -44,6 +45,7 @@ public sealed class WebhooksController : ApiControllerBase
     public async Task<IActionResult> RotateSecret(Guid id, CancellationToken cancellationToken) => ToActionResult(await _webhooks.RotateSecretAsync(id, cancellationToken));
 
     [HttpPost("{id:guid}/test")]
+    [Throttle(ThrottlePolicies.WebhookTest)]
     public async Task<IActionResult> Test(Guid id, CancellationToken cancellationToken) => ToActionResult(await _webhooks.SendTestAsync(id, cancellationToken));
 
     [HttpGet("{id:guid}/deliveries")]
@@ -51,6 +53,7 @@ public sealed class WebhooksController : ApiControllerBase
         ToActionResult(await _webhooks.DeliveriesAsync(id, page, cancellationToken));
 
     [HttpPost("{id:guid}/deliveries/{deliveryId:long}/retry")]
+    [Throttle(ThrottlePolicies.WebhookRetry)]
     public async Task<IActionResult> Retry(Guid id, long deliveryId, CancellationToken cancellationToken) =>
         ToActionResult(await _webhooks.RetryAsync(id, deliveryId, cancellationToken));
 }
