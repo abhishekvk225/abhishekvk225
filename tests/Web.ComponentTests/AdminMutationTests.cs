@@ -234,6 +234,49 @@ public class AdminMutationTests : PageTestBase
         _providers.FindAll("[data-testid=form-submit]").ShouldBeEmpty();
     }
 
+    // ---- editing a client must not demand the first-administrator fields ----
+
+    [Fact]
+    public void Editing_a_client_saves_without_any_administrator_details()
+    {
+        Arrange();
+        var id = Guid.NewGuid();
+        Clients.Get = _ => Task.FromResult(ApiResult<ClientDto>.Ok(Sample.Client(id)));
+        var cut = Render<ClientDetailPage>(p => p.Add(x => x.Id, id));
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=edit-client]").Count.ShouldBe(1));
+
+        cut.Find("[data-testid=edit-client]").Click();
+        _providers.WaitForAssertion(() => _providers.FindAll("[data-testid=form-submit]").Count.ShouldBe(1));
+        _providers.FindAll("input").Any(i => i.GetAttribute("maxlength") == "256" && i.GetAttribute("type") == "email").ShouldBeTrue();
+        Type(_providers, "Company name", "Acme Renamed");
+        Submit();
+
+        cut.WaitForAssertion(() => Clients.Calls.ShouldContain("update:Acme Renamed"));
+        _providers.Markup.ShouldNotContain("Enter the administrator");
+    }
+
+    [Fact]
+    public void The_client_form_only_requires_the_administrator_when_creating()
+    {
+        var create = new ClientForm { Code = "X", Name = "X", ContactEmail = "a@b.test" };
+        var edit = ClientForm.From(Sample.Client(Guid.NewGuid()));
+
+        Validate(create).Select(r => r.ErrorMessage).ShouldBe(["Enter the administrator's email.", "Enter the administrator's name."], ignoreOrder: true);
+        Validate(edit).ShouldBeEmpty();
+        create.AdminEmail = "not-an-email";
+        create.AdminFullName = "Nia";
+        Validate(create).Select(r => r.ErrorMessage).ShouldBe(["Enter a valid email address."]);
+        create.AdminEmail = "nia@x.test";
+        Validate(create).ShouldBeEmpty();
+    }
+
+    private static List<ValidationResult> Validate(ClientForm form)
+    {
+        var results = new List<ValidationResult>();
+        Validator.TryValidateObject(form, new ValidationContext(form), results, validateAllProperties: true);
+        return results;
+    }
+
     // ---- license actions ----
 
     private IRenderedComponent<LicenseDetailPage> LicenseDetail()

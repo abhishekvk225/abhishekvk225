@@ -19,6 +19,35 @@ public sealed class HttpsUrlAttribute : ValidationAttribute
         || (Uri.TryCreate(text.Trim(), UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps);
 }
 
+/// <summary>
+/// The first-administrator fields only exist when a client is created; editing an existing client must not be blocked by them.
+/// Checked per field (so the wizard can validate step by step) and skipped when the form is an edit.
+/// </summary>
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class RequiredForNewClientAttribute(string message, bool email = false) : ValidationAttribute(message)
+{
+    protected override ValidationResult? IsValid(object? value, ValidationContext validationContext)
+    {
+        if (validationContext.ObjectInstance is ClientForm { IsEdit: true })
+        {
+            return ValidationResult.Success;
+        }
+
+        var text = value as string;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return new ValidationResult(ErrorMessage, [validationContext.MemberName!]);
+        }
+
+        if (email && !new EmailAddressAttribute().IsValid(text))
+        {
+            return new ValidationResult("Enter a valid email address.", [validationContext.MemberName!]);
+        }
+
+        return ValidationResult.Success;
+    }
+}
+
 /// <summary>Form model for creating and editing a client. Field rules mirror the API validators so users see problems inline.</summary>
 public sealed class ClientForm
 {
@@ -69,11 +98,14 @@ public sealed class ClientForm
     [StringLength(1000)]
     public string? Notes { get; set; }
 
-    [Required(ErrorMessage = "Enter the administrator's email."), EmailAddress(ErrorMessage = "Enter a valid email address."), StringLength(256)]
+    [RequiredForNewClient("Enter the administrator's email.", email: true), StringLength(256)]
     public string AdminEmail { get; set; } = string.Empty;
 
-    [Required(ErrorMessage = "Enter the administrator's name."), StringLength(150)]
+    [RequiredForNewClient("Enter the administrator's name."), StringLength(150)]
     public string AdminFullName { get; set; } = string.Empty;
+
+    /// <summary>True when editing an existing client (the administrator fields do not apply).</summary>
+    public bool IsEdit { get; set; }
 
     /// <summary>Wizard step 3 (optional): a plan to issue a first license from.</summary>
     public Guid? InitialPlanId { get; set; }
@@ -99,6 +131,7 @@ public sealed class ClientForm
         Code = c.Code, Name = c.Name, LegalName = c.LegalName, ContactEmail = c.ContactEmail, ContactPhone = c.ContactPhone,
         AddressLine1 = c.AddressLine1, AddressLine2 = c.AddressLine2, City = c.City, State = c.State, PostalCode = c.PostalCode,
         Country = c.Country, Website = c.Website, Industry = c.Industry, TimeZone = c.TimeZone, Notes = c.Notes, RowVersion = c.RowVersion,
+        IsEdit = true,
     };
 }
 

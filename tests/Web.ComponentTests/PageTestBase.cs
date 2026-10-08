@@ -46,7 +46,11 @@ public sealed class FakeClientsApi : IClientsApiClient
         return Create(request);
     }
 
-    public Task<ApiResult<ClientDto>> UpdateAsync(Guid id, UpdateClientRequest request, CancellationToken ct = default) => Task.FromResult(ApiResult<ClientDto>.Ok(Sample.Client(id)));
+    public Task<ApiResult<ClientDto>> UpdateAsync(Guid id, UpdateClientRequest request, CancellationToken ct = default)
+    {
+        Calls.Add($"update:{request.Name}");
+        return Task.FromResult(ApiResult<ClientDto>.Ok(Sample.Client(id) with { Name = request.Name }));
+    }
 
     public Task<ApiResult<ClientDto>> ActivateAsync(Guid id, CancellationToken ct = default)
     {
