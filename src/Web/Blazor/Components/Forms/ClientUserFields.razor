@@ -6,8 +6,8 @@
     <MudTextField T="string" @bind-Value="Model.JobTitle" For="() => Model.JobTitle" Label="Job title (optional)" Variant="Variant.Outlined" Immediate="true" MaxLength="100" />
     <MudSelect T="string" @bind-Value="Model.Role" For="() => Model.Role" Label="Role" Variant="Variant.Outlined"
                HelperText="Administrators manage keys, webhooks, people and settings. Team members can run face checks and see results.">
-        <MudSelectItem T="string" Value="@("ClientUser")">Team member</MudSelectItem>
-        <MudSelectItem T="string" Value="@("ClientAdmin")">Administrator</MudSelectItem>
+        <MudSelectItem T="string" Value="SystemRoles.ClientUser">Team member</MudSelectItem>
+        <MudSelectItem T="string" Value="SystemRoles.ClientAdmin">Administrator</MudSelectItem>
     </MudSelect>
     @if (Model.Id is not null)
     {

@@ -53,8 +53,8 @@
 
     private static string RoleLabel(string role) => role switch
     {
-        "ClientAdmin" => "Administrator",
-        "ClientUser" => "Team member",
+        SystemRoles.ClientAdmin => "Administrator",
+        SystemRoles.ClientUser => "Team member",
         _ => role,
     };
 

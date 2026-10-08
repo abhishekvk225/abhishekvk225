@@ -38,6 +38,26 @@ public class WebhookUrlGuardTests
     [InlineData("64:ff9b::a00:1", false)]
     public void Only_public_unicast_addresses_pass(string address, bool expected) => WebhookUrlGuard.IsPublic(IPAddress.Parse(address)).ShouldBe(expected);
 
+    [Theory]
+    [InlineData("https://user:pass@example.com/hook")]
+    [InlineData("https://user@example.com/hook")]
+    [InlineData("https://:secret@example.com/hook")]
+    [InlineData("https://example.com@evil.example.org/hook")]
+    public async Task Urls_with_a_username_or_password_are_refused(string url)
+    {
+        var guard = new WebhookUrlGuard(Microsoft.Extensions.Options.Options.Create(new WebhookOptions()));
+
+        (await guard.ValidateAsync(url, CancellationToken.None)).ShouldBe("The URL must not contain a username or password.");
+    }
+
+    [Fact]
+    public async Task Urls_with_a_username_are_refused_even_when_unsafe_targets_are_allowed()
+    {
+        var guard = new WebhookUrlGuard(Microsoft.Extensions.Options.Options.Create(new WebhookOptions { AllowUnsafeTargets = true }));
+
+        (await guard.ValidateAsync("http://user:pass@localhost/hook", CancellationToken.None)).ShouldNotBeNull();
+    }
+
     [Fact]
     public void Webhook_signatures_are_stable_and_bound_to_time_and_body()
     {

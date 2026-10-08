@@ -104,6 +104,7 @@ public static class PortalServiceExtensions
                 options.Events.OnValidatePrincipal = SessionCookieEvents.ValidateAsync;
             });
 
+        services.AddSingleton<DownloadThrottle>();
         services.AddPortalAuthorization();
         services.AddCascadingAuthenticationState();
         services.AddScoped<AuthenticationStateProvider, SessionAuthenticationStateProvider>();

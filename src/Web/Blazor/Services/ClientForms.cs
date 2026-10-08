@@ -1,3 +1,4 @@
+using NexaVerify.Contracts.Identity;
 using System.ComponentModel.DataAnnotations;
 using System.Net;
 using NexaVerify.Contracts.Api;
@@ -18,6 +19,12 @@ public static class FaceLimits
 
     /// <summary>How the accepted types read in messages.</summary>
     public const string TypesText = "JPEG, PNG or WebP";
+}
+
+/// <summary>Limits of an API key shared by the form rules and the form fields.</summary>
+public static class ApiKeyLimits
+{
+    public const int MaxRequestsPerMinute = 100_000;
 }
 
 /// <summary>Text helpers shared by the forms.</summary>
@@ -114,9 +121,8 @@ public sealed class EnrollForm
     public string? Metadata { get; set; }
 
     public EnrollFaceRequest ToRequest() =>
-        new(ExternalRef.Trim(), Blank(DisplayName), Blank(Metadata), ConsentReference.Trim());
+        new(ExternalRef.Trim(), DisplayName.NullIfBlank(), Metadata.NullIfBlank(), ConsentReference.Trim());
 
-    private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }
 
 public sealed class VerifyForm
@@ -149,7 +155,7 @@ public sealed class ApiKeyForm : IValidatableObject
 
     public DateTime? ExpiresOn { get; set; }
 
-    [Range(1, 100_000, ErrorMessage = "Enter a number between 1 and 100,000.")]
+    [Range(1, ApiKeyLimits.MaxRequestsPerMinute, ErrorMessage = "Enter a number between 1 and 100,000.")]
     public int? RateLimitPerMinute { get; set; }
 
     /// <summary>One address or range per line.</summary>
@@ -265,13 +271,13 @@ public sealed class WebhookForm
 public sealed class HttpsRequiredAttribute : ValidationAttribute
 {
     public HttpsRequiredAttribute()
-        : base("The address must start with https://, for example https://example.com/hooks.")
+        : base("The address must start with https:// and must not contain a username or password, for example https://example.com/hooks.")
     {
     }
 
     public override bool IsValid(object? value) =>
         value is not string text || string.IsNullOrWhiteSpace(text)
-        || (Uri.TryCreate(text.Trim(), UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps);
+        || (Uri.TryCreate(text.Trim(), UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps && string.IsNullOrEmpty(uri.UserInfo));
 }
 
 public sealed class InviteUserForm
@@ -285,7 +291,7 @@ public sealed class InviteUserForm
     public string FullName { get; set; } = string.Empty;
 
     [Required(ErrorMessage = "Choose a role."), StringLength(60)]
-    public string Role { get; set; } = "ClientUser";
+    public string Role { get; set; } = SystemRoles.ClientUser;
 
     [StringLength(100)]
     public string? JobTitle { get; set; }
@@ -359,8 +365,7 @@ public sealed class CompanyProfileForm
     };
 
     public UpdateClientProfileRequest ToRequest() => new(
-        Name.Trim(), Blank(LegalName), ContactEmail.Trim(), Blank(ContactPhone), Blank(AddressLine1), Blank(AddressLine2), Blank(City), Blank(State),
-        Blank(PostalCode), Blank(Country)?.ToUpperInvariant(), Blank(Website), Blank(Industry), TimeZone.Trim(), RowVersion);
+        Name.Trim(), LegalName.NullIfBlank(), ContactEmail.Trim(), ContactPhone.NullIfBlank(), AddressLine1.NullIfBlank(), AddressLine2.NullIfBlank(), City.NullIfBlank(), State.NullIfBlank(),
+        PostalCode.NullIfBlank(), Country.NullIfBlank()?.ToUpperInvariant(), Website.NullIfBlank(), Industry.NullIfBlank(), TimeZone.Trim(), RowVersion);
 
-    private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

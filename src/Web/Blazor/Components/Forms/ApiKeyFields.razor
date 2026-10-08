@@ -15,7 +15,7 @@
     </fieldset>
     <MudDatePicker Date="Model.ExpiresOn" DateChanged="@(d => Model.ExpiresOn = d)" Label="Expires on (optional)" Variant="Variant.Outlined" Editable="true" Clearable="true"
                    HelperText="Leave empty for a key that does not expire." />
-    <MudNumericField T="int?" @bind-Value="Model.RateLimitPerMinute" For="() => Model.RateLimitPerMinute" Label="Requests per minute (optional)" Variant="Variant.Outlined" Min="1" Max="100000"
+    <MudNumericField T="int?" @bind-Value="Model.RateLimitPerMinute" For="() => Model.RateLimitPerMinute" Label="Requests per minute (optional)" Variant="Variant.Outlined" Min="1" Max="ApiKeyLimits.MaxRequestsPerMinute"
                      HelperText="Leave empty to use your plan's limit." />
     <MudTextField T="string" @bind-Value="Model.AllowedIpsText" For="() => Model.AllowedIpsText" Label="Allowed IP addresses (optional)" Variant="Variant.Outlined" Immediate="true" Lines="3"
                   HelperText="One address or range per line, such as 203.0.113.7 or 203.0.113.0/24. Empty means any address." />

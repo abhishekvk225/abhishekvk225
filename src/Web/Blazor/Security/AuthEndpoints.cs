@@ -157,21 +157,90 @@ public static partial class AuthEndpoints
     private static partial Regex ReferenceRegex();
 }
 
+/// <summary>
+/// Caps how often one signed-in session may start an export through the portal (each one is a database-heavy report on the API).
+/// Fixed window per session id, bounded memory. The API still audits every export it serves.
+/// </summary>
+public sealed class DownloadThrottle(TimeProvider clock)
+{
+    public const int MaxPerWindow = 6;
+
+    public static readonly TimeSpan Window = TimeSpan.FromMinutes(1);
+
+    private const int PruneAbove = 2_000;
+
+    private readonly Lock _gate = new();
+    private readonly Dictionary<string, (DateTimeOffset Start, int Count)> _windows = new(StringComparer.Ordinal);
+
+    /// <summary>True when the export may start; otherwise <paramref name="retryAfter"/> says when the window reopens.</summary>
+    public bool TryAcquire(string key, out TimeSpan retryAfter)
+    {
+        var now = clock.GetUtcNow();
+        lock (_gate)
+        {
+            if (_windows.Count > PruneAbove)
+            {
+                foreach (var stale in _windows.Where(w => now - w.Value.Start >= Window).Select(w => w.Key).ToList())
+                {
+                    _windows.Remove(stale);
+                }
+            }
+
+            if (!_windows.TryGetValue(key, out var current) || now - current.Start >= Window)
+            {
+                _windows[key] = (now, 1);
+                retryAfter = TimeSpan.Zero;
+                return true;
+            }
+
+            if (current.Count >= MaxPerWindow)
+            {
+                retryAfter = current.Start + Window - now;
+                return false;
+            }
+
+            _windows[key] = (current.Start, current.Count + 1);
+            retryAfter = TimeSpan.Zero;
+            return true;
+        }
+    }
+}
+
 /// <summary>BFF download endpoints: the API's CSV is streamed through the portal so the browser never sees a bearer token.</summary>
 public static class DownloadEndpoints
 {
     public static void MapPortalDownloads(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/bff/reports/usage.csv", (HttpContext http, IApiGateway api, string? from, string? to) => RelayCsvAsync(http, api, from, to, "admin/reports/usage.csv"))
+        app.MapGet("/bff/reports/usage.csv", (HttpContext http, IApiGateway api, DownloadThrottle throttle, string? from, string? to) => RelayCsvAsync(http, api, throttle, from, to, "admin/reports/usage.csv"))
             .RequireAuthorization(Policies.Permission(WebPermissions.ReportsRead), Policies.PlatformPortal);
 
         // The client portal's own usage export: the API derives the client from the credential, the portal only relays the file.
-        app.MapGet("/bff/client/reports/usage.csv", (HttpContext http, IApiGateway api, string? from, string? to) => RelayCsvAsync(http, api, from, to, "client/reports/usage.csv"))
+        app.MapGet("/bff/client/reports/usage.csv", (HttpContext http, IApiGateway api, DownloadThrottle throttle, string? from, string? to) => RelayCsvAsync(http, api, throttle, from, to, "client/reports/usage.csv"))
             .RequireAuthorization(Policies.Permission(WebPermissions.UsageRead), Policies.ClientPortal);
     }
 
-    private static async Task RelayCsvAsync(HttpContext http, IApiGateway api, string? from, string? to, string apiPath)
+    private static async Task RelayCsvAsync(HttpContext http, IApiGateway api, DownloadThrottle throttle, string? from, string? to, string apiPath)
     {
+        // Only the portal's own pages (or the address bar) may start an export: a link on another site cannot make a signed-in
+        // browser trigger a heavy report.
+        if (!AuthEndpoints.IsSameOriginNavigation(http.Request))
+        {
+            http.Response.StatusCode = StatusCodes.Status403Forbidden;
+            http.Response.Headers.CacheControl = "no-store";
+            return;
+        }
+
+        var key = http.User.FindFirst(PortalClaims.SessionId)?.Value ?? http.User.Identity?.Name ?? "anonymous";
+        if (!throttle.TryAcquire(key, out var retryAfter))
+        {
+            http.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+            http.Response.Headers.RetryAfter = Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
+            http.Response.Headers.CacheControl = "no-store";
+            http.Response.ContentType = "text/plain; charset=utf-8";
+            await http.Response.WriteAsync("You have started several reports in a row. Please wait a minute and try again.", http.RequestAborted);
+            return;
+        }
+
         var query = new List<string>();
         foreach (var (name, value) in new[] { ("from", from), ("to", to) })
         {

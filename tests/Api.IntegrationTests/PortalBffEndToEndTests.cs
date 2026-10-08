@@ -404,6 +404,19 @@ public class PortalBffEndToEndTests : IAsyncLifetime
         csv.Content.Headers.ContentDisposition!.DispositionType.ShouldBe("attachment");
         Collect(leaks, csv, await csv.Content.ReadAsStringAsync());
         (await browser.GetAsync("/bff/client/reports/usage.csv?from=nope")).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+
+        // a link on another website cannot start an export, and one session cannot start unlimited exports
+        browser.FetchSite = "cross-site";
+        (await browser.GetAsync("/bff/client/reports/usage.csv")).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        browser.FetchSite = "same-origin";
+        HttpResponseMessage? throttled = null;
+        for (var i = 0; i <= WebApp::NexaVerify.Web.Security.DownloadThrottle.MaxPerWindow && throttled?.StatusCode != HttpStatusCode.TooManyRequests; i++)
+        {
+            throttled = await browser.GetAsync("/bff/client/reports/usage.csv?from=2026-01-01&to=2026-01-31");
+        }
+
+        throttled!.StatusCode.ShouldBe(HttpStatusCode.TooManyRequests);
+        throttled.Headers.RetryAfter.ShouldNotBeNull();
         (await Browser().GetAsync("/bff/client/reports/usage.csv")).StatusCode.ShouldBe(HttpStatusCode.Redirect);
 
         // 6. sign out; the session is gone
