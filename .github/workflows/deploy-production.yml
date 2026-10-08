@@ -1,0 +1,70 @@
+name: Deploy production
+
+# MANUAL, APPROVED production deployment of a release tag that has already been deployed to staging successfully.
+# The `production` environment must have required reviewers (and ideally a wait timer and tag-only deployment rules); the approval
+# pause happens when the reusable deploy job starts. Follow docs/runbooks/deploy.md and complete docs/release-checklist.md first.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Stable release tag (vX.Y.Z, no pre-release suffix)
+        required: true
+        type: string
+      change_ticket:
+        description: Change / ticket reference recorded in the run summary
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  preconditions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      deployments: read
+    steps:
+      - name: Tag must be a stable release that succeeded on staging
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          TICKET: ${{ inputs.change_ticket }}
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::'$TAG' is not a stable release tag"; exit 1; }
+          sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '.object.sha')"
+          type="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '.object.type')"
+          if [ "$type" = "tag" ]; then sha="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$sha" --jq '.object.sha')"; fi
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null || { echo "::error::no GitHub release for $TAG"; exit 1; }
+          ok=0
+          for id in $(gh api "repos/$GITHUB_REPOSITORY/deployments?environment=staging&sha=$sha&per_page=20" --jq '.[].id'); do
+            state="$(gh api "repos/$GITHUB_REPOSITORY/deployments/$id/statuses?per_page=1" --jq '.[0].state')"
+            [ "$state" = "success" ] && ok=1 && break
+          done
+          [ "$ok" = "1" ] || { echo "::error::$TAG has no successful staging deployment; deploy and soak it on staging first"; exit 1; }
+          {
+            echo "### Production deployment request"
+            echo "- tag: \`$TAG\` (commit \`$sha\`)"
+            echo "- change ticket: \`$TICKET\`"
+            echo "- requested by: \`$GITHUB_ACTOR\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    needs: preconditions
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      environment: production
+      tag: ${{ inputs.tag }}
+      migrate: true
+    secrets: inherit
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+      attestations: read

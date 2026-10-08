@@ -1,0 +1,63 @@
+# Log-based alert rules (Grafana Loki ruler / Grafana-managed rules; same syntax as Prometheus rule groups with LogQL expressions).
+# Assumes containers write Serilog compact JSON to stdout and the shipper (Promtail / Alloy / Fluent Bit) labels the API stream
+# {app="nexaverify-api"}. Compact JSON carries the message TEMPLATE in "@mt", so the matches below use the literal template text
+# (stable, because it is fixed in code); the numeric event ids 7001/7002 are in the same line for exact filters if your shipper parses them.
+groups:
+  - name: nexaverify-ledger-integrity
+    rules:
+      - alert: LedgerTamperingSuspected
+        # Event 7001, level Critical, logged on EVERY nightly run while a break persists. Never auto-resolve silently.
+        expr: sum(count_over_time({app="nexaverify-api"} |= "LEDGER TAMPERING SUSPECTED" [10m])) > 0
+        for: 0m
+        labels: { severity: critical }
+        annotations:
+          summary: "License ledger verification failed (event 7001)"
+          description: "A hash chain, balance or signed checkpoint does not verify. Follow docs/runbooks/incident-response.md (ledger integrity). Do not adjust the license until understood."
+
+      - alert: LedgerCheckpointsNotWritten
+        # Event 7002 is written whenever a license verifies clean (nightly). Silence for 36 h = the job is not running or nothing verifies.
+        expr: sum(count_over_time({app="nexaverify-api"} |= "Ledger checkpoint written" [36h])) == 0
+        for: 1h
+        labels: { severity: warning }
+        annotations:
+          summary: "No ledger checkpoint (event 7002) in 36 hours"
+          description: "Nightly verification is not running (Metering:LedgerVerification:Enabled?), failing, or no license verifies clean. Also confirm the external copy of 7002 lines is still being shipped (docs/runbooks/monitoring.md)."
+
+      - alert: LedgerVerificationRunFailed
+        expr: sum(count_over_time({app="nexaverify-api"} |~ "Ledger verification (run .* )?(failed|ended with an error)|could not be verified" [30m])) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "A ledger verification run errored (not a tamper finding: the run itself failed)"
+
+  - name: nexaverify-background-jobs
+    rules:
+      - alert: BackgroundJobFailures
+        expr: |
+          sum(count_over_time({app="nexaverify-api"}
+            |~ "Webhook dispatch cycle failed|License alert run failed|License alerts failed for client|Face retention sweep failed|Face retention failed for client|License expiry sweep failed|Ledger verification failed to run|API request log purge failed"
+            [15m])) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "A background job logged an error"
+
+      - alert: ApiRequestLogDropping
+        expr: sum(count_over_time({app="nexaverify-api"} |= "API request log queue is full" [10m])) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "API request-log queue full; usage log entries are being dropped"
+
+      - alert: EmailsBeingDropped
+        expr: sum(count_over_time({app="nexaverify-api"} |~ "Email queue is full|Giving up sending email" [30m])) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "Outgoing email (invitations, resets) is failing"
+
+  - name: nexaverify-webhooks
+    rules:
+      - alert: WebhookDeliveryBacklog
+        # No backlog gauge exists yet (see docs/runbooks/monitoring.md, "Known gaps"); until it does, a failing dispatcher or endpoints
+        # disabled after repeated failures are the best log-side signals. The admin dashboard also shows retrying/abandoned counts.
+        expr: sum(count_over_time({app="nexaverify-api"} |~ "Webhook delivery .* failed unexpectedly|was disabled after repeated failures|Webhook dispatch cycle failed" [15m])) > 5
+        labels: { severity: warning }
+        annotations:
+          summary: "Webhook deliveries are failing in bulk"

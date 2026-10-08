@@ -1,0 +1,49 @@
+# TLS-terminating reverse proxy for the production-like compose stack.
+# `tls internal` = Caddy's own local CA (rehearsals on hosts without public DNS). With real DNS remove it and Caddy obtains
+# a public certificate automatically (ACME); then drop SSL_CERT_FILE / the caddy-data mount from the portal service.
+{
+	# No admin API listener inside the container.
+	admin off
+}
+
+{$API_HOST} {
+	tls internal
+	# Mirrors RequestLimits:MaxRequestBodyBytes (6 MiB) so oversized uploads are cut at the edge.
+	request_body {
+		max_size 6MB
+	}
+	encode zstd gzip
+	reverse_proxy api:8080 {
+		health_uri /health/live
+		health_interval 10s
+		# The probe would otherwise carry Host: api:8080 / web:8080, which AllowedHosts rejects; "localhost" is allowed for probes.
+		health_headers {
+			Host localhost
+		}
+	}
+	log {
+		output stdout
+		format json
+	}
+}
+
+{$PORTAL_HOST} {
+	tls internal
+	request_body {
+		max_size 8MB
+	}
+	# Blazor Server uses WebSockets (proxied transparently). One portal node => no stickiness needed; with several nodes add
+	# `lb_policy cookie` to the upstream block (see docs/runbooks/deploy.md).
+	reverse_proxy web:8080 {
+		health_uri /health/live
+		health_interval 10s
+		# The probe would otherwise carry Host: api:8080 / web:8080, which AllowedHosts rejects; "localhost" is allowed for probes.
+		health_headers {
+			Host localhost
+		}
+	}
+	log {
+		output stdout
+		format json
+	}
+}

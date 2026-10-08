@@ -1,0 +1,24 @@
+# syntax=docker/dockerfile:1
+# Blazor Server portal (backend-for-frontend). Build from the repository root:  docker build -f deploy/docker/Dockerfile.web .
+FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:e70cdb7f80b0348f5cb85f19a8f670fca061f033d57eed12fa003d58b0e06317 AS build
+WORKDIR /src
+COPY global.json Directory.Build.props Directory.Packages.props .editorconfig ./
+COPY src/ src/
+RUN dotnet restore src/Web/Blazor/NexaVerify.Web.csproj
+RUN dotnet publish src/Web/Blazor/NexaVerify.Web.csproj -c Release -o /app/publish --no-restore /p:UseAppHost=false
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0@sha256:222759b391a1aaf241166672c8f99b2d4ada452e7b5319f3c6e8f265a37b5ad4 AS runtime
+ARG VERSION=0.0.0-local
+ARG REVISION=unknown
+LABEL org.opencontainers.image.title="nexaverify-web" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}"
+WORKDIR /app
+USER app
+# DataProtection:KeyPath must point at a mounted, persistent volume (compose mounts /keys); the root filesystem stays read-only.
+ENV ASPNETCORE_URLS=http://+:8080 \
+    ASPNETCORE_ENVIRONMENT=Production \
+    DOTNET_EnableDiagnostics=0
+EXPOSE 8080
+COPY --from=build --chown=app:app /app/publish .
+ENTRYPOINT ["dotnet", "NexaVerify.Web.dll"]

@@ -1,0 +1,78 @@
+name: Rollback
+
+# Rolls the CONTAINERS of an environment back to the previously deployed release (recorded on the host by remote-deploy.sh).
+# The database is not rolled back: migrations are additive (expand/contract), so the previous version runs on the newer schema.
+# If a migration must be undone, restore from backup instead: docs/runbooks/rollback.md and docs/runbooks/db-migration.md.
+# Production rollbacks use the same environment approval as a deployment.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to roll back
+        required: true
+        type: choice
+        options: [staging, production]
+      expected_tag:
+        description: Release tag you expect to be rolled back to (the host's previous-tag; sanity check only)
+        required: true
+        type: string
+      reason:
+        description: Why (recorded in the run summary)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  record:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Record the request
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          TAG: ${{ inputs.expected_tag }}
+          REASON: ${{ inputs.reason }}
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "::error::'$TAG' is not a release tag"; exit 1; }
+          {
+            echo "### Rollback request"
+            echo "- environment: \`$ENVIRONMENT\`"
+            echo "- expected target: \`$TAG\`"
+            echo "- reason: $REASON"
+            echo "- requested by: \`$GITHUB_ACTOR\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  rollback-staging:
+    if: ${{ inputs.environment == 'staging' }}
+    needs: record
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      environment: staging
+      tag: ${{ inputs.expected_tag }}
+      rollback: true
+      migrate: false
+    secrets: inherit
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+      attestations: read
+
+  rollback-production:
+    if: ${{ inputs.environment == 'production' }}
+    needs: record
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      environment: production
+      tag: ${{ inputs.expected_tag }}
+      rollback: true
+      migrate: false
+    secrets: inherit
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+      attestations: read

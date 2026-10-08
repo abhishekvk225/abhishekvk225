@@ -1,0 +1,182 @@
+name: Release
+
+# Triggered by a version tag (vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-rc.N).
+#   build images -> Trivy gate -> push to GHCR by digest -> SBOM + provenance attestation -> IIS package + idempotent migration script
+#   -> GitHub release (assets) -> deploy to STAGING (environment approvals/secrets apply) -> smoke tests.
+# Production is a separate, manually approved workflow: deploy-production.yml.
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+", "v[0-9]+.[0-9]+.[0-9]+-*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_NOLOGO: "1"
+
+jobs:
+  verify:
+    # The same gates as CI, on the tagged commit: a release never ships code that skipped them.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          global-json-file: global.json
+      - run: dotnet restore NexaVerify.slnx
+      - run: dotnet build NexaVerify.slnx --no-restore -c Release
+      - run: dotnet test NexaVerify.slnx --no-build -c Release
+      - name: Vulnerable packages
+        run: |
+          dotnet list NexaVerify.slnx package --vulnerable --include-transitive 2>&1 | tee vuln.txt
+          if grep -q "has the following vulnerable packages" vuln.txt; then echo "::error::Vulnerable NuGet packages"; exit 1; fi
+      - name: Idempotent migration script
+        run: |
+          mkdir -p artifacts/sql
+          ConnectionStrings__Default="Server=placeholder;Database=NexaVerify;User Id=placeholder;Password=placeholder;TrustServerCertificate=True" \
+            dotnet run --no-build -c Release --project src/Migrator -- script > artifacts/sql/migrate.sql
+          test "$(wc -c < artifacts/sql/migrate.sql)" -gt 1024
+          sha256sum artifacts/sql/migrate.sql > artifacts/sql/migrate.sql.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: migration-script
+          path: artifacts/sql
+          if-no-files-found: error
+
+  images:
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: true
+      matrix:
+        image: [api, web, migrator]
+    permissions:
+      contents: read
+      packages: write       # push to GHCR
+      id-token: write       # keyless provenance signing
+      attestations: write
+    outputs:
+      registry: ${{ steps.names.outputs.registry }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Image names
+        id: names
+        run: |
+          registry="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "registry=$registry" >> "$GITHUB_OUTPUT"
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build ${{ matrix.image }} (local, for scanning)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.${{ matrix.image }}
+          load: true
+          push: false
+          tags: scan/${{ matrix.image }}:release
+          build-args: |
+            VERSION=${{ steps.names.outputs.version }}
+            REVISION=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+      - name: Trivy gate (fixable HIGH/CRITICAL fail the release)
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          image-ref: scan/${{ matrix.image }}:release
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Push ${{ matrix.image }}
+        id: push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.${{ matrix.image }}
+          push: true
+          tags: ${{ steps.names.outputs.registry }}/${{ matrix.image }}:${{ github.ref_name }}
+          build-args: |
+            VERSION=${{ steps.names.outputs.version }}
+            REVISION=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+      - name: SBOM (SPDX)
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: ${{ steps.names.outputs.registry }}/${{ matrix.image }}@${{ steps.push.outputs.digest }}
+          format: spdx-json
+          output-file: sbom-${{ matrix.image }}.spdx.json
+          artifact-name: sbom-${{ matrix.image }}.spdx.json
+      - name: Provenance attestation
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-name: ${{ steps.names.outputs.registry }}/${{ matrix.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+  iis-package:
+    needs: verify
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          global-json-file: global.json
+      - name: Build the IIS package
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          ./scripts/publish-iis.ps1 -Version $version -SkipTests
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: iis-package
+          path: artifacts/nexaverify-iis-*.zip
+          if-no-files-found: error
+
+  github-release:
+    needs: [images, iis-package]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write       # create the release and upload assets
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: assets
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          prerelease=""
+          case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
+          mkdir -p flat
+          find assets -type f -exec cp {} flat/ \;
+          sha256sum flat/* > flat/SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" flat/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes $prerelease
+
+  deploy-staging:
+    needs: [github-release, images]
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      environment: staging
+      tag: ${{ github.ref_name }}
+      registry: ${{ needs.images.outputs.registry }}
+      migrate: true
+    secrets: inherit
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+      attestations: read

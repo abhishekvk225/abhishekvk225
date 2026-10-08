@@ -1,0 +1,203 @@
+# Production-like stack for a single Docker host / staging rehearsal: reverse proxy (TLS) -> API + Blazor portal -> SQL Server.
+# Real production normally uses a managed SQL Server, an orchestrator and a vault; this file shows the intended wiring and is what
+# the staging rehearsal and the CI smoke test use. See docs/runbooks/deploy.md.
+#
+#   1. deploy/docker/prod/make-secrets.sh            (creates ./secrets/* with random values; never commit them)
+#   2. cp deploy/docker/.env.prod.example deploy/docker/.env.prod   and fill in the host names / image tags
+#   3. docker compose -f deploy/docker/docker-compose.prod.yml --env-file deploy/docker/.env.prod up -d
+#
+# Secrets are mounted as files under /run/secrets and read by the apps (file name = setting name with "__" for ":").
+# Nothing secret is placed in environment variables or baked into an image.
+name: nexaverify
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: ["/tmp"]
+  restart: unless-stopped
+  pids_limit: 512
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+x-health-live: &health-live
+  # The runtime image has no curl/wget; bash's /dev/tcp is enough for a liveness probe. Host: localhost must be in AllowedHosts.
+  test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/live HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && head -n1 <&3 | grep -q ' 200 '"]
+  interval: 15s
+  timeout: 5s
+  retries: 5
+  start_period: 30s
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-CU16-ubuntu-22.04
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: ${MSSQL_PID:-Developer}   # set Standard/Enterprise (licensed) for real production
+    # The image has no *_FILE support; the wrapper reads the secret and starts sqlservr.
+    command: ["/bin/bash", "-c", "export MSSQL_SA_PASSWORD=\"$$(cat /run/secrets/sa_password)\" && exec /opt/mssql/bin/sqlservr"]
+    secrets: [sa_password]
+    volumes:
+      - sqldata:/var/opt/mssql
+      - sqlbackup:/var/opt/mssql/backup
+    networks: [backend]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]   # sqlservr carries file capability cap_net_bind_service; exec fails without it
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$(cat /run/secrets/sa_password)\" -Q 'SELECT 1' -b || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # One-shot. Runs with the administrative login (connection string secret); creates/updates the schema, guards, seed data and the
+  # least-privilege app login. In real production run it from the pipeline (deploy/runbooks) and prefer `script` for DBA review.
+  migrator:
+    image: ${NEXAVERIFY_REGISTRY:-nexaverify}/migrator:${NEXAVERIFY_TAG:?set NEXAVERIFY_TAG in .env.prod}
+    build: { context: ../.., dockerfile: deploy/docker/Dockerfile.migrator }
+    depends_on:
+      sqlserver: { condition: service_healthy }
+    environment:
+      Seed__SuperAdminEmail: ${SEED_ADMIN_EMAIL:?set SEED_ADMIN_EMAIL in .env.prod}
+      Migrator__AppLogin: nexaverify_app
+    entrypoint: ["/bin/sh", "-c", "dotnet NexaVerify.Migrator.dll migrate && dotnet NexaVerify.Migrator.dll app-principal"]
+    secrets:
+      - { source: migrator_connection, target: ConnectionStrings__Default }
+      - { source: app_db_password, target: Migrator__AppPassword }
+      - { source: seed_admin_password, target: Seed__SuperAdminPassword }
+    networks: [backend]
+    read_only: true
+    tmpfs: ["/tmp"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: "no"
+
+  api:
+    <<: *hardening
+    image: ${NEXAVERIFY_REGISTRY:-nexaverify}/api:${NEXAVERIFY_TAG:?set NEXAVERIFY_TAG in .env.prod}
+    build: { context: ../.., dockerfile: deploy/docker/Dockerfile.api }
+    depends_on:
+      migrator: { condition: service_completed_successfully }
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      AllowedHosts: "${API_HOST:?set API_HOST in .env.prod};localhost"
+      Auth__PasswordResetUrlTemplate: "https://${PORTAL_HOST:?set PORTAL_HOST in .env.prod}/reset-password?email={email}&token={token}"
+      Cors__AllowedOrigins__0: "https://${PORTAL_HOST}"
+      # TLS ends at the proxy: trust ONLY its network (never a /0), so client IPs and https are seen correctly.
+      ForwardedHeaders__Enabled: "true"
+      ForwardedHeaders__KnownNetworks__0: "172.29.0.0/24"
+      ForwardedHeaders__ForwardLimit: "1"
+      Telemetry__Enabled: ${TELEMETRY_ENABLED:-false}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4317}
+      # Demo/rehearsal only: the shipped face engine is a mock that recognises nothing. Remove once a real provider exists.
+      FaceEngine__AllowMockInProduction: ${ALLOW_MOCK_FACE_ENGINE:-false}
+    secrets:
+      - { source: api_connection, target: ConnectionStrings__Default }
+      - { source: jwt_signing_key, target: Jwt__SigningKeyPem }
+      - { source: master_key, target: Encryption__MasterKeyBase64 }
+    healthcheck: *health-live
+    networks:
+      backend:
+      edge:
+        ipv4_address: 172.29.0.20
+
+  # Gives the volume to uid 1654 (the unprivileged "app" user) once; the portal then runs with a read-only root file system.
+  web-keys-init:
+    image: busybox:1.37.0
+    command: ["sh", "-c", "chown -R 1654:1654 /keys && chmod 700 /keys"]
+    volumes: [dpkeys:/keys]
+    networks: [backend]
+    restart: "no"
+
+  web:
+    <<: *hardening
+    image: ${NEXAVERIFY_REGISTRY:-nexaverify}/web:${NEXAVERIFY_TAG}
+    build: { context: ../.., dockerfile: deploy/docker/Dockerfile.web }
+    depends_on:
+      api: { condition: service_healthy }
+      web-keys-init: { condition: service_completed_successfully }
+      caddy-ca-export: { condition: service_completed_successfully }
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      AllowedHosts: "${PORTAL_HOST};localhost"
+      # The portal calls the API through the proxy (https is mandatory). The proxy's local CA is trusted through SSL_CERT_FILE for
+      # rehearsals with `tls internal`; with a public certificate remove the SSL_CERT_FILE line, the rootca mount and the caddy-ca-export service.
+      Api__BaseUrl: "https://${API_HOST}"
+      SSL_CERT_FILE: /rootca/root.crt
+      DataProtection__KeyPath: /keys
+      # Single portal node: sessions live in memory. For several nodes use a shared cache + sticky sessions (docs/runbooks/deploy.md).
+      Session__AllowInMemoryStore: "true"
+      ForwardedHeaders__Enabled: "true"
+      ForwardedHeaders__KnownNetworks__0: "172.29.0.0/24"
+      ForwardedHeaders__ForwardLimit: "1"
+      Telemetry__Enabled: ${TELEMETRY_ENABLED:-false}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4317}
+    volumes:
+      - dpkeys:/keys
+      - rootca:/rootca:ro
+    healthcheck: *health-live
+    networks:
+      edge:
+        ipv4_address: 172.29.0.21
+
+  # Rehearsals with `tls internal` only: publishes Caddy's local root CA (the data volume is root-only) so the portal can trust it.
+  caddy-ca-export:
+    image: busybox:1.37.0
+    depends_on:
+      caddy: { condition: service_started }
+    command: ["sh", "-c", "for i in $$(seq 1 60); do [ -f /data/caddy/pki/authorities/local/root.crt ] && break; sleep 1; done; cp /data/caddy/pki/authorities/local/root.crt /rootca/root.crt && chmod 644 /rootca/root.crt"]
+    volumes:
+      - caddy-data:/data:ro
+      - rootca:/rootca
+    networks: [backend]
+    restart: "no"
+
+  caddy:
+    image: caddy:2.8.4
+    environment:
+      PORTAL_HOST: ${PORTAL_HOST}
+      API_HOST: ${API_HOST}
+    volumes:
+      - ./prod/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    ports:
+      - "443:443"
+      - "80:80"
+    networks:
+      edge:
+        ipv4_address: 172.29.0.10
+        aliases: ["${API_HOST}"]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
+networks:
+  # backend: database traffic only, no route to the outside world.
+  backend:
+    internal: true
+  edge:
+    ipam:
+      config:
+        - subnet: 172.29.0.0/24
+
+volumes:
+  sqldata:
+  sqlbackup:
+  dpkeys:
+  caddy-data:
+  caddy-config:
+  rootca:
+
+secrets:
+  sa_password: { file: ./secrets/sa_password }
+  app_db_password: { file: ./secrets/app_db_password }
+  seed_admin_password: { file: ./secrets/seed_admin_password }
+  migrator_connection: { file: ./secrets/migrator_connection }
+  api_connection: { file: ./secrets/api_connection }
+  jwt_signing_key: { file: ./secrets/jwt_signing_key.pem }
+  master_key: { file: ./secrets/master_key }

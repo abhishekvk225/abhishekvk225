@@ -11,6 +11,7 @@ A multi-tenant, commercial face-recognition platform: ASP.NET Core (Clean Archit
 | [05 — Agents & roadmap](05-agents-and-roadmap.md) | Agent roster, module pipeline & Definition of Done, milestones, risks, open decisions | Orchestrator |
 | [06 — UI information architecture](06-ui-information-architecture.md) | Sitemap, dashboard widgets, component library, theme, UX checklist | UI Developer |
 | [STATUS](STATUS.md) | Live module/gate status board | Orchestrator |
+| [Runbooks](runbooks/README.md) · [Release checklist](release-checklist.md) | Deploy, rollback, DB migration, key rotation, incident response, monitoring, soak test, go/no-go | DevOps |
 | `reviews/` | Per-module security, QA and code-review reports | Reviewer agents |
 
 Agent definitions: [`.claude/agents/`](../.claude/agents).

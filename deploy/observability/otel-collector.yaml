@@ -1,0 +1,35 @@
+# OpenTelemetry Collector for NexaVerify (contrib distribution). Apps export OTLP to :4317 (gRPC) / :4318 (HTTP); metrics are re-exposed
+# for Prometheus on :8889. Traces go to the debug exporter here: replace with your tracing backend (Tempo/Jaeger/Azure Monitor) in
+# staging/production. Logs are NOT shipped through OTLP: containers write compact JSON to stdout, see docs/runbooks/monitoring.md.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 256
+  batch: {}
+
+exporters:
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    resource_to_telemetry_conversion:
+      enabled: true   # exposes service.name as the service_name label
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus]
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [debug]

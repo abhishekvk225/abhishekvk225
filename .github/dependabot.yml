@@ -1,12 +1,22 @@
+# Keeps pinned versions (NuGet, GitHub Actions SHAs, base-image digests) moving. Every update arrives as a PR that runs CI,
+# including the Trivy scan and the vulnerable-package check.
 version: 2
 updates:
   - package-ecosystem: nuget
-    directory: "/"
+    directory: /
     schedule: { interval: weekly }
     open-pull-requests-limit: 10
+    groups:
+      opentelemetry:
+        patterns: ["OpenTelemetry*"]
+      efcore-and-aspnet:
+        patterns: ["Microsoft.EntityFrameworkCore*", "Microsoft.AspNetCore*", "Microsoft.Extensions*"]
   - package-ecosystem: github-actions
-    directory: "/"
+    directory: /
     schedule: { interval: weekly }
   - package-ecosystem: docker
-    directory: "/deploy/docker"
+    directory: /deploy/docker
+    schedule: { interval: weekly }
+  - package-ecosystem: dotnet-sdk
+    directory: /
     schedule: { interval: weekly }
