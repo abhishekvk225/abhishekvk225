@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using NexaVerify.Application.Abstractions;
 using NexaVerify.Application.Auditing;
 using NexaVerify.Application.Common;
@@ -29,7 +30,8 @@ public interface ILicenseService
 
     Task<Result<LicenseDto>> RenewAsync(Guid id, RenewLicenseRequest request, CancellationToken cancellationToken);
 
-    Task<Result<LicenseDto>> AdjustAsync(Guid id, AdjustLicenseRequest request, CancellationToken cancellationToken);
+    /// <summary>Applies the adjustment, or — above the per-action cap — files a request for a second person to approve.</summary>
+    Task<Result<AdjustOutcome>> AdjustAsync(Guid id, AdjustLicenseRequest request, CancellationToken cancellationToken);
 
     Task<Result<LicenseTransactionDto>> RefundAsync(long transactionId, RefundRequest request, CancellationToken cancellationToken);
 
@@ -42,7 +44,7 @@ public interface ILicenseService
 /// Platform-side license administration. Every change that moves credits writes an immutable ledger row in the same
 /// transaction as the license change, so the balance and its history can never disagree.
 /// </summary>
-public sealed class LicenseService : ILicenseService
+public sealed partial class LicenseService : ILicenseService, ILicenseAdjustmentService
 {
     private readonly ILicenseRepository _licenses;
     private readonly ILedgerRepository _ledger;
@@ -52,6 +54,10 @@ public sealed class LicenseService : ILicenseService
     private readonly IAuditService _audit;
     private readonly IUnitOfWork _unitOfWork;
     private readonly TimeProvider _time;
+    private readonly ILicenseAdjustmentRepository _adjustments;
+    private readonly ILicenseAdjustmentAtomics _adjustmentAtomics;
+    private readonly ICurrentUser _currentUser;
+    private readonly LicensingOptions _licensing;
 
     public LicenseService(
         ILicenseRepository licenses,
@@ -61,8 +67,16 @@ public sealed class LicenseService : ILicenseService
         LedgerWriter writer,
         IAuditService audit,
         IUnitOfWork unitOfWork,
-        TimeProvider time)
+        TimeProvider time,
+        ILicenseAdjustmentRepository adjustments,
+        ILicenseAdjustmentAtomics adjustmentAtomics,
+        ICurrentUser currentUser,
+        IOptions<LicensingOptions> licensing)
     {
+        _adjustments = adjustments;
+        _adjustmentAtomics = adjustmentAtomics;
+        _currentUser = currentUser;
+        _licensing = licensing.Value;
         _licenses = licenses;
         _ledger = ledger;
         _plans = plans;
@@ -220,16 +234,6 @@ public sealed class LicenseService : ILicenseService
                 OldValues: new { ExpiresAt = oldEnd }, NewValues: new { ExpiresAt = newEnd, request.AdditionalCredits, request.Reason }));
         }, cancellationToken);
     }
-
-    public Task<Result<LicenseDto>> AdjustAsync(Guid id, AdjustLicenseRequest request, CancellationToken cancellationToken) =>
-        InTransactionAsync(id, async (license, ct) =>
-        {
-            var before = license.Remaining;
-            license.AdjustCredits(request.Credits);
-            await _unitOfWork.SaveChangesAsync(ct);
-            await _writer.AppendAsync(license, LedgerEntryType.Adjustment, request.Credits, before, ct, reason: request.Reason);
-            _audit.Record(new AuditEntry("license.adjusted", nameof(License), license.Id.ToString(), license.ClientId, NewValues: new { request.Credits, request.Reason }));
-        }, cancellationToken);
 
     public async Task<Result<LicenseTransactionDto>> RefundAsync(long transactionId, RefundRequest request, CancellationToken cancellationToken)
     {

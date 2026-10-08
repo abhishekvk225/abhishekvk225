@@ -29,4 +29,12 @@ public static class AuditActions
     public const string SessionReuseDetected = "session.refresh_reuse_detected";
     public const string RoleCreated = "role.created";
     public const string RoleUpdated = "role.updated";
+    public const string MfaEnrolmentStarted = "auth.mfa_enrolment_started";
+    public const string MfaEnrolmentAborted = "auth.mfa_enrolment_aborted";
+    public const string MfaEnabled = "auth.mfa_enabled";
+    public const string MfaVerified = "auth.mfa_verified";
+    public const string MfaRecoveryCodeUsed = "auth.mfa_recovery_code_used";
+    public const string MfaRecoveryCodesRegenerated = "auth.mfa_recovery_codes_regenerated";
+    public const string MfaChallengeExhausted = "auth.mfa_challenge_exhausted";
+    public const string MfaReset = "auth.mfa_reset";
 }

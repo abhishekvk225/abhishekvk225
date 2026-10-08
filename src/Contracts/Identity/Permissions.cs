@@ -35,6 +35,7 @@ public static class Permissions
         public const string Adjust = "licenses.adjust";
         public const string CostRules = "licenses.cost-rules";
         public const string VerifyLedger = "licenses.verify-ledger";
+        public const string ApproveAdjust = "licenses.approve-adjust";
     }
 
     public static class Plans
@@ -73,6 +74,7 @@ public static class Permissions
     {
         public const string PlatformManage = "users.platform-manage";
         public const string Manage = "users.manage";
+        public const string MfaReset = "users.mfa-reset";
     }
 
     public static class ClientProfile
@@ -95,6 +97,11 @@ public static class Permissions
     {
         public const string Read = "apikeys.read";
         public const string Manage = "apikeys.manage";
+    }
+
+    public static class Emergency
+    {
+        public const string RevokeApiAccess = "apikeys.emergency-revoke";
     }
 
     public static class ApiLogs
@@ -148,6 +155,7 @@ public static class Permissions
         new(Licenses.Adjust, "Licenses", PermissionScopeKind.Platform, "Adjust license credits"),
         new(Licenses.CostRules, "Licenses", PermissionScopeKind.Platform, "Configure credit costs per operation"),
         new(Licenses.VerifyLedger, "Licenses", PermissionScopeKind.Platform, "Run a tamper check over the credit ledgers"),
+        new(Licenses.ApproveAdjust, "Licenses", PermissionScopeKind.Platform, "Approve or reject large credit adjustments requested by someone else"),
         new(Plans.Manage, "Licenses", PermissionScopeKind.Platform, "Manage subscription plans"),
 
         new(Dashboard.Admin, "Dashboard", PermissionScopeKind.Platform, "View the admin dashboard"),
@@ -156,6 +164,8 @@ public static class Permissions
         new(System.Configure, "System", PermissionScopeKind.Platform, "Configure platform settings and view system health"),
         new(RolesAdmin.Manage, "Access control", PermissionScopeKind.Platform, "Manage roles and permissions"),
         new(Users.PlatformManage, "Access control", PermissionScopeKind.Platform, "Manage platform staff accounts"),
+        new(Users.MfaReset, "Access control", PermissionScopeKind.Platform, "Reset another user's two-factor authentication (lost device)"),
+        new(Emergency.RevokeApiAccess, "Emergency", PermissionScopeKind.Platform, "Revoke API keys of a client and switch its API access off"),
 
         new(Dashboard.Client, "Dashboard", PermissionScopeKind.Client, "View the client dashboard"),
         new(ClientProfile.Read, "Account", PermissionScopeKind.Client, "View company profile"),

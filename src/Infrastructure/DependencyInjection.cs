@@ -80,6 +80,8 @@ public static class DependencyInjection
 
         // Options (validated at startup)
         services.AddOptions<AuthOptions>().Bind(configuration.GetSection(AuthOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
+        services.AddOptions<LicensingOptions>().Bind(configuration.GetSection(LicensingOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
+        services.AddOptions<MfaOptions>().Bind(configuration.GetSection(MfaOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
         services.AddOptions<PasswordPolicyOptions>().Bind(configuration.GetSection(PasswordPolicyOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
         services.AddOptions<PasswordHashingOptions>().Bind(configuration.GetSection(PasswordHashingOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
         services.AddOptions<JwtOptions>().Bind(configuration.GetSection(JwtOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
@@ -92,6 +94,8 @@ public static class DependencyInjection
         services.AddScoped<IPasswordResetTokenRepository, PasswordResetTokenRepository>();
         services.AddScoped<ILoginHistoryRepository, LoginHistoryRepository>();
         services.AddScoped<IRoleRepository, RoleRepository>();
+        services.AddScoped<IMfaRepository, MfaRepository>();
+        services.AddScoped<IMfaAtomics, MfaAtomics>();
         services.AddScoped<IAuditLogWriter, AuditLogWriter>();
         services.AddScoped<IAuditService, AuditService>();
         services.AddScoped<ILoginThrottle, LoginThrottle>();
@@ -116,6 +120,8 @@ public static class DependencyInjection
         services.AddScoped<IClientQueries, ClientQueries>();
         services.AddOptions<EncryptionOptions>().Bind(configuration.GetSection(EncryptionOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
         services.AddSingleton<MasterKeyProvider>();
+        services.AddSingleton<PlatformCrypto>();
+        services.AddSingleton<IPlatformCrypto>(sp => sp.GetRequiredService<PlatformCrypto>());
         services.AddScoped<ClientKeyService>();
         services.AddScoped<IClientKeyProvisioner>(sp => sp.GetRequiredService<ClientKeyService>());
         services.AddScoped<IClientEncryption>(sp => sp.GetRequiredService<ClientKeyService>());
@@ -126,6 +132,8 @@ public static class DependencyInjection
         services.AddScoped<IPlanRepository, PlanRepository>();
         services.AddScoped<ICostRuleRepository, CostRuleRepository>();
         services.AddScoped<IMeteringStore, MeteringStore>();
+        services.AddScoped<ILicenseAdjustmentRepository, LicenseAdjustmentRepository>();
+        services.AddScoped<ILicenseAdjustmentAtomics, LicenseAdjustmentAtomics>();
         services.AddScoped<LicensingSeeder>();
         services.AddHostedService<LicenseExpirySweeper>();
 

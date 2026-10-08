@@ -89,7 +89,11 @@ public sealed class PermissionAuthorizationHandler : AuthorizationHandler<Permis
 
     protected override async Task HandleRequirementAsync(AuthorizationHandlerContext context, PermissionRequirement requirement)
     {
-        if (!_user.IsAuthenticated || context.User.HasClaim(NexaClaims.MustChangePassword, "true"))
+        // A pending password change or a missing required second factor leaves the principal with no permissions at all; only the
+        // [Authorize]-only endpoints (change password, MFA enrolment, me, logout) stay reachable.
+        if (!_user.IsAuthenticated
+            || context.User.HasClaim(NexaClaims.MustChangePassword, "true")
+            || context.User.HasClaim(NexaClaims.MfaEnrolmentRequired, "true"))
         {
             return;
         }

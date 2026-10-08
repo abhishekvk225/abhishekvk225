@@ -24,6 +24,16 @@ public sealed record LoginResponse(
     int ExpiresIn,
     [property: Sensitive] string RefreshToken,
     bool MustChangePassword,
-    UserSummary User);
+    UserSummary User,
+    bool MfaEnrolmentRequired = false,
+    bool MfaRequired = false,
+    [property: Sensitive] string? MfaChallengeToken = null,
+    int MfaChallengeExpiresIn = 0);
 
-public sealed record MeResponse(UserSummary User, IReadOnlyList<string> Permissions, bool MustChangePassword, NexaVerify.Contracts.Tenancy.ClientSummary? Client);
+public sealed record MeResponse(
+    UserSummary User,
+    IReadOnlyList<string> Permissions,
+    bool MustChangePassword,
+    NexaVerify.Contracts.Tenancy.ClientSummary? Client,
+    bool MfaEnabled = false,
+    bool MfaEnrolmentRequired = false);

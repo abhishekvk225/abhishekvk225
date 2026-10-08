@@ -70,10 +70,16 @@ public sealed class LicensesController : ApiControllerBase
     public async Task<IActionResult> Renew(Guid id, RenewLicenseRequest request, CancellationToken cancellationToken) =>
         ToActionResult(await _licenses.RenewAsync(id, request, cancellationToken));
 
+    /// <summary>Applies the adjustment (200). Above the per-action cap it files a request for a second person instead (202 with the request).</summary>
     [HttpPost("licenses/{id:guid}/adjust")]
     [HasPermission(Permissions.Licenses.Adjust)]
+    [ProducesResponseType<LicenseDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<AdjustmentRequestDto>(StatusCodes.Status202Accepted)]
     public async Task<IActionResult> Adjust(Guid id, AdjustLicenseRequest request, CancellationToken cancellationToken) =>
-        ToActionResult(await _licenses.AdjustAsync(id, request, cancellationToken));
+        ToActionResult(await _licenses.AdjustAsync(id, request, cancellationToken),
+            outcome => outcome.PendingApproval is { } pending
+                ? Accepted($"/api/v1/admin/license-adjustments/{pending.Id}", pending)
+                : Ok(outcome.License));
 
     [HttpGet("licenses/{id:guid}/transactions")]
     [HasPermission(Permissions.Licenses.Read)]
@@ -89,6 +95,39 @@ public sealed class LicensesController : ApiControllerBase
     [HasPermission(Permissions.Licenses.Adjust)]
     public async Task<IActionResult> Refund(long transactionId, RefundRequest request, CancellationToken cancellationToken) =>
         ToActionResult(await _licenses.RefundAsync(transactionId, request, cancellationToken));
+}
+
+/// <summary>The two-person approval queue for large credit adjustments.</summary>
+[Route("api/v1/admin/license-adjustments")]
+public sealed class LicenseAdjustmentsController : ApiControllerBase
+{
+    private readonly ILicenseAdjustmentService _adjustments;
+
+    public LicenseAdjustmentsController(ILicenseAdjustmentService adjustments)
+    {
+        _adjustments = adjustments;
+    }
+
+    [HttpGet]
+    [HasPermission(Permissions.Licenses.Read)]
+    public async Task<IActionResult> List([FromQuery] AdjustmentListQuery query, CancellationToken cancellationToken) =>
+        ToActionResult(await _adjustments.ListAsync(query, cancellationToken));
+
+    [HttpGet("{id:guid}")]
+    [HasPermission(Permissions.Licenses.Read)]
+    public async Task<IActionResult> Get(Guid id, CancellationToken cancellationToken) =>
+        ToActionResult(await _adjustments.GetAsync(id, cancellationToken));
+
+    /// <summary>Applies the adjustment. The approver must not be the requester; a request older than the approval window cannot be approved.</summary>
+    [HttpPost("{id:guid}/approve")]
+    [HasPermission(Permissions.Licenses.ApproveAdjust)]
+    public async Task<IActionResult> Approve(Guid id, ApproveAdjustmentRequest request, CancellationToken cancellationToken) =>
+        ToActionResult(await _adjustments.ApproveAsync(id, request, cancellationToken));
+
+    [HttpPost("{id:guid}/reject")]
+    [HasPermission(Permissions.Licenses.ApproveAdjust)]
+    public async Task<IActionResult> Reject(Guid id, RejectAdjustmentRequest request, CancellationToken cancellationToken) =>
+        ToActionResult(await _adjustments.RejectAsync(id, request, cancellationToken));
 }
 
 [Route("api/v1/admin/plans")]

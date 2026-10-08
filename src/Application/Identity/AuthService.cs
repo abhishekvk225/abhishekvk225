@@ -52,7 +52,9 @@ public sealed class AuthService : IAuthService
     private readonly IPasswordHasher _hasher;
     private readonly PasswordPolicy _policy;
     private readonly ISecureTokenService _tokens;
-    private readonly IAccessTokenIssuer _accessTokens;
+    private readonly ISessionIssuer _sessionIssuer;
+    private readonly IMfaService _mfa;
+    private readonly IMfaPolicy _mfaPolicy;
     private readonly IPasswordResetService _resetService;
     private readonly IClientRepository _clients;
     private readonly IClientAccessGuard _clientGuard;
@@ -77,7 +79,9 @@ public sealed class AuthService : IAuthService
         IPasswordHasher hasher,
         PasswordPolicy policy,
         ISecureTokenService tokens,
-        IAccessTokenIssuer accessTokens,
+        ISessionIssuer sessionIssuer,
+        IMfaService mfa,
+        IMfaPolicy mfaPolicy,
         IPasswordResetService resetService,
         IClientRepository clients,
         IClientAccessGuard clientGuard,
@@ -101,7 +105,9 @@ public sealed class AuthService : IAuthService
         _hasher = hasher;
         _policy = policy;
         _tokens = tokens;
-        _accessTokens = accessTokens;
+        _sessionIssuer = sessionIssuer;
+        _mfa = mfa;
+        _mfaPolicy = mfaPolicy;
         _resetService = resetService;
         _clients = clients;
         _clientGuard = clientGuard;
@@ -164,13 +170,23 @@ public sealed class AuthService : IAuthService
             return await FailLoginAsync(user, user.ClientId, request.Email, LoginOutcome.ClientSuspended, blocked.Code, blocked);
         }
 
-        await _throttle.ClearAsync(user.Id, cancellationToken);
-        user.RegisterSuccessfulLogin(now);
         if (verification == PasswordVerification.SuccessRehashNeeded)
         {
             user.UpgradeHash(_hasher.Hash(request.Password)); // same password, stronger hash: other sessions stay valid
         }
 
+        if (user.TwoFactorEnabled)
+        {
+            // Password proven, second factor pending. The failed-attempt counter is deliberately NOT cleared here (only a finished
+            // second factor clears it), so repeating "log in, guess a code" cannot out-run the lockout.
+            var ticket = await _mfa.StartChallengeAsync(user, now, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(CancellationToken.None);
+            return new LoginResponse(string.Empty, "Bearer", 0, string.Empty, false, user.ToSummary([]), MfaRequired: true,
+                MfaChallengeToken: ticket.Token, MfaChallengeExpiresIn: ticket.ExpiresInSeconds);
+        }
+
+        await _throttle.ClearAsync(user.Id, cancellationToken);
+        user.RegisterSuccessfulLogin(now);
         var response = await IssueSessionAsync(user, familyId: null, now, cancellationToken);
         RecordLogin(user, user.ClientId, request.Email, LoginOutcome.Success, null);
         await _unitOfWork.SaveChangesAsync(CancellationToken.None);
@@ -391,7 +407,9 @@ public sealed class AuthService : IAuthService
             user.ToSummary(roles),
             permissions.OrderBy(p => p, StringComparer.Ordinal).ToList(),
             user.MustChangePassword,
-            client is null ? null : new Contracts.Tenancy.ClientSummary(client.Id, client.Code, client.Name, client.Status.ToString(), client.TimeZone));
+            client is null ? null : new Contracts.Tenancy.ClientSummary(client.Id, client.Code, client.Name, client.Status.ToString(), client.TimeZone),
+            user.TwoFactorEnabled,
+            await _mfaPolicy.EnrolmentRequiredAsync(user, roles, cancellationToken));
     }
 
     private async Task<bool> RecentResetExistsAsync(Guid userId, DateTime now, CancellationToken cancellationToken)
@@ -427,27 +445,8 @@ public sealed class AuthService : IAuthService
         _logger.LogWarning("Refresh token reuse detected for family {FamilyId}", token.FamilyId);
     }
 
-    private async Task<LoginResponse> IssueSessionAsync(User user, Guid? familyId, DateTime now, CancellationToken cancellationToken, RefreshToken? replacing = null)
-    {
-        var roles = await _users.GetRoleNamesAsync(user.Id, cancellationToken);
-        var access = _accessTokens.Issue(user, roles);
-
-        var absolute = replacing?.AbsoluteExpiresAt ?? now.AddDays(_options.RefreshTokenAbsoluteDays);
-        var raw = _tokens.CreateToken();
-        var refresh = RefreshToken.Issue(
-            user,
-            _tokens.Hash(raw),
-            familyId ?? Guid.CreateVersion7(),
-            now,
-            TimeSpan.FromDays(_options.RefreshTokenSlidingDays),
-            absolute,
-            _request.IpAddress,
-            _request.UserAgent);
-        _refreshTokens.Add(refresh);
-        replacing?.LinkSuccessor(refresh.Id);
-
-        return new LoginResponse(access.Value, "Bearer", access.ExpiresInSeconds, raw, user.MustChangePassword, user.ToSummary(roles));
-    }
+    private Task<LoginResponse> IssueSessionAsync(User user, Guid? familyId, DateTime now, CancellationToken cancellationToken, RefreshToken? replacing = null) =>
+        _sessionIssuer.IssueAsync(user, familyId, now, cancellationToken, replacing);
 
     private async Task<Result<LoginResponse>> FailLoginAsync(User? user, Guid clientId, string emailAttempted, LoginOutcome outcome, string? reason, Error error)
     {

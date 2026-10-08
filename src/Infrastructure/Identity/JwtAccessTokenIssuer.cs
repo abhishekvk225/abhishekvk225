@@ -22,7 +22,7 @@ public sealed class JwtAccessTokenIssuer : IAccessTokenIssuer
         _time = time;
     }
 
-    public AccessToken Issue(User user, IReadOnlyCollection<string> roles)
+    public AccessToken Issue(User user, IReadOnlyCollection<string> roles, bool mfaEnrolmentRequired = false)
     {
         var now = _time.GetUtcNow().UtcDateTime;
         var lifetime = TimeSpan.FromMinutes(_options.AccessTokenMinutes);
@@ -49,6 +49,11 @@ public sealed class JwtAccessTokenIssuer : IAccessTokenIssuer
         if (user.MustChangePassword)
         {
             claims[NexaClaims.MustChangePassword] = "true";
+        }
+
+        if (mfaEnrolmentRequired)
+        {
+            claims[NexaClaims.MfaEnrolmentRequired] = "true";
         }
 
         var descriptor = new SecurityTokenDescriptor

@@ -50,6 +50,22 @@ public sealed class AdjustLicenseRequestValidator : AbstractValidator<AdjustLice
     }
 }
 
+public sealed class ApproveAdjustmentRequestValidator : AbstractValidator<ApproveAdjustmentRequest>
+{
+    public ApproveAdjustmentRequestValidator()
+    {
+        RuleFor(x => x.Note).MaximumLength(500);
+    }
+}
+
+public sealed class RejectAdjustmentRequestValidator : AbstractValidator<RejectAdjustmentRequest>
+{
+    public RejectAdjustmentRequestValidator()
+    {
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+    }
+}
+
 public sealed class RefundRequestValidator : AbstractValidator<RefundRequest>
 {
     public RefundRequestValidator()

@@ -104,3 +104,17 @@ internal sealed class LicenseAlertConfiguration : IEntityTypeConfiguration<Licen
         b.HasIndex(x => new { x.ClientId, x.CreatedAt }).IsDescending(false, true); // the notification feed
     }
 }
+
+internal sealed class LicenseAdjustmentRequestConfiguration : IEntityTypeConfiguration<LicenseAdjustmentRequest>
+{
+    public void Configure(EntityTypeBuilder<LicenseAdjustmentRequest> b)
+    {
+        b.ToTable("LicenseAdjustmentRequests", "licensing", t => t.HasCheckConstraint("CK_LicenseAdjustmentRequests_Credits", "[Credits] <> 0"));
+        b.Property(x => x.Reason).HasMaxLength(500).IsRequired();
+        b.Property(x => x.DecisionNote).HasMaxLength(500);
+        b.HasOne<License>().WithMany().HasForeignKey(x => x.LicenseId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Client>().WithMany().HasForeignKey(x => x.ClientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => new { x.Status, x.ExpiresAt });
+        b.HasIndex(x => new { x.LicenseId, x.RequestedAt });
+    }
+}

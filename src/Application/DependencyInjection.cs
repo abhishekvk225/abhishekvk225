@@ -20,6 +20,9 @@ public static class DependencyInjection
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<AuthOptions>, AuthOptionsValidator>());
         services.AddSingleton<PasswordPolicy>();
 
+        services.AddScoped<IMfaPolicy, MfaPolicy>();
+        services.AddScoped<ISessionIssuer, SessionIssuer>();
+        services.AddScoped<IMfaService, MfaService>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IRoleService, RoleService>();
         services.AddScoped<IPlatformUserService, PlatformUserService>();
@@ -30,7 +33,9 @@ public static class DependencyInjection
         services.AddScoped<ICostRuleResolver, CostRuleResolver>();
         services.AddScoped<ILicenseMeteringService, LicenseMeteringService>();
         services.AddScoped<LedgerWriter>();
-        services.AddScoped<ILicenseService, LicenseService>();
+        services.AddScoped<LicenseService>();
+        services.AddScoped<ILicenseService>(sp => sp.GetRequiredService<LicenseService>());
+        services.AddScoped<ILicenseAdjustmentService>(sp => sp.GetRequiredService<LicenseService>());
         services.AddScoped<IApiKeyService, Api.ApiKeyService>();
         services.AddScoped<IApiLogService, Api.ApiLogService>();
         services.AddScoped<IWebhookService, Api.WebhookService>();

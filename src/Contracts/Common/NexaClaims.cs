@@ -9,6 +9,9 @@ public static class NexaClaims
     public const string ActorType = "actor";
     public const string SecurityVersion = "sv";
     public const string MustChangePassword = "mcp";
+
+    /// <summary>The account must enrol in MFA: the token only works on the enrolment endpoints (same pattern as <see cref="MustChangePassword"/>).</summary>
+    public const string MfaEnrolmentRequired = "mer";
     public const string PlatformActor = "platform";
     public const string ApiKeyActor = "apikey";
     public const string Scope = "scope";

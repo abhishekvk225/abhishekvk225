@@ -25,6 +25,27 @@ public sealed record AdjustLicenseRequest(int Credits, string Reason);
 
 public sealed record RefundRequest(string Reason);
 
+/// <summary>A large credit adjustment waiting for (or decided by) a second person. <c>Status</c> is Pending, Approved, Rejected or Expired.</summary>
+public sealed record AdjustmentRequestDto(
+    Guid Id, Guid LicenseId, Guid ClientId, int Credits, string Reason, Guid RequestedBy, DateTime RequestedAt, DateTime ExpiresAt,
+    string Status, Guid? DecidedBy, DateTime? DecidedAt, string? DecisionNote, long? LedgerTransactionId);
+
+public sealed record ApproveAdjustmentRequest(string? Note);
+
+public sealed record RejectAdjustmentRequest(string Reason);
+
+public sealed record AdjustmentListQuery
+{
+    public int Page { get; init; } = 1;
+
+    public int PageSize { get; init; } = PageRequest.DefaultPageSize;
+
+    /// <summary>Pending, Approved, Rejected or Expired; empty = all.</summary>
+    public string? Status { get; init; }
+
+    public Guid? LicenseId { get; init; }
+}
+
 public sealed record LicenseTransactionDto(
     long Id, Guid LicenseId, string Type, int Credits, int BalanceBefore, int BalanceAfter, string? Operation,
     Guid? RecognitionRequestId, long? ReferenceTransactionId, string? Reason, string ActorType, Guid? ActorId, DateTime CreatedAt);

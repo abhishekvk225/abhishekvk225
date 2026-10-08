@@ -73,3 +73,25 @@ public sealed class PlatformUsersController : ApiControllerBase
     public async Task<IActionResult> Update(Guid id, UpdatePlatformUserRequest request, CancellationToken cancellationToken) =>
         ToActionResult(await _users.UpdateAsync(id, request, cancellationToken));
 }
+
+/// <summary>Resetting someone's two-factor authentication (lost device). Only another Super Admin can; the reason is audited.</summary>
+[Route("api/v1/admin")]
+public sealed class MfaAdminController : ApiControllerBase
+{
+    private readonly IMfaService _mfa;
+
+    public MfaAdminController(IMfaService mfa)
+    {
+        _mfa = mfa;
+    }
+
+    [HttpPost("users/{id:guid}/mfa/reset")]
+    [HasPermission(Permissions.Users.MfaReset)]
+    public async Task<IActionResult> ResetStaff(Guid id, ResetMfaRequest request, CancellationToken cancellationToken) =>
+        ToActionResult(await _mfa.ResetAsync(null, id, request, cancellationToken));
+
+    [HttpPost("clients/{clientId:guid}/users/{userId:guid}/mfa/reset")]
+    [HasPermission(Permissions.Users.MfaReset)]
+    public async Task<IActionResult> ResetClientUser(Guid clientId, Guid userId, ResetMfaRequest request, CancellationToken cancellationToken) =>
+        ToActionResult(await _mfa.ResetAsync(clientId, userId, request, cancellationToken));
+}

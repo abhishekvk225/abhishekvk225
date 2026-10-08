@@ -65,6 +65,12 @@ public class AppDbContext : DbContext, IUnitOfWork
 
     public DbSet<LoginHistory> LoginHistory => Set<LoginHistory>();
 
+    public DbSet<UserMfa> UserMfa => Set<UserMfa>();
+
+    public DbSet<MfaRecoveryCode> MfaRecoveryCodes => Set<MfaRecoveryCode>();
+
+    public DbSet<MfaChallenge> MfaChallenges => Set<MfaChallenge>();
+
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
     public DbSet<Plan> Plans => Set<Plan>();
@@ -78,6 +84,8 @@ public class AppDbContext : DbContext, IUnitOfWork
     public DbSet<LicenseTransaction> LicenseTransactions => Set<LicenseTransaction>();
 
     public DbSet<LicenseAlert> LicenseAlerts => Set<LicenseAlert>();
+
+    public DbSet<LicenseAdjustmentRequest> LicenseAdjustmentRequests => Set<LicenseAdjustmentRequest>();
 
     public DbSet<Domain.Api.ApiKey> ApiKeys => Set<Domain.Api.ApiKey>();
 

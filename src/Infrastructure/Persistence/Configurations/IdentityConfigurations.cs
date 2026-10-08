@@ -118,3 +118,40 @@ internal sealed class LoginHistoryConfiguration : IEntityTypeConfiguration<Login
         b.HasIndex(x => new { x.IpAddress, x.OccurredAt });
     }
 }
+
+internal sealed class UserMfaConfiguration : IEntityTypeConfiguration<UserMfa>
+{
+    public void Configure(EntityTypeBuilder<UserMfa> b)
+    {
+        b.ToTable("UserMfa", "iam");
+        b.Property(x => x.SecretEnc).HasColumnType("varbinary(128)").IsRequired();
+        b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<Client>().WithMany().HasForeignKey(x => x.ClientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => x.UserId).IsUnique(); // one credential per user
+    }
+}
+
+internal sealed class MfaRecoveryCodeConfiguration : IEntityTypeConfiguration<MfaRecoveryCode>
+{
+    public void Configure(EntityTypeBuilder<MfaRecoveryCode> b)
+    {
+        b.ToTable("MfaRecoveryCodes", "iam");
+        b.Property(x => x.CodeHash).HasColumnType("varbinary(32)").IsRequired();
+        b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<Client>().WithMany().HasForeignKey(x => x.ClientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => new { x.UserId, x.CodeHash }).IsUnique();
+    }
+}
+
+internal sealed class MfaChallengeConfiguration : IEntityTypeConfiguration<MfaChallenge>
+{
+    public void Configure(EntityTypeBuilder<MfaChallenge> b)
+    {
+        b.ToTable("MfaChallenges", "iam");
+        b.Property(x => x.TokenHash).HasColumnType("varbinary(32)").IsRequired();
+        b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<Client>().WithMany().HasForeignKey(x => x.ClientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => x.TokenHash).IsUnique();
+        b.HasIndex(x => new { x.UserId, x.ExpiresAt });
+    }
+}

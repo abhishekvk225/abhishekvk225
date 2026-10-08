@@ -33,7 +33,7 @@ public sealed record AccessToken(string Value, int ExpiresInSeconds);
 
 public interface IAccessTokenIssuer
 {
-    AccessToken Issue(User user, IReadOnlyCollection<string> roles);
+    AccessToken Issue(User user, IReadOnlyCollection<string> roles, bool mfaEnrolmentRequired = false);
 }
 
 public sealed record EmailMessage(string To, string Subject, string Body);

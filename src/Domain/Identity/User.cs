@@ -106,4 +106,18 @@ public sealed class User : AuditableEntity, ITenantOwned
     }
 
     public void Activate() => Status = UserStatus.Active;
+
+    /// <summary>Turns two-factor sign-in on. Sessions issued before are ended so every live token belongs to a second-factor login.</summary>
+    public void EnableTwoFactor()
+    {
+        TwoFactorEnabled = true;
+        RevokeSessions();
+    }
+
+    /// <summary>Turns two-factor sign-in off (only ever done by another administrator) and ends every session.</summary>
+    public void DisableTwoFactor()
+    {
+        TwoFactorEnabled = false;
+        RevokeSessions();
+    }
 }
