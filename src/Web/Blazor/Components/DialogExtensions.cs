@@ -83,4 +83,55 @@ public static class DialogExtensions
         var result = await dialog.Result;
         return result is { Canceled: false, Data: T saved } ? saved : null;
     }
+
+    /// <summary>
+    /// The standard "edit in a dialog" flow: show the form, save through <paramref name="save"/> (field errors land on the form),
+    /// and on success say so in a snackbar. Returns the saved model, or null when cancelled.
+    /// </summary>
+    public static async Task<T?> SaveAsync<T>(
+        this IDialogService dialogs,
+        IAppSnackbar snackbar,
+        string title,
+        T model,
+        RenderFragment<T> fields,
+        Func<T, Task<ApiError?>> save,
+        string submitText,
+        Func<T, string> successMessage)
+        where T : class
+    {
+        var saved = await dialogs.ShowFormAsync(title, model, fields, save, submitText);
+        if (saved is not null)
+        {
+            snackbar.Success(successMessage(saved));
+        }
+
+        return saved;
+    }
+
+    /// <summary>
+    /// The standard "are you sure" flow: confirm (optionally with a reason or typed phrase), apply, and report the outcome in a
+    /// snackbar. Returns null when cancelled, otherwise the API result (success or failure).
+    /// </summary>
+    public static async Task<ApiResult<TResult>?> ConfirmAndApplyAsync<TResult>(
+        this IDialogService dialogs,
+        IAppSnackbar snackbar,
+        string title,
+        string message,
+        string confirmText,
+        Func<string?, Task<ApiResult<TResult>>> apply,
+        string successMessage,
+        bool destructive = false,
+        bool requireReason = false,
+        string? requiredPhrase = null)
+    {
+        var confirmed = await dialogs.ConfirmAsync(title, message, confirmText, destructive, requiredPhrase, requireReason);
+        if (confirmed is null)
+        {
+            return null;
+        }
+
+        var result = await apply(confirmed.Reason);
+        result.Report(snackbar, successMessage);
+        return result;
+    }
 }

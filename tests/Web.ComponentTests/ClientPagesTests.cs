@@ -87,7 +87,7 @@ public class ClientPagesTests : PageTestBase
         SignInAsEverything();
         Providers();
         var cut = Render<ClientsPage>();
-        cut.WaitForAssertion(() => Clients.Calls.Count.ShouldBeGreaterThan(0));
+        cut.WaitForAssertion(() => Clients.Calls.ShouldContain("list:::1"));
 
         var select = cut.FindComponent<MudSelect<string>>();
         await cut.InvokeAsync(() => select.Instance.ValueChanged.InvokeAsync("Suspended"));

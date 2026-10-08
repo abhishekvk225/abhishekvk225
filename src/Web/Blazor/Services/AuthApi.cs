@@ -69,7 +69,7 @@ public interface IAuthApiClient
 {
     Task<ApiResult<LoginResponse>> LoginAsync(LoginRequest request, CancellationToken ct = default, string? clientIp = null);
 
-    Task<ApiResult<MeResponse>> GetMeAsync(string accessToken, CancellationToken ct = default);
+    Task<ApiResult<MeResponse>> GetMeAsync(string accessToken, CancellationToken ct = default, string? clientIp = null);
 
     Task<ApiResult<bool>> LogoutAsync(string accessToken, string refreshToken, CancellationToken ct = default);
 

@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NexaVerify.Api.IntegrationTests.Support;
 using NexaVerify.Contracts.Dashboards;
+using NexaVerify.Contracts.Identity;
 using NexaVerify.TestSupport;
 using WebApp::NexaVerify.Web.Security;
 using WebApp::NexaVerify.Web.Services;
@@ -35,7 +36,11 @@ public class PortalBffEndToEndTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         _api = await AuthApp.CreateAsync(_fixture);
-        _portal = new WebApplicationFactory<WebApp::Program>().WithWebHostBuilder(builder =>
+        _portal = PortalFor(_api);
+    }
+
+    private static WebApplicationFactory<WebApp::Program> PortalFor(AuthApp api) =>
+        new WebApplicationFactory<WebApp::Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Testing");
             builder.UseSetting("Api:BaseUrl", "https://api.test");
@@ -45,11 +50,10 @@ public class PortalBffEndToEndTests : IAsyncLifetime
                 // The portal's HttpClients talk to the in-memory API host instead of the network.
                 foreach (var name in new[] { ApiClientNames.Authenticated, ApiClientNames.Anonymous })
                 {
-                    services.AddHttpClient(name).ConfigurePrimaryHttpMessageHandler(() => _api.Factory.Server.CreateHandler());
+                    services.AddHttpClient(name).ConfigurePrimaryHttpMessageHandler(() => api.Factory.Server.CreateHandler());
                 }
             });
         });
-    }
 
     public async Task DisposeAsync()
     {
@@ -96,12 +100,16 @@ public class PortalBffEndToEndTests : IAsyncLifetime
     {
         public Dictionary<string, string> Cookies { get; } = new(StringComparer.Ordinal);
 
+        /// <summary>What a browser reports for a request the page itself made (links, form posts); set to "cross-site" to play another website.</summary>
+        public string FetchSite { get; set; } = "same-origin";
+
         public Task<HttpResponseMessage> GetAsync(string url) => SendAsync(new HttpRequestMessage(HttpMethod.Get, url));
 
         public Task<HttpResponseMessage> PostAsync(string url, HttpContent content) => SendAsync(new HttpRequestMessage(HttpMethod.Post, url) { Content = content });
 
         private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request)
         {
+            request.Headers.Add("Sec-Fetch-Site", FetchSite);
             if (Cookies.Count > 0)
             {
                 request.Headers.Add("Cookie", string.Join("; ", Cookies.Select(c => $"{c.Key}={c.Value}")));
@@ -158,7 +166,7 @@ public class PortalBffEndToEndTests : IAsyncLifetime
         var login = await SignInAsync(browser, DatabaseBootstrap.SuperAdminEmail, AuthApp.StrongPassword, returnUrl: "/admin/clients");
         login.StatusCode.ShouldBe(HttpStatusCode.Redirect);
         Rel(login.Headers.Location).ShouldBe("/admin/clients");
-        var setCookie = login.Headers.GetValues("Set-Cookie").Single(c => c.StartsWith("nv.session=", StringComparison.Ordinal)).ToLowerInvariant();
+        var setCookie = login.Headers.GetValues("Set-Cookie").Single(c => c.StartsWith("__Host-nv.session=", StringComparison.Ordinal)).ToLowerInvariant();
         setCookie.ShouldContain("httponly");
         setCookie.ShouldContain("samesite=strict");
         setCookie.ShouldContain("secure");
@@ -264,7 +272,7 @@ public class PortalBffEndToEndTests : IAsyncLifetime
         var store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
         var gateway = scope.ServiceProvider.GetRequiredService<IApiGateway>();
 
-        var signIn = await auth.SignInAsync(DatabaseBootstrap.SuperAdminEmail, AuthApp.StrongPassword);
+        var signIn = await auth.SignInAsync(DatabaseBootstrap.SuperAdminEmail, AuthApp.StrongPassword, default, "198.51.100.20");
         signIn.IsSuccess.ShouldBeTrue(signIn.Error?.Message);
         var sid = signIn.Value.Id;
         var options = new ApiCallOptions { SessionId = sid };
@@ -277,6 +285,8 @@ public class PortalBffEndToEndTests : IAsyncLifetime
         var after = (await store.GetAsync(sid))!;
         after.AccessToken.ShouldNotBe(before.AccessToken);
         after.RefreshToken.ShouldNotBe(before.RefreshToken);
+        after.Permissions.ShouldContain(WebPermissions.DashboardAdmin, "the profile is read again on every rotation");
+        after.ClientIp.ShouldBe("198.51.100.20", "the sign-in address is kept for later refreshes");
 
         // someone replays the OLD refresh token (theft): the API revokes the whole family, so our next refresh is refused
         (await _api.PostAsync("/api/v1/auth/refresh", new NexaVerify.Contracts.Identity.RefreshRequest(before.RefreshToken))).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
@@ -285,6 +295,85 @@ public class PortalBffEndToEndTests : IAsyncLifetime
         denied.IsSuccess.ShouldBeFalse();
         denied.Error!.Code.ShouldBe("SESSION_EXPIRED");
         (await store.GetAsync(sid)).ShouldBeNull("reuse detection signs the user out");
+    }
+
+    [Fact]
+    public async Task A_website_cannot_sign_a_visitor_out_but_the_portal_itself_can()
+    {
+        await _api.SuperAdminAsync();
+        var browser = Browser();
+        (await SignInAsync(browser, DatabaseBootstrap.SuperAdminEmail, AuthApp.StrongPassword)).StatusCode.ShouldBe(HttpStatusCode.Redirect);
+        var sessionId = SessionIdOf(browser);
+
+        browser.FetchSite = "cross-site";
+        var attack = await browser.GetAsync("/auth/signed-out");
+
+        attack.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        attack.Headers.Contains("Set-Cookie").ShouldBeFalse("the victim's cookie must not be cleared");
+        await using (var scope = _portal.Services.CreateAsyncScope())
+        {
+            (await scope.ServiceProvider.GetRequiredService<ISessionStore>().GetAsync(sessionId)).ShouldNotBeNull();
+        }
+
+        browser.FetchSite = "same-origin";
+        (await browser.GetAsync("/auth/signed-out")).StatusCode.ShouldBe(HttpStatusCode.Redirect);
+        await using (var scope = _portal.Services.CreateAsyncScope())
+        {
+            (await scope.ServiceProvider.GetRequiredService<ISessionStore>().GetAsync(sessionId)).ShouldBeNull();
+        }
+    }
+
+    [Fact]
+    public async Task One_noisy_visitor_cannot_use_up_the_credential_limit_of_everybody_else()
+    {
+        // The API trusts the portal as a proxy and limits sign-in / refresh / password-reset calls to 4 per minute per person.
+        var api = await AuthApp.CreateAsync(_fixture,
+            new Dictionary<string, string>
+            {
+                ["ForwardedHeaders:Enabled"] = "true",
+                ["ForwardedHeaders:KnownProxies:0"] = "127.0.0.1",
+                ["RateLimiting:AuthPerIpPerMinute"] = "4",
+            },
+            services => services.AddTransient<IStartupFilter, FakeRemoteIpStartupFilter>());
+        await using var _ = api;
+        await api.SuperAdminAsync(); // direct calls from 127.0.0.1: their own bucket, not the people's
+        await using var portal = PortalFor(api);
+
+        // Person C signs in and keeps a session.
+        await using var sessionScope = portal.Services.CreateAsyncScope();
+        var signIn = await sessionScope.ServiceProvider.GetRequiredService<IPortalAuth>()
+            .SignInAsync(DatabaseBootstrap.SuperAdminEmail, AuthApp.StrongPassword, default, "198.51.100.30");
+        signIn.IsSuccess.ShouldBeTrue(signIn.Error?.Message);
+
+        // Visitor A hammers "forgot password" from their own circuit.
+        var results = new List<ApiResult<bool>>();
+        await using (var attacker = portal.Services.CreateAsyncScope())
+        {
+            attacker.ServiceProvider.GetRequiredService<ClientAddress>().Value = "203.0.113.1";
+            var forgot = attacker.ServiceProvider.GetRequiredService<IAuthApiClient>();
+            for (var i = 0; i < 10; i++)
+            {
+                results.Add(await forgot.ForgotPasswordAsync(new ForgotPasswordModel { Email = "nobody@nowhere.test" }));
+            }
+        }
+
+        results.Count(r => !r.IsSuccess && r.Error!.Status == 429).ShouldBeGreaterThan(0, "the noisy visitor is limited");
+
+        // Visitor B (another circuit) is not affected ...
+        await using (var bystander = portal.Services.CreateAsyncScope())
+        {
+            bystander.ServiceProvider.GetRequiredService<ClientAddress>().Value = "203.0.113.2";
+            var ok = await bystander.ServiceProvider.GetRequiredService<IAuthApiClient>().ForgotPasswordAsync(new ForgotPasswordModel { Email = "nobody@nowhere.test" });
+            ok.IsSuccess.ShouldBeTrue(ok.Error?.Message);
+        }
+
+        // ... and neither is person C's token refresh.
+        var store = sessionScope.ServiceProvider.GetRequiredService<ISessionStore>();
+        await store.UpdateAsync(signIn.Value.Id, s => s with { AccessTokenExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-5) });
+        var dashboard = await sessionScope.ServiceProvider.GetRequiredService<IApiGateway>()
+            .GetAsync<AdminDashboardDto>("admin/dashboard", default, new ApiCallOptions { SessionId = signIn.Value.Id });
+        dashboard.IsSuccess.ShouldBeTrue(dashboard.Error?.Message);
+        (await store.GetAsync(signIn.Value.Id))!.RefreshToken.ShouldNotBe(signIn.Value.RefreshToken, "the refresh really happened");
     }
 
     private static void Collect(List<string> leaks, HttpResponseMessage response, string? body = null)

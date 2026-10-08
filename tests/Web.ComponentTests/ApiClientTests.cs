@@ -109,7 +109,7 @@ public class ApiClientTests
         down.Code.ShouldBe("API_UNAVAILABLE");
         down.Message.ShouldNotContain("10.0.0.5");
 
-        h.Api.Respond = _ => throw new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout");
+        h.Api.Respond = _ => throw new HttpRequestException("name resolution failed");
         (await h.Gateway.GetAsync<Payload>("x")).Error!.Code.ShouldBe("API_UNAVAILABLE");
     }
 

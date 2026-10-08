@@ -185,7 +185,7 @@ public sealed class LicensingApiClient(IApiGateway api) : ILicensingApiClient
         api.GetAsync<LedgerVerificationDto>($"admin/licenses/{id}/verify-ledger", ct);
 
     public Task<ApiResult<LedgerVerificationReportDto>> VerifyAllLedgersAsync(CancellationToken ct = default) =>
-        api.SendAsync<LedgerVerificationReportDto>(HttpMethod.Post, "admin/licensing/verify-ledger", null, ct);
+        api.SendAsync<LedgerVerificationReportDto>(HttpMethod.Post, "admin/licensing/verify-ledger", null, ct, new ApiCallOptions { LongRunning = true });
 
     public Task<ApiResult<IReadOnlyList<PlanDto>>> ListPlansAsync(CancellationToken ct = default) =>
         api.GetAsync<IReadOnlyList<PlanDto>>("admin/plans", ct);

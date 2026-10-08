@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.AspNetCore.DataProtection;
@@ -43,7 +42,7 @@ public sealed class DistributedSessionStore : ISessionStore
     private readonly IDataProtector _protector;
     private readonly TimeProvider _clock;
     private readonly SessionOptions _options;
-    private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new(StringComparer.Ordinal);
+    private readonly KeyedLock _locks = new();
 
     public DistributedSessionStore(IDistributedCache cache, IDataProtectionProvider protection, TimeProvider clock, IOptions<SessionOptions> options)
     {
@@ -52,6 +51,9 @@ public sealed class DistributedSessionStore : ISessionStore
         _clock = clock;
         _options = options.Value;
     }
+
+    /// <summary>Sessions currently being written (diagnostics/tests): stays at zero when idle, whatever number of sessions exist.</summary>
+    public int ActiveLocks => _locks.ActiveKeys;
 
     /// <summary>A fresh unguessable session id (256 bits, URL-safe).</summary>
     public static string NewId() => Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
@@ -67,7 +69,8 @@ public sealed class DistributedSessionStore : ISessionStore
         var now = _clock.GetUtcNow();
         if (now >= session.AbsoluteExpiresAt || now - session.LastSeenAt >= _options.IdleTimeout)
         {
-            await RemoveAsync(id, ct);
+            // Expired: the entry is dead either way, so no lock is needed to drop it.
+            await _cache.RemoveAsync(CacheKey(id), ct);
             return null;
         }
 
@@ -76,23 +79,15 @@ public sealed class DistributedSessionStore : ISessionStore
 
     public async Task SaveAsync(PortalSession session, CancellationToken ct = default)
     {
-        var gate = LockFor(session.Id);
-        await gate.WaitAsync(ct);
-        try
+        using (await _locks.AcquireAsync(session.Id, ct))
         {
             await WriteAsync(session, ct);
-        }
-        finally
-        {
-            gate.Release();
         }
     }
 
     public async Task<PortalSession?> UpdateAsync(string id, Func<PortalSession, PortalSession?> mutate, CancellationToken ct = default)
     {
-        var gate = LockFor(id);
-        await gate.WaitAsync(ct);
-        try
+        using (await _locks.AcquireAsync(id, ct))
         {
             var current = await GetAsync(id, ct);
             if (current is null)
@@ -111,10 +106,6 @@ public sealed class DistributedSessionStore : ISessionStore
             await WriteAsync(next, ct);
             return next;
         }
-        finally
-        {
-            gate.Release();
-        }
     }
 
     public async Task TouchAsync(string id, CancellationToken ct = default)
@@ -131,13 +122,14 @@ public sealed class DistributedSessionStore : ISessionStore
 
     public async Task RemoveAsync(string id, CancellationToken ct = default)
     {
-        await _cache.RemoveAsync(CacheKey(id), ct);
-        _locks.TryRemove(id, out _);
+        // Under the same lock as updates, so a concurrent touch/refresh cannot write the session back after it was removed.
+        using (await _locks.AcquireAsync(id, ct))
+        {
+            await _cache.RemoveAsync(CacheKey(id), ct);
+        }
     }
 
     private static string CacheKey(string id) => "nv:session:" + id;
-
-    private SemaphoreSlim LockFor(string id) => _locks.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
 
     private async Task<PortalSession?> ReadAsync(string id, CancellationToken ct)
     {

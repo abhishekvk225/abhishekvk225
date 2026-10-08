@@ -109,6 +109,14 @@ public static partial class AuthEndpoints
 
     private static async Task<IResult> SignOutAsync(HttpContext http, IPortalAuth auth, string? reason)
     {
+        // Signing out changes state, so a page on another site must not be able to trigger it by linking here. Browsers tell us who
+        // initiated the request; only the portal itself (or the user typing the address) may sign out.
+        if (!IsSameOriginNavigation(http.Request))
+        {
+            http.Response.Headers.CacheControl = "no-store";
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
         var sessionId = http.User.FindFirst(PortalClaims.SessionId)?.Value;
         if (!string.IsNullOrEmpty(sessionId))
         {
@@ -119,6 +127,10 @@ public static partial class AuthEndpoints
         http.Response.Headers.CacheControl = "no-store";
         return Results.Redirect(reason == "expired" ? LoginUrl(LoginErrors.SessionEnded, null, null) : "/login?signedOut=1");
     }
+
+    /// <summary>True when the browser says the request came from this site (or from the address bar). A missing header is refused.</summary>
+    public static bool IsSameOriginNavigation(HttpRequest request) =>
+        request.Headers["Sec-Fetch-Site"].ToString() is "same-origin" or "none";
 
     internal static string LoginUrl(string? error, string? reference, string? returnUrl)
     {

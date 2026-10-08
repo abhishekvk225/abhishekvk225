@@ -35,6 +35,9 @@ public sealed record PortalSession
 
     public bool MustChangePassword { get; init; }
 
+    /// <summary>The address the person signed in from (forwarded to the API on refresh so limits apply to them, not the portal).</summary>
+    public string? ClientIp { get; init; }
+
     public required DateTimeOffset CreatedAt { get; init; }
 
     public required DateTimeOffset LastSeenAt { get; init; }

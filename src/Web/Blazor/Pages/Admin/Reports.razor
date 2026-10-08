@@ -36,7 +36,7 @@
                 <MudText Typo="Typo.body2" Class="nv-muted mb-4">
                     Recomputes every license's credit history and balance to prove nothing was altered. It can take a while on large installations; a check also runs every night.
                 </MudText>
-                <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.VerifiedUser" OnClick="VerifyAsync" Disabled="_verifying" data-testid="verify-ledgers">
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.VerifiedUser" OnClick="VerifyAsync" Disabled="@(_verifying || CoolingDown)" data-testid="verify-ledgers">
                     @if (_verifying)
                     {
                         <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
@@ -48,7 +48,13 @@
                     }
                 </MudButton>
                 <div aria-live="polite" class="mt-4" data-testid="verify-result">
-                    @if (_error is not null)
+                    @if (CoolingDown)
+                    {
+                        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3" data-testid="verify-running">
+                            The check took longer than expected and may still be running on our side. To avoid starting a second one, you can run it again in a few minutes.
+                        </MudAlert>
+                    }
+                    @if (_error is not null && !CoolingDown)
                     {
                         <ErrorState Error="_error" Title="The check could not run" OnRetry="EventCallback.Factory.Create(this, VerifyAsync)" />
                     }
@@ -97,6 +103,12 @@
     private bool _verifying;
     private LedgerVerificationReportDto? _report;
     private ApiError? _error;
+    private DateTimeOffset? _runningUntil;
+
+    /// <summary>After a timeout the server may still be scanning; hold the button back for a while rather than stacking runs.</summary>
+    private static readonly TimeSpan TimeoutCooldown = TimeSpan.FromMinutes(3);
+
+    private bool CoolingDown => _runningUntil is { } until && Clock.GetUtcNow() < until;
 
     protected override void OnInitialized()
     {
@@ -130,6 +142,11 @@
             {
                 _report = null;
                 _error = result.Error;
+                if (result.Error!.Code == ApiGateway.TimeoutCode)
+                {
+                    _runningUntil = Clock.GetUtcNow().Add(TimeoutCooldown);
+                }
+
                 Snackbar.Error(result.Error!);
             }
         }

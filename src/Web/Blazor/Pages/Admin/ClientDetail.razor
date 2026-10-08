@@ -3,10 +3,12 @@
 @inject IClientsApiClient Api
 @inject IDialogService Dialogs
 @inject IAppSnackbar Snackbar
+@inject CurrentUserState User
+@implements IDisposable
 
-<PageTitle>@(_result is { IsSuccess: true } ? _result.Value.Name : "Client") · Admin · NexaVerify</PageTitle>
+<PageTitle>@(_state.Result is { IsSuccess: true } r ? r.Value.Name : "Client") · Admin · NexaVerify</PageTitle>
 
-<PageState T="ClientDto" Result="_result" OnRetry="LoadAsync">
+<PageState T="ClientDto" Result="_state.Result" OnRetry="ReloadAsync">
     <Loading><SkeletonCard Lines="4" /></Loading>
     <ChildContent Context="client">
         <PageHeader Title="@client.Name" Subtitle="@($"Client code {client.Code}")" Breadcrumbs="Crumbs(client)">
@@ -56,79 +58,63 @@
 </PageState>
 
 @code {
-    private ApiResult<ClientDto>? _result;
-
-    [Inject] private CurrentUserState User { get; set; } = default!;
+    private readonly LoadState<ClientDto> _state = new();
+    private Guid? _loadedId;
 
     [Parameter] public Guid Id { get; set; }
 
-    protected override Task OnParametersSetAsync() => LoadAsync();
-
-    private async Task LoadAsync()
+    protected override async Task OnParametersSetAsync()
     {
-        _result = null;
-        _result = await Api.GetAsync(Id);
+        if (_loadedId == Id)
+        {
+            return; // same client: nothing to reload when the parent merely re-renders
+        }
+
+        _loadedId = Id;
+        await _state.LoadAsync(ct => Api.GetAsync(Id, ct));
     }
+
+    private Task ReloadAsync() => _state.LoadAsync(ct => Api.GetAsync(Id, ct));
+
+    public void Dispose() => _state.Dispose();
 
     private static List<BreadcrumbItem> Crumbs(ClientDto client) => [new("Clients", "admin/clients"), new(client.Name, null, true)];
 
     private async Task EditAsync(ClientDto client)
     {
-        var saved = await Dialogs.ShowFormAsync(
-            "Edit client",
-            ClientForm.From(client),
-            m => @<ClientFields Model="m" />,
+        var saved = await Dialogs.SaveAsync(
+            Snackbar, "Edit client", ClientForm.From(client), m => @<ClientFields Model="m" />,
             async m => (await Api.UpdateAsync(client.Id, m.ToUpdateRequest())).ToFormError(),
-            "Save changes");
+            "Save changes", _ => "Client details saved.");
         if (saved is not null)
         {
-            Snackbar.Success("Client details saved.");
-            await LoadAsync();
+            await _state.LoadAsync(ct => Api.GetAsync(Id, ct), keepCurrent: true);
         }
     }
 
-    private async Task SuspendAsync(ClientDto client)
+    private Task SuspendAsync(ClientDto client) =>
+        ApplyAsync(Dialogs.ConfirmAndApplyAsync(
+            Snackbar, $"Suspend {client.Name}?", "Their users are signed out and API access stops straight away. You can reactivate them at any time.",
+            "Suspend client", reason => Api.SuspendAsync(client.Id, reason), $"{client.Name} was suspended.", destructive: true, requireReason: true));
+
+    private Task DeactivateAsync(ClientDto client) =>
+        ApplyAsync(Dialogs.ConfirmAndApplyAsync(
+            Snackbar, $"Deactivate {client.Name}?", "Their users are signed out and API access stops. Use this when the company is no longer a customer.",
+            "Deactivate client", reason => Api.DeactivateAsync(client.Id, reason), $"{client.Name} was deactivated.", destructive: true, requireReason: true));
+
+    private Task ActivateAsync(ClientDto client)
     {
-        var confirmed = await Dialogs.ConfirmAsync(
-            $"Suspend {client.Name}?",
-            "Their users are signed out and API access stops straight away. You can reactivate them at any time.",
-            "Suspend client", destructive: true, requireReason: true);
-        if (confirmed is not null)
-        {
-            await ApplyAsync(Api.SuspendAsync(client.Id, confirmed.Reason), $"{client.Name} was suspended.");
-        }
+        var verb = client.Status is "Suspended" ? "Reactivate" : "Activate";
+        return ApplyAsync(Dialogs.ConfirmAndApplyAsync(
+            Snackbar, $"{verb} {client.Name}?", "Their users can sign in again and API access resumes.", verb,
+            _ => Api.ActivateAsync(client.Id), $"{client.Name} is active again."));
     }
 
-    private async Task DeactivateAsync(ClientDto client)
+    private async Task ApplyAsync(Task<ApiResult<ClientDto>?> action)
     {
-        var confirmed = await Dialogs.ConfirmAsync(
-            $"Deactivate {client.Name}?",
-            "Their users are signed out and API access stops. Use this when the company is no longer a customer.",
-            "Deactivate client", destructive: true, requireReason: true);
-        if (confirmed is not null)
+        if (await action is { IsSuccess: true } result)
         {
-            await ApplyAsync(Api.DeactivateAsync(client.Id, confirmed.Reason), $"{client.Name} was deactivated.");
-        }
-    }
-
-    private async Task ActivateAsync(ClientDto client)
-    {
-        var confirmed = await Dialogs.ConfirmAsync(
-            $"{(client.Status is "Suspended" ? "Reactivate" : "Activate")} {client.Name}?",
-            "Their users can sign in again and API access resumes.",
-            client.Status is "Suspended" ? "Reactivate" : "Activate");
-        if (confirmed is not null)
-        {
-            await ApplyAsync(Api.ActivateAsync(client.Id), $"{client.Name} is active again.");
-        }
-    }
-
-    private async Task ApplyAsync(Task<ApiResult<ClientDto>> call, string message)
-    {
-        var result = await call;
-        if (result.Report(Snackbar, message))
-        {
-            _result = result;
+            _state.Set(result);
         }
     }
 }

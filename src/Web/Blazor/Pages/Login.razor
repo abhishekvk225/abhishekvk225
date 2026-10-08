@@ -70,5 +70,18 @@ else if (SignedOut == "1")
 
     private string? ReturnUrlValue => ReturnUrl.IsSafe(ReturnUrlQuery) ? ReturnUrlQuery : null;
 
+    [CascadingParameter] private HttpContext? Http { get; set; }
+
+    protected override void OnInitialized()
+    {
+        // Already signed in (and not stuck on a forced password change): go where they were heading instead of asking again.
+        if (Http?.User is { Identity.IsAuthenticated: true } user
+            && user.FindFirst(PortalClaims.Portal)?.Value is { } portal
+            && !user.HasClaim(PortalClaims.MustChangePassword, "true"))
+        {
+            Nav.NavigateTo(ReturnUrl.ResolveForPortal(ReturnUrlQuery, portal));
+        }
+    }
+
     private static string? NullIfEmpty(string value) => value.Length == 0 ? null : value;
 }

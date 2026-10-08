@@ -5,13 +5,13 @@
 <MudTabs Elevation="0" Rounded="false" ApplyEffectsToContainer="true" TabPanelsClass="pt-4" aria-label="Audit views">
     <MudTabPanel Text="Activity">
         <MudPaper Class="nv-card" Elevation="0">
-            <DataTable @key="@("activity-" + ClientId)" T="AuditLogDto" Caption="Activity" Columns="_activityColumns" LoadData="LoadActivityAsync" PageSize="25"
+            <DataTable @key="@("activity-" + ClientId)" T="AuditLogDto" Caption="Activity" Columns="_activityColumns" LoadPage="LoadActivityAsync" PageSize="25"
                        EmptyMessage="No activity recorded for this client yet." />
         </MudPaper>
     </MudTabPanel>
     <MudTabPanel Text="Sign-ins">
         <MudPaper Class="nv-card" Elevation="0">
-            <DataTable @key="@("logins-" + ClientId)" T="LoginHistoryDto" Caption="Sign-ins" Columns="_loginColumns" LoadData="LoadLoginsAsync" PageSize="25"
+            <DataTable @key="@("logins-" + ClientId)" T="LoginHistoryDto" Caption="Sign-ins" Columns="_loginColumns" LoadPage="LoadLoginsAsync" PageSize="25"
                        EmptyMessage="No sign-ins recorded for this client yet." />
         </MudPaper>
     </MudTabPanel>
@@ -46,9 +46,9 @@
         ];
     }
 
-    private Task<ApiResult<PagedResult<AuditLogDto>>> LoadActivityAsync(PageRequest page) =>
-        Api.GetActivityAsync(ClientId, new ActivityQuery { Page = page.Page, PageSize = page.PageSize });
+    private Task<ApiResult<PagedResult<AuditLogDto>>> LoadActivityAsync(PageRequest page, CancellationToken ct) =>
+        Api.GetActivityAsync(ClientId, new ActivityQuery { Page = page.Page, PageSize = page.PageSize }, ct);
 
-    private Task<ApiResult<PagedResult<LoginHistoryDto>>> LoadLoginsAsync(PageRequest page) =>
-        Api.GetLoginsAsync(ClientId, new ActivityQuery { Page = page.Page, PageSize = page.PageSize });
+    private Task<ApiResult<PagedResult<LoginHistoryDto>>> LoadLoginsAsync(PageRequest page, CancellationToken ct) =>
+        Api.GetLoginsAsync(ClientId, new ActivityQuery { Page = page.Page, PageSize = page.PageSize }, ct);
 }

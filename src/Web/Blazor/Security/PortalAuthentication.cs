@@ -18,6 +18,13 @@ public static class PortalPrincipalFactory
     public static ClaimsPrincipal ForCookie(string sessionId) =>
         new(new ClaimsIdentity([new Claim(PortalClaims.SessionId, sessionId)], AuthenticationType));
 
+    /// <summary>Whether a principal still reflects the session's portal, roles, permissions and pending-password-change flag.</summary>
+    public static bool SameAuthorization(ClaimsPrincipal user, PortalSession session) =>
+        user.HasClaim(PortalClaims.Portal, session.Portal)
+        && user.HasClaim(PortalClaims.MustChangePassword, "true") == session.MustChangePassword
+        && user.FindAll(PortalClaims.Permission).Select(c => c.Value).ToHashSet(StringComparer.Ordinal).SetEquals(session.Permissions)
+        && user.FindAll(ClaimTypes.Role).Select(c => c.Value).ToHashSet(StringComparer.Ordinal).SetEquals(session.Roles);
+
     public static ClaimsPrincipal Create(PortalSession session)
     {
         var claims = new List<Claim>
@@ -71,7 +78,7 @@ public static class SessionCookieEvents
 
     // Static assets and the SignalR transport are not user activity.
     private static bool IsBackgroundRequest(HttpRequest request) =>
-        request.Path.StartsWithSegments("/_framework") || request.Path.StartsWithSegments("/_content") || request.Path.StartsWithSegments("/js")
+        request.Path.StartsWithSegments("/_framework") || request.Path.StartsWithSegments("/_blazor") || request.Path.StartsWithSegments("/_content") || request.Path.StartsWithSegments("/js")
         || request.Path.Value?.EndsWith(".css", StringComparison.OrdinalIgnoreCase) == true || request.Path.Value?.EndsWith(".svg", StringComparison.OrdinalIgnoreCase) == true;
 }
 
@@ -156,8 +163,22 @@ public sealed class SessionAuthenticationStateProvider(ILoggerFactory loggerFact
 
     protected override async Task<bool> ValidateAuthenticationStateAsync(AuthenticationState authenticationState, CancellationToken cancellationToken)
     {
-        var sessionId = authenticationState.User.FindFirst(PortalClaims.SessionId)?.Value;
-        return !string.IsNullOrEmpty(sessionId) && await store.GetAsync(sessionId, cancellationToken) is not null;
+        var user = authenticationState.User;
+        var sessionId = user.FindFirst(PortalClaims.SessionId)?.Value;
+        if (string.IsNullOrEmpty(sessionId))
+        {
+            return false;
+        }
+
+        var session = await store.GetAsync(sessionId, cancellationToken);
+        if (session is null)
+        {
+            return false;
+        }
+
+        // The session's profile is refreshed whenever its token rotates. If what this circuit was built from no longer matches, the
+        // state is declared stale: the page reloads, rebuilds the principal from the session and the user lands on the new view.
+        return PortalPrincipalFactory.SameAuthorization(user, session);
     }
 }
 

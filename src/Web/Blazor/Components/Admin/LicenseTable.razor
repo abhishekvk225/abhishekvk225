@@ -2,7 +2,7 @@
 @inject ILicensingApiClient Api
 
 @* One license list used by the Licenses page and the client page. Filters are owned by the caller; changing @key reloads. *@
-<DataTable @ref="_table" T="LicenseListItemDto" Caption="@Caption" Columns="_columns" LoadData="LoadAsync" Search="@Search" PageSize="@PageSize" DefaultSort="expiresAt:asc"
+<DataTable @ref="_table" T="LicenseListItemDto" Caption="@Caption" Columns="_columns" LoadPage="LoadAsync" Search="@Search" PageSize="@PageSize" DefaultSort="expiresAt:asc"
            EmptyMessage="@EmptyMessage">
     <RowActions Context="license">
         <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="@($"admin/licenses/{license.Id}")" aria-label="@($"Open license {license.Name}")" />
@@ -50,6 +50,6 @@
         _columns = columns;
     }
 
-    private Task<ApiResult<PagedResult<LicenseListItemDto>>> LoadAsync(PageRequest page) =>
-        Api.ListAsync(page, Status, ClientId, ExpiringInDays);
+    private Task<ApiResult<PagedResult<LicenseListItemDto>>> LoadAsync(PageRequest page, CancellationToken ct) =>
+        Api.ListAsync(page, Status, ClientId, ExpiringInDays, ct);
 }

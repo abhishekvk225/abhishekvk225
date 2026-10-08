@@ -15,7 +15,7 @@
 </PageHeader>
 
 <MudPaper Class="nv-card" Elevation="0">
-    <DataTable @ref="_table" T="PlanDto" Caption="Plans" Columns="_columns" LoadData="LoadAsync" PageSize="50" PageSizeOptions="@(new[] { 50 })" EmptyMessage="No plans yet. Create one to start issuing licenses from a template.">
+    <DataTable @ref="_table" T="PlanDto" Caption="Plans" Columns="_columns" LoadPage="LoadAsync" PageSize="50" PageSizeOptions="@(new[] { 50 })" EmptyMessage="No plans yet. Create one to start issuing licenses from a template.">
         <RowActions Context="plan">
             <Can Permission="@WebPermissions.PlansManage">
                 <MudIconButton Icon="@Icons.Material.Outlined.Edit" OnClick="() => EditAsync(plan)" aria-label="@($"Edit plan {plan.Name}")" />
@@ -40,30 +40,28 @@
             DataColumn<PlanDto>.Custom("Available", p => @<StatusChip Kind="StatusKind.Client" Value="@(p.IsActive ? "Active" : "Inactive")" />),
         ];
 
-    private async Task<ApiResult<PagedResult<PlanDto>>> LoadAsync(PageRequest page) => (await Api.ListPlansAsync()).AsPage();
+    private async Task<ApiResult<PagedResult<PlanDto>>> LoadAsync(PageRequest page, CancellationToken ct) => (await Api.ListPlansAsync(ct)).AsPage();
 
     private async Task CreateAsync()
     {
-        var saved = await Dialogs.ShowFormAsync(
-            "New plan", new PlanForm(), m => @<PlanFields Model="m" />,
+        var saved = await Dialogs.SaveAsync(
+            Snackbar, "New plan", new PlanForm(), m => @<PlanFields Model="m" />,
             async m => (await Api.CreatePlanAsync(m.ToRequest())).ToFormError(),
-            "Create plan");
+            "Create plan", m => $"Plan {m.Name} was created.");
         if (saved is not null)
         {
-            Snackbar.Success($"Plan {saved.Name} was created.");
             await ReloadAsync();
         }
     }
 
     private async Task EditAsync(PlanDto plan)
     {
-        var saved = await Dialogs.ShowFormAsync(
-            $"Edit {plan.Name}", PlanForm.From(plan), m => @<PlanFields Model="m" CodeLocked="true" />,
+        var saved = await Dialogs.SaveAsync(
+            Snackbar, $"Edit {plan.Name}", PlanForm.From(plan), m => @<PlanFields Model="m" CodeLocked="true" />,
             async m => (await Api.UpdatePlanAsync(plan.Id, m.ToRequest())).ToFormError(),
-            "Save changes");
+            "Save changes", m => $"Plan {m.Name} was saved.");
         if (saved is not null)
         {
-            Snackbar.Success($"Plan {saved.Name} was saved.");
             await ReloadAsync();
         }
     }

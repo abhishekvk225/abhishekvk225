@@ -2,6 +2,7 @@
 @inject ILicensingApiClient Api
 @inject IDialogService Dialogs
 @inject IAppSnackbar Snackbar
+@implements IDisposable
 
 <MudPaper Class="nv-card nv-card-pad mb-4" Elevation="0">
     <div class="d-flex flex-wrap align-center justify-space-between mb-3" style="gap: var(--nv-space-3);">
@@ -20,55 +21,37 @@
             <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Toll" OnClick="SetRuleAsync">Set a price</MudButton>
         </Can>
     </div>
-    <CostRuleList Result="_rules" OnRetry="LoadRulesAsync" Caption="Prices for this client" EmptyMessage="This client pays the standard prices." />
+    <CostRuleList Result="_rules.Result" OnRetry="LoadRulesAsync" Caption="Prices for this client" EmptyMessage="This client pays the standard prices." />
 </MudPaper>
 
 @code {
     private LicenseTable? _table;
-    private ApiResult<IReadOnlyList<CostRuleDto>>? _rules;
+    private readonly LoadState<IReadOnlyList<CostRuleDto>> _rules = new();
 
     [Parameter, EditorRequired] public Guid ClientId { get; set; }
 
     protected override Task OnInitializedAsync() => LoadRulesAsync();
 
-    private async Task LoadRulesAsync()
-    {
-        _rules = null;
-        _rules = await Api.ListClientCostRulesAsync(ClientId);
-    }
+    private Task LoadRulesAsync() => _rules.LoadAsync(ct => Api.ListClientCostRulesAsync(ClientId, ct));
+
+    public void Dispose() => _rules.Dispose();
 
     private async Task IssueAsync()
     {
-        var plans = await Api.ListPlansAsync();
-        var form = new IssueLicenseForm();
-        var saved = await Dialogs.ShowFormAsync(
-            "Issue a license",
-            form,
-            m => @<LicenseFields Model="m" Plans="@(plans.IsSuccess ? plans.Value.Where(p => p.IsActive).ToList() : [])" />,
-            async m => (await Api.CreateAsync(ClientId, m.ToRequest())).ToFormError(),
-            "Issue license");
-        if (saved is not null)
+        if (await Dialogs.IssueLicenseAsync(Api, Snackbar, ClientId) && _table is not null)
         {
-            Snackbar.Success("The license was issued.");
-            if (_table is not null)
-            {
-                await _table.ReloadAsync();
-            }
+            await _table.ReloadAsync();
         }
     }
 
     private async Task SetRuleAsync()
     {
-        var form = new CostRuleForm();
-        var saved = await Dialogs.ShowFormAsync(
-            "Set a price for this client",
-            form,
-            m => @<CostRuleFields Model="m" />,
+        var saved = await Dialogs.SaveAsync(
+            Snackbar, "Set a price for this client", new CostRuleForm(), m => @<CostRuleFields Model="m" />,
             async m => (await Api.SetClientCostRuleAsync(ClientId, m.ToRequest())).ToFormError(),
-            "Save price");
+            "Save price", _ => "The price was saved.");
         if (saved is not null)
         {
-            Snackbar.Success("The price was saved.");
             await LoadRulesAsync();
         }
     }

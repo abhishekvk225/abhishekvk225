@@ -24,7 +24,7 @@ public sealed class StubAuthApiClient : IAuthApiClient
         return ApiResult<LoginResponse>.Ok(new LoginResponse(admin ? "stub-admin" : "stub-client", "Bearer", 900, "stub-refresh", false, user));
     }
 
-    public Task<ApiResult<MeResponse>> GetMeAsync(string accessToken, CancellationToken ct = default)
+    public Task<ApiResult<MeResponse>> GetMeAsync(string accessToken, CancellationToken ct = default, string? clientIp = null)
     {
         var admin = accessToken == "stub-admin";
         var role = admin ? SystemRoles.SuperAdmin : SystemRoles.ClientAdmin;

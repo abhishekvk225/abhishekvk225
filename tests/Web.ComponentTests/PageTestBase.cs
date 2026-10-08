@@ -82,11 +82,18 @@ public sealed class FakeClientsApi : IClientsApiClient
     public Task<ApiResult<PagedResult<LoginHistoryDto>>> GetLoginsAsync(Guid id, ActivityQuery query, CancellationToken ct = default) =>
         Task.FromResult(ApiResult<PagedResult<LoginHistoryDto>>.Ok(new PagedResult<LoginHistoryDto>([], 1, 25, 0)));
 
-    public Task<ApiResult<IReadOnlyList<SettingDto>>> GetSettingsAsync(Guid id, CancellationToken ct = default) =>
-        Task.FromResult(ApiResult<IReadOnlyList<SettingDto>>.Ok([]));
+    public IReadOnlyList<SettingDto> Settings { get; set; } = [];
 
-    public Task<ApiResult<IReadOnlyList<SettingDto>>> UpdateSettingsAsync(Guid id, UpdateSettingsRequest request, CancellationToken ct = default) =>
-        Task.FromResult(ApiResult<IReadOnlyList<SettingDto>>.Ok([]));
+    public UpdateSettingsRequest? LastSettingsRequest { get; private set; }
+
+    public Task<ApiResult<IReadOnlyList<SettingDto>>> GetSettingsAsync(Guid id, CancellationToken ct = default) =>
+        Task.FromResult(ApiResult<IReadOnlyList<SettingDto>>.Ok(Settings));
+
+    public Task<ApiResult<IReadOnlyList<SettingDto>>> UpdateSettingsAsync(Guid id, UpdateSettingsRequest request, CancellationToken ct = default)
+    {
+        LastSettingsRequest = request;
+        return Task.FromResult(ApiResult<IReadOnlyList<SettingDto>>.Ok(Settings));
+    }
 }
 
 public sealed class FakeLicensingApi : ILicensingApiClient
@@ -114,7 +121,11 @@ public sealed class FakeLicensingApi : ILicensingApiClient
         return Task.FromResult(ApiResult<LicenseDto>.Ok(License()));
     }
 
-    public Task<ApiResult<LicenseDto>> UpdateAsync(Guid id, UpdateLicenseRequest request, CancellationToken ct = default) => Task.FromResult(ApiResult<LicenseDto>.Ok(License()));
+    public Task<ApiResult<LicenseDto>> UpdateAsync(Guid id, UpdateLicenseRequest request, CancellationToken ct = default)
+    {
+        Calls.Add($"update:{request.Name}");
+        return Task.FromResult(ApiResult<LicenseDto>.Ok(License() with { Name = request.Name }));
+    }
 
     public Task<ApiResult<LicenseDto>> ActivateAsync(Guid id, CancellationToken ct = default)
     {
@@ -136,7 +147,11 @@ public sealed class FakeLicensingApi : ILicensingApiClient
         return Task.FromResult(ApiResult<LicenseDto>.Ok(License() with { Status = "Revoked", EffectiveStatus = "Revoked" }));
     }
 
-    public Task<ApiResult<LicenseDto>> RenewAsync(Guid id, RenewLicenseRequest request, CancellationToken ct = default) => Task.FromResult(ApiResult<LicenseDto>.Ok(License()));
+    public Task<ApiResult<LicenseDto>> RenewAsync(Guid id, RenewLicenseRequest request, CancellationToken ct = default)
+    {
+        Calls.Add($"renew:{request.AdditionalCredits}:{request.ExpiresAt:yyyy-MM-dd}");
+        return Task.FromResult(ApiResult<LicenseDto>.Ok(License()));
+    }
 
     public Task<ApiResult<LicenseDto>> AdjustAsync(Guid id, AdjustLicenseRequest request, CancellationToken ct = default)
     {
@@ -149,7 +164,13 @@ public sealed class FakeLicensingApi : ILicensingApiClient
             [new LicenseTransactionDto(7, id, "Consume", -2, 100, 98, "Verify", null, null, null, "ApiKey", null, Sample.Now)], 1, 25, 1)));
 
     public Task<ApiResult<LicenseTransactionDto>> RefundAsync(long transactionId, RefundRequest request, CancellationToken ct = default) =>
-        Task.FromResult(ApiResult<LicenseTransactionDto>.Ok(new LicenseTransactionDto(8, Guid.Empty, "Refund", 2, 98, 100, null, null, transactionId, request.Reason, "User", null, Sample.Now)));
+        Record($"refund:{transactionId}:{request.Reason}").ContinueWith(_ => ApiResult<LicenseTransactionDto>.Ok(new LicenseTransactionDto(8, Guid.Empty, "Refund", 2, 98, 100, null, null, transactionId, request.Reason, "User", null, Sample.Now)));
+
+    private Task<bool> Record(string call)
+    {
+        Calls.Add(call);
+        return Task.FromResult(true);
+    }
 
     public Task<ApiResult<LedgerVerificationDto>> VerifyLedgerAsync(Guid id, CancellationToken ct = default) =>
         Task.FromResult(ApiResult<LedgerVerificationDto>.Ok(new LedgerVerificationDto(id, true, 12, [])));
@@ -168,35 +189,49 @@ public sealed class FakeLicensingApi : ILicensingApiClient
         return Task.FromResult(ApiResult<PlanDto>.Ok(Sample.Plan()));
     }
 
-    public Task<ApiResult<PlanDto>> UpdatePlanAsync(Guid id, SavePlanRequest request, CancellationToken ct = default) => Task.FromResult(ApiResult<PlanDto>.Ok(Sample.Plan()));
+    public Task<ApiResult<PlanDto>> UpdatePlanAsync(Guid id, SavePlanRequest request, CancellationToken ct = default)
+    {
+        Calls.Add("plan-update:" + request.Name);
+        return Task.FromResult(ApiResult<PlanDto>.Ok(Sample.Plan()));
+    }
 
     public Task<ApiResult<IReadOnlyList<CostRuleDto>>> ListCostRulesAsync(CancellationToken ct = default) =>
         Task.FromResult(ApiResult<IReadOnlyList<CostRuleDto>>.Ok([new CostRuleDto(Guid.NewGuid(), "Platform", null, null, "Verify", 2, "OnCompleted", Sample.Now, null)]));
 
     public Task<ApiResult<CostRuleDto>> SetDefaultCostRuleAsync(SetCostRuleRequest request, CancellationToken ct = default) =>
-        Task.FromResult(ApiResult<CostRuleDto>.Ok(new CostRuleDto(Guid.NewGuid(), "Platform", null, null, request.Operation, request.Credits, request.ChargePolicy, Sample.Now, null)));
+        Record($"rule-default:{request.Operation}:{request.Credits}:{request.ChargePolicy}").ContinueWith(_ => ApiResult<CostRuleDto>.Ok(new CostRuleDto(Guid.NewGuid(), "Platform", null, null, request.Operation, request.Credits, request.ChargePolicy, Sample.Now, null)));
 
     public Task<ApiResult<CostRuleDto>> SetPlanCostRuleAsync(Guid planId, SetCostRuleRequest request, CancellationToken ct = default) =>
-        Task.FromResult(ApiResult<CostRuleDto>.Ok(new CostRuleDto(Guid.NewGuid(), "Plan", null, planId, request.Operation, request.Credits, request.ChargePolicy, Sample.Now, null)));
+        Record($"rule-plan:{planId}:{request.Operation}:{request.Credits}").ContinueWith(_ =>
+            ApiResult<CostRuleDto>.Ok(new CostRuleDto(Guid.NewGuid(), "Plan", null, planId, request.Operation, request.Credits, request.ChargePolicy, Sample.Now, null)));
 
     public Task<ApiResult<IReadOnlyList<CostRuleDto>>> ListClientCostRulesAsync(Guid clientId, CancellationToken ct = default) =>
         Task.FromResult(ApiResult<IReadOnlyList<CostRuleDto>>.Ok([]));
 
     public Task<ApiResult<CostRuleDto>> SetClientCostRuleAsync(Guid clientId, SetCostRuleRequest request, CancellationToken ct = default) =>
-        Task.FromResult(ApiResult<CostRuleDto>.Ok(new CostRuleDto(Guid.NewGuid(), "Client", clientId, null, request.Operation, request.Credits, request.ChargePolicy, Sample.Now, null)));
+        Record($"rule-client:{clientId}:{request.Operation}:{request.Credits}").ContinueWith(_ => ApiResult<CostRuleDto>.Ok(new CostRuleDto(Guid.NewGuid(), "Client", clientId, null, request.Operation, request.Credits, request.ChargePolicy, Sample.Now, null)));
 }
 
 public sealed class FakeAccessApi : IAccessApiClient
 {
+    public List<string> Calls { get; } = [];
+
     public Task<ApiResult<PagedResult<PlatformUserDto>>> ListUsersAsync(PageRequest page, CancellationToken ct = default) =>
         Task.FromResult(ApiResult<PagedResult<PlatformUserDto>>.Ok(new PagedResult<PlatformUserDto>(
             [new PlatformUserDto(Guid.NewGuid(), "ada@nexaverify.test", "Ada Admin", "Active", false, null, ["SuperAdmin"])], 1, 25, 1)));
 
     public Task<ApiResult<PlatformUserDto>> CreateUserAsync(CreatePlatformUserRequest request, CancellationToken ct = default) =>
-        Task.FromResult(ApiResult<PlatformUserDto>.Ok(new PlatformUserDto(Guid.NewGuid(), request.Email, request.FullName, "Active", true, null, request.Roles)));
+        Record($"user-create:{request.Email}:{string.Join('+', request.Roles)}").ContinueWith(_ => ApiResult<PlatformUserDto>.Ok(new PlatformUserDto(Guid.NewGuid(), request.Email, request.FullName, "Active", true, null, request.Roles)));
 
     public Task<ApiResult<PlatformUserDto>> UpdateUserAsync(Guid id, UpdatePlatformUserRequest request, CancellationToken ct = default) =>
-        Task.FromResult(ApiResult<PlatformUserDto>.Ok(new PlatformUserDto(id, "x@y.test", request.FullName, "Active", false, null, request.Roles)));
+        Record($"user-update:{request.FullName}:{string.Join('+', request.Roles)}:{request.IsActive}").ContinueWith(_ =>
+            ApiResult<PlatformUserDto>.Ok(new PlatformUserDto(id, "x@y.test", request.FullName, "Active", false, null, request.Roles)));
+
+    private Task<bool> Record(string call)
+    {
+        Calls.Add(call);
+        return Task.FromResult(true);
+    }
 
     public Func<Task<ApiResult<IReadOnlyList<RoleDto>>>> Roles { get; set; } = () => Task.FromResult(ApiResult<IReadOnlyList<RoleDto>>.Ok(
     [
@@ -208,10 +243,12 @@ public sealed class FakeAccessApi : IAccessApiClient
     public Task<ApiResult<IReadOnlyList<RoleDto>>> ListRolesAsync(CancellationToken ct = default) => Roles();
 
     public Task<ApiResult<RoleDto>> CreateRoleAsync(CreateRoleRequest request, CancellationToken ct = default) =>
-        Task.FromResult(ApiResult<RoleDto>.Ok(new RoleDto(Guid.NewGuid(), request.Name, request.Scope, false, request.Description, request.Permissions)));
+        Record($"role-create:{request.Name}:{request.Scope}:{string.Join('+', request.Permissions.Order())}").ContinueWith(_ =>
+            ApiResult<RoleDto>.Ok(new RoleDto(Guid.NewGuid(), request.Name, request.Scope, false, request.Description, request.Permissions)));
 
     public Task<ApiResult<RoleDto>> UpdateRoleAsync(Guid id, UpdateRoleRequest request, CancellationToken ct = default) =>
-        Task.FromResult(ApiResult<RoleDto>.Ok(new RoleDto(id, "x", "Platform", false, request.Description, request.Permissions)));
+        Record($"role-update:{string.Join('+', request.Permissions.Order())}").ContinueWith(_ =>
+            ApiResult<RoleDto>.Ok(new RoleDto(id, "x", "Platform", false, request.Description, request.Permissions)));
 
     public Task<ApiResult<IReadOnlyList<PermissionDto>>> ListPermissionsAsync(CancellationToken ct = default) =>
         Task.FromResult(ApiResult<IReadOnlyList<PermissionDto>>.Ok(
@@ -292,6 +329,7 @@ public abstract class PageTestBase : UiTestBase
         Services.AddSingleton<IDashboardApiClient>(Dashboard);
         Services.AddScoped<DashboardRangeState>();
         Services.AddSingleton<CurrentUserState>();
+        Services.AddScoped<ClientAddress>();
         Environment = new FakeEnv("Production");
         Services.AddSingleton<Microsoft.Extensions.Hosting.IHostEnvironment>(Environment);
         Services.AddSingleton<AntiforgeryStateProvider, FakeAntiforgeryState>();

@@ -7,8 +7,17 @@ public sealed class SessionOptions
 {
     public const string Section = "Session";
 
-    /// <summary>Name of the opaque session cookie.</summary>
-    public string CookieName { get; set; } = "nv.session";
+    /// <summary>
+    /// Name of the opaque session cookie. Left empty it is <c>__Host-nv.session</c> when cookies are Secure (the prefix makes browsers
+    /// refuse a cookie planted from a sibling subdomain) and <c>nv.session</c> for plain-http development.
+    /// </summary>
+    public string? CookieName { get; set; }
+
+    /// <summary>Explicit opt-in to the per-process session store outside Development/Testing (single node, or sticky sessions).</summary>
+    public bool AllowInMemoryStore { get; set; }
+
+    public string EffectiveCookieName(bool secure) =>
+        !string.IsNullOrWhiteSpace(CookieName) ? CookieName : secure ? "__Host-nv.session" : "nv.session";
 
     /// <summary>A session with no activity for this long is gone (sliding window).</summary>
     [Range(1, 24 * 60)]
@@ -36,6 +45,10 @@ public sealed class ApiClientOptions
 
     [Range(1, 300)]
     public int TimeoutSeconds { get; set; } = 30;
+
+    /// <summary>For operations that can legitimately run long (the on-demand credit ledger scan).</summary>
+    [Range(1, 1800)]
+    public int LongRunningTimeoutSeconds { get; set; } = 300;
 
     /// <summary>
     /// Validates the base address: absolute, https everywhere except Development/Testing (where plain http is allowed).

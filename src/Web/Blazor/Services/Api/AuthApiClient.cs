@@ -8,8 +8,8 @@ public sealed class AuthApiClient(IApiGateway api) : IAuthApiClient
     public Task<ApiResult<LoginResponse>> LoginAsync(LoginRequest request, CancellationToken ct = default, string? clientIp = null) =>
         api.SendAsync<LoginResponse>(HttpMethod.Post, "auth/login", request, ct, ApiCallOptions.None with { ClientIp = clientIp });
 
-    public Task<ApiResult<MeResponse>> GetMeAsync(string accessToken, CancellationToken ct = default) =>
-        api.GetAsync<MeResponse>("auth/me", ct, new ApiCallOptions { BearerToken = accessToken });
+    public Task<ApiResult<MeResponse>> GetMeAsync(string accessToken, CancellationToken ct = default, string? clientIp = null) =>
+        api.GetAsync<MeResponse>("auth/me", ct, new ApiCallOptions { BearerToken = accessToken, ClientIp = clientIp });
 
     public Task<ApiResult<bool>> LogoutAsync(string accessToken, string refreshToken, CancellationToken ct = default) =>
         api.SendAsync(HttpMethod.Post, "auth/logout", new LogoutRequest(refreshToken), ct, new ApiCallOptions { BearerToken = accessToken });

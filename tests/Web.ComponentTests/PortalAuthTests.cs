@@ -28,7 +28,7 @@ public sealed class FakeAuthApi : IAuthApiClient
         return Task.FromResult(Login);
     }
 
-    public Task<ApiResult<MeResponse>> GetMeAsync(string accessToken, CancellationToken ct = default)
+    public Task<ApiResult<MeResponse>> GetMeAsync(string accessToken, CancellationToken ct = default, string? clientIp = null)
     {
         Calls.Add("me:" + accessToken);
         return Task.FromResult(Me);

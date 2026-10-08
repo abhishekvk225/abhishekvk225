@@ -11,7 +11,7 @@
     <Actions><RangeSelector /></Actions>
 </PageHeader>
 
-<PageState T="ClientDashboardModel" Result="_result" OnRetry="LoadAsync">
+<PageState T="ClientDashboardModel" Result="_state.Result" OnRetry="LoadAsync">
     <Loading><DashboardSkeleton Cards="4" /></Loading>
     <ChildContent Context="model">
         <MudGrid Spacing="3">
@@ -82,9 +82,8 @@
 </PageState>
 
 @code {
-    private ApiResult<ClientDashboardModel>? _result;
+    private readonly LoadState<ClientDashboardModel> _state = new();
     private IReadOnlyList<DataColumn<RecognitionRow>> _recentColumns = [];
-    private int _version;
 
     protected override async Task OnInitializedAsync()
     {
@@ -99,19 +98,20 @@
         await LoadAsync();
     }
 
-    private async Task LoadAsync()
-    {
-        var version = ++_version;
-        _result = null;
-        StateHasChanged();
-        var result = await Api.GetClientDashboardAsync(Range.Range);
-        if (version == _version)
-        {
-            _result = result;
-        }
-    }
+    private Task LoadAsync() => _state.LoadAsync(ct => Api.GetClientDashboardAsync(Range.Range, ct));
 
-    private void OnRangeChanged() => _ = InvokeAsync(LoadAsync);
+    private void OnRangeChanged() => _ = InvokeAsync(async () =>
+    {
+        try
+        {
+            await LoadAsync();
+            StateHasChanged();
+        }
+        catch (Exception)
+        {
+            // LoadState never throws for API failures; anything else must not take the circuit down from a fire-and-forget callback.
+        }
+    });
 
     private static ApiResult<PagedResult<T>> InMemory<T>(IReadOnlyList<T> rows) =>
         ApiResult<PagedResult<T>>.Ok(new PagedResult<T>(rows, 1, Math.Max(1, rows.Count), rows.Count));
@@ -123,5 +123,9 @@
         new TrendSeries("Could not process", [new TrendPoint("Total", m.Outcomes.Failed)]),
     ];
 
-    public void Dispose() => Range.Changed -= OnRangeChanged;
+    public void Dispose()
+    {
+        Range.Changed -= OnRangeChanged;
+        _state.Dispose();
+    }
 }

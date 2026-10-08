@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.Extensions.Logging;
@@ -21,20 +20,27 @@ public enum RefreshStatus
 
 public sealed record RefreshOutcome(RefreshStatus Status, string? AccessToken = null);
 
-/// <summary>Exchanges a refresh token for a new token pair (POST /auth/refresh) without any session handling.</summary>
+/// <summary>Exchanges a refresh token for a new token pair (POST /auth/refresh) and reads the profile, without any session handling.</summary>
 public interface IRefreshTokenExchange
 {
-    Task<ApiResult<LoginResponse>> ExchangeAsync(string refreshToken, CancellationToken ct);
+    /// <param name="refreshToken">The session's current refresh token.</param>
+    /// <param name="clientIp">The end user's address (stored at sign-in), so the API limits the person rather than the portal.</param>
+    Task<ApiResult<LoginResponse>> ExchangeAsync(string refreshToken, string? clientIp, CancellationToken ct);
+
+    /// <summary>GET /auth/me with the freshly issued token: the current roles and permissions.</summary>
+    Task<ApiResult<MeResponse>> GetProfileAsync(string accessToken, string? clientIp, CancellationToken ct);
 }
 
 public sealed class HttpRefreshTokenExchange(IHttpClientFactory httpClients) : IRefreshTokenExchange
 {
-    public async Task<ApiResult<LoginResponse>> ExchangeAsync(string refreshToken, CancellationToken ct)
+    public async Task<ApiResult<LoginResponse>> ExchangeAsync(string refreshToken, string? clientIp, CancellationToken ct)
     {
         try
         {
             using var client = httpClients.CreateClient(ApiClientNames.Anonymous);
-            using var response = await client.PostAsJsonAsync("auth/refresh", new RefreshRequest(refreshToken), ApiGateway.Json, ct);
+            using var request = new HttpRequestMessage(HttpMethod.Post, "auth/refresh") { Content = JsonContent.Create(new RefreshRequest(refreshToken), options: ApiGateway.Json) };
+            AddClientIp(request, clientIp);
+            using var response = await client.SendAsync(request, ct);
             if (!response.IsSuccessStatusCode)
             {
                 return ApiResult<LoginResponse>.Fail(await ProblemMapper.FromResponseAsync(response, ct));
@@ -46,6 +52,37 @@ public sealed class HttpRefreshTokenExchange(IHttpClientFactory httpClients) : I
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
             return ApiResult<LoginResponse>.Fail("API_UNAVAILABLE", "The service is not reachable.", null, 503);
+        }
+    }
+
+    public async Task<ApiResult<MeResponse>> GetProfileAsync(string accessToken, string? clientIp, CancellationToken ct)
+    {
+        try
+        {
+            using var client = httpClients.CreateClient(ApiClientNames.Anonymous);
+            using var request = new HttpRequestMessage(HttpMethod.Get, "auth/me");
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+            AddClientIp(request, clientIp);
+            using var response = await client.SendAsync(request, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                return ApiResult<MeResponse>.Fail(await ProblemMapper.FromResponseAsync(response, ct));
+            }
+
+            var body = await response.Content.ReadFromJsonAsync<MeResponse>(ApiGateway.Json, ct);
+            return body is null ? ApiResult<MeResponse>.Fail(ApiError.Unexpected()) : ApiResult<MeResponse>.Ok(body);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            return ApiResult<MeResponse>.Fail("API_UNAVAILABLE", "The service is not reachable.", null, 503);
+        }
+    }
+
+    private static void AddClientIp(HttpRequestMessage request, string? clientIp)
+    {
+        if (!string.IsNullOrEmpty(clientIp))
+        {
+            request.Headers.TryAddWithoutValidation(ApiGateway.ForwardedForHeader, clientIp);
         }
     }
 }
@@ -64,20 +101,20 @@ public sealed class TokenRefreshCoordinator(
     ILogger<TokenRefreshCoordinator> logger)
 {
     private static readonly TimeSpan ExchangeTimeout = TimeSpan.FromSeconds(20);
-    private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new(StringComparer.Ordinal);
+    private readonly KeyedLock _locks = new();
+
+    /// <summary>Sessions currently being refreshed (diagnostics/tests).</summary>
+    public int ActiveLocks => _locks.ActiveKeys;
 
     /// <param name="sessionId">The session to refresh.</param>
     /// <param name="staleAccessToken">The token the caller just used (or null if it had none). If the stored token differs, someone already refreshed.</param>
     public async Task<RefreshOutcome> RefreshAsync(string sessionId, string? staleAccessToken, CancellationToken ct)
     {
-        var gate = _locks.GetOrAdd(sessionId, _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(ct);
-        try
+        using (await _locks.AcquireAsync(sessionId, ct))
         {
             var session = await store.GetAsync(sessionId, CancellationToken.None);
             if (session is null)
             {
-                _locks.TryRemove(sessionId, out _);
                 return new RefreshOutcome(RefreshStatus.SessionEnded);
             }
 
@@ -92,20 +129,19 @@ public sealed class TokenRefreshCoordinator(
             // Once the refresh token has left for the API the rotation must be recorded even if the caller gives up:
             // the exchange and the store update are therefore not tied to the caller's cancellation token.
             using var timeout = new CancellationTokenSource(ExchangeTimeout);
-            var result = await exchange.ExchangeAsync(session.RefreshToken, timeout.Token);
+            var result = await exchange.ExchangeAsync(session.RefreshToken, session.ClientIp, timeout.Token);
 
             if (!result.IsSuccess)
             {
-                if (result.Error!.Status is >= 400 and < 500 and not 429 and not 408)
+                if (IsRefusal(result.Error!))
                 {
                     // Expired / revoked / reuse detected. The API already revoked the family; we drop our copy.
-                    logger.LogWarning("Refresh rejected by the API (status {Status}, code {Code}); ending session.", result.Error.Status, result.Error.Code);
+                    logger.LogWarning("Refresh rejected by the API (status {Status}, code {Code}); ending session.", result.Error!.Status, result.Error.Code);
                     await store.RemoveAsync(sessionId, CancellationToken.None);
-                    _locks.TryRemove(sessionId, out _);
                     return new RefreshOutcome(RefreshStatus.SessionEnded);
                 }
 
-                logger.LogWarning("Token refresh failed transiently (status {Status}).", result.Error.Status);
+                logger.LogWarning("Token refresh failed transiently (status {Status}).", result.Error!.Status);
                 return new RefreshOutcome(RefreshStatus.Unavailable);
             }
 
@@ -117,16 +153,50 @@ public sealed class TokenRefreshCoordinator(
                 RefreshToken = tokens.RefreshToken,
                 MustChangePassword = tokens.MustChangePassword,
             }, CancellationToken.None);
+            if (updated is null)
+            {
+                return new RefreshOutcome(RefreshStatus.SessionEnded);
+            }
 
-            return updated is null
-                ? new RefreshOutcome(RefreshStatus.SessionEnded)
-                : new RefreshOutcome(RefreshStatus.Refreshed, updated.AccessToken);
-        }
-        finally
-        {
-            gate.Release();
+            // Permissions are looked up again on every rotation, so what the UI shows lags the API by at most one access-token lifetime.
+            using var profileTimeout = new CancellationTokenSource(ExchangeTimeout);
+            var profile = await exchange.GetProfileAsync(tokens.AccessToken, updated.ClientIp, profileTimeout.Token);
+            if (profile.IsSuccess)
+            {
+                var me = profile.Value;
+                var portal = me.User.IsPlatformUser ? PortalKinds.Admin : PortalKinds.Client;
+                if (portal != updated.Portal)
+                {
+                    logger.LogWarning("The account moved between portals; ending the session.");
+                    await store.RemoveAsync(sessionId, CancellationToken.None);
+                    return new RefreshOutcome(RefreshStatus.SessionEnded);
+                }
+
+                updated = await store.UpdateAsync(sessionId, s => s with
+                {
+                    Roles = me.User.Roles,
+                    Permissions = me.Permissions,
+                    ClientName = me.Client?.Name ?? s.ClientName,
+                    MustChangePassword = s.MustChangePassword || me.MustChangePassword,
+                }, CancellationToken.None);
+                if (updated is null)
+                {
+                    return new RefreshOutcome(RefreshStatus.SessionEnded);
+                }
+            }
+            else if (IsRefusal(profile.Error!))
+            {
+                logger.LogWarning("The profile was refused after refresh (status {Status}); ending session.", profile.Error!.Status);
+                await store.RemoveAsync(sessionId, CancellationToken.None);
+                return new RefreshOutcome(RefreshStatus.SessionEnded);
+            }
+
+            // A transient failure keeps the previous snapshot until the next rotation.
+            return new RefreshOutcome(RefreshStatus.Refreshed, updated.AccessToken);
         }
     }
+
+    private static bool IsRefusal(ApiError error) => error.Status is >= 400 and < 500 and not 429 and not 408;
 }
 
 /// <summary>

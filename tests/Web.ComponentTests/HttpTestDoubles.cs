@@ -7,7 +7,7 @@ using NexaVerify.Web.Security;
 
 namespace NexaVerify.Web.ComponentTests;
 
-public sealed record SeenRequest(HttpMethod Method, string Path, string? Authorization, string? Body, string? SessionOption);
+public sealed record SeenRequest(HttpMethod Method, string Path, string? Authorization, string? Body, string? ForwardedFor = null);
 
 /// <summary>Stands in for the API: records what arrived and answers from a script.</summary>
 public sealed class ScriptedApi : HttpMessageHandler
@@ -18,6 +18,9 @@ public sealed class ScriptedApi : HttpMessageHandler
     public Func<SeenRequest, HttpResponseMessage> Respond { get; set; } = _ => new HttpResponseMessage(HttpStatusCode.OK);
 
     public Func<SeenRequest, Task>? Before { get; set; }
+
+    /// <summary>Waits this long (observing cancellation) before answering, to exercise timeouts.</summary>
+    public TimeSpan? TokenAwareDelay { get; set; }
 
     public IReadOnlyList<SeenRequest> Seen
     {
@@ -33,7 +36,8 @@ public sealed class ScriptedApi : HttpMessageHandler
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var body = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
-        var seen = new SeenRequest(request.Method, request.RequestUri!.PathAndQuery, request.Headers.Authorization?.ToString(), body, null);
+        var seen = new SeenRequest(request.Method, request.RequestUri!.PathAndQuery, request.Headers.Authorization?.ToString(), body,
+            request.Headers.TryGetValues("X-Forwarded-For", out var forwarded) ? forwarded.Single() : null);
         lock (_gate)
         {
             _seen.Add(seen);
@@ -42,6 +46,11 @@ public sealed class ScriptedApi : HttpMessageHandler
         if (Before is not null)
         {
             await Before(seen);
+        }
+
+        if (TokenAwareDelay is { } delay)
+        {
+            await Task.Delay(delay, cancellationToken);
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -68,18 +77,27 @@ public sealed class FakeExchange : IRefreshTokenExchange
 
     public List<string> RefreshTokensSeen { get; } = [];
 
+    public List<string?> ClientIpsSeen { get; } = [];
+
     public Func<string, int, Task<ApiResult<LoginResponse>>> OnExchange { get; set; } = null!;
 
-    public async Task<ApiResult<LoginResponse>> ExchangeAsync(string refreshToken, CancellationToken ct)
+    /// <summary>What GET /auth/me answers after a refresh (default: the platform admin the session fixtures describe).</summary>
+    public Func<ApiResult<MeResponse>> OnProfile { get; set; } = () => ApiResult<MeResponse>.Ok(new MeResponse(
+        new UserSummary(Guid.NewGuid(), "admin@nexaverify.test", "Ada Admin", true, null, ["SuperAdmin"]), ["dashboard.admin", "clients.read"], false, null));
+
+    public async Task<ApiResult<LoginResponse>> ExchangeAsync(string refreshToken, string? clientIp, CancellationToken ct)
     {
         var n = Interlocked.Increment(ref _calls);
         lock (RefreshTokensSeen)
         {
             RefreshTokensSeen.Add(refreshToken);
+            ClientIpsSeen.Add(clientIp);
         }
 
         return await OnExchange(refreshToken, n);
     }
+
+    public Task<ApiResult<MeResponse>> GetProfileAsync(string accessToken, string? clientIp, CancellationToken ct) => Task.FromResult(OnProfile());
 
     public static ApiResult<LoginResponse> Tokens(string access, string refresh, int expiresIn = 900, bool mustChange = false) =>
         ApiResult<LoginResponse>.Ok(new LoginResponse(access, "Bearer", expiresIn, refresh, mustChange,
@@ -99,7 +117,7 @@ public sealed class FixedSession(string? id) : ICurrentSession
 /// <summary>The whole server-side stack wired by hand: store, coordinator, handler pipeline and gateway.</summary>
 public sealed class BffHarness
 {
-    public BffHarness(SessionOptions? options = null, string? sessionId = "sid-1")
+    public BffHarness(SessionOptions? options = null, string? sessionId = "sid-1", ApiClientOptions? apiOptions = null, ClientAddress? address = null)
     {
         Options = options ?? SessionFixtures.Options;
         (Store, _, Clock) = SessionFixtures.NewStore(Options);
@@ -110,7 +128,7 @@ public sealed class BffHarness
             new FakeHttpClientFactory(name => name == ApiClientNames.Authenticated
                 ? Client(new SessionBearerHandler(Store, Coordinator, Clock, Microsoft.Extensions.Options.Options.Create(Options)) { InnerHandler = Api })
                 : Client(Api)),
-            new FixedSession(sessionId));
+            new FixedSession(sessionId), address, Microsoft.Extensions.Options.Options.Create(apiOptions ?? new ApiClientOptions()));
     }
 
     public SessionOptions Options { get; }

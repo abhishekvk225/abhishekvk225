@@ -51,25 +51,8 @@
 
     private async Task IssueAsync()
     {
-        var plans = await Api.ListPlansAsync();
-        var saved = await Dialogs.ShowFormAsync(
-            "Issue a license",
-            new IssueLicenseForm(),
-            m => @<LicenseFields Model="m" ShowClientPicker="true" Plans="@(plans.IsSuccess ? plans.Value.Where(p => p.IsActive).ToList() : [])" />,
-            async m =>
-            {
-                if (m.ClientId is not { } clientId)
-                {
-                    return new ApiError("VALIDATION_FAILED", "Choose the client this license is for.", null, 400);
-                }
-
-                var result = await Api.CreateAsync(clientId, m.ToRequest());
-                return result.ToFormError();
-            },
-            "Issue license");
-        if (saved is not null)
+        if (await Dialogs.IssueLicenseAsync(Api, Snackbar, clientId: null))
         {
-            Snackbar.Success("The license was issued.");
             _version++; // reload the list so the new license shows up
         }
     }

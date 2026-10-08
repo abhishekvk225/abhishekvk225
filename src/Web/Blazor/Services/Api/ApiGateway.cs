@@ -36,6 +36,9 @@ public sealed record ApiCallOptions
     /// </summary>
     public string? ClientIp { get; init; }
 
+    /// <summary>Operations that legitimately take long (a full ledger scan) wait for <c>Api:LongRunningTimeoutSeconds</c> instead of <c>Api:TimeoutSeconds</c>.</summary>
+    public bool LongRunning { get; init; }
+
     public static ApiCallOptions None { get; } = new() { Anonymous = true };
 }
 
@@ -71,8 +74,23 @@ public interface IApiGateway
     Task<ApiResult<HttpResponseMessage>> OpenStreamAsync(string path, CancellationToken ct = default, ApiCallOptions? options = null);
 }
 
-public sealed class ApiGateway(IHttpClientFactory httpClients, ICurrentSession currentSession) : IApiGateway
+/// <summary>
+/// The address of the person using this circuit (set once from the initial HTTP request). Forwarded to the API as
+/// <c>X-Forwarded-For</c> so per-IP limits and login history see the person rather than the portal.
+/// </summary>
+public sealed class ClientAddress
 {
+    public string? Value { get; set; }
+}
+
+public sealed class ApiGateway(
+    IHttpClientFactory httpClients,
+    ICurrentSession currentSession,
+    ClientAddress? clientAddress = null,
+    Microsoft.Extensions.Options.IOptions<NexaVerify.Web.Security.ApiClientOptions>? apiOptions = null) : IApiGateway
+{
+    public const string ForwardedForHeader = "X-Forwarded-For";
+
     public static readonly HttpRequestOptionsKey<string> SessionKey = new("nv.session-id");
 
     public static JsonSerializerOptions Json { get; } = CreateJson();
@@ -131,15 +149,16 @@ public sealed class ApiGateway(IHttpClientFactory httpClients, ICurrentSession c
         HttpMethod method, string path, object? body, HttpCompletionOption completion, CancellationToken ct, ApiCallOptions? options)
     {
         options ??= new ApiCallOptions();
+        var effectiveIp = options.ClientIp ?? clientAddress?.Value;
         using var request = new HttpRequestMessage(method, path.TrimStart('/'));
         if (body is not null)
         {
             request.Content = JsonContent.Create(body, body.GetType(), options: Json);
         }
 
-        if (!string.IsNullOrEmpty(options.ClientIp))
+        if (!string.IsNullOrEmpty(effectiveIp))
         {
-            request.Headers.TryAddWithoutValidation("X-Forwarded-For", options.ClientIp);
+            request.Headers.TryAddWithoutValidation(ForwardedForHeader, effectiveIp);
         }
 
         string clientName;
@@ -164,16 +183,27 @@ public sealed class ApiGateway(IHttpClientFactory httpClients, ICurrentSession c
             request.Options.Set(SessionKey, sessionId);
         }
 
+        // The HttpClient has no timeout of its own: each call gets one here, so slow operations can ask for more and a timeout can be
+        // told apart from an unreachable service.
+        var configured = apiOptions?.Value ?? new NexaVerify.Web.Security.ApiClientOptions();
+        var limit = TimeSpan.FromSeconds(options.LongRunning ? configured.LongRunningTimeoutSeconds : configured.TimeoutSeconds);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(limit);
+
         HttpResponseMessage response;
         try
         {
-            response = await httpClients.CreateClient(clientName).SendAsync(request, completion, ct);
+            response = await httpClients.CreateClient(clientName).SendAsync(request, completion, timeout.Token);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             throw;
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or OperationCanceledException)
+        catch (OperationCanceledException)
+        {
+            return (null, new ApiError(TimeoutCode, "This is taking longer than expected. It may still be running on our side, so check again in a few minutes before trying twice.", null, 504));
+        }
+        catch (Exception ex) when (ex is HttpRequestException)
         {
             return (null, new ApiError("API_UNAVAILABLE", "We can't reach the service right now. Please try again in a moment.", null, 503));
         }
@@ -195,6 +225,8 @@ public sealed class ApiGateway(IHttpClientFactory httpClients, ICurrentSession c
         new(SessionExpiredCode, "Your session has ended. Please sign in again.", null, (int)HttpStatusCode.Unauthorized);
 
     public const string SessionExpiredCode = "SESSION_EXPIRED";
+
+    public const string TimeoutCode = "API_TIMEOUT";
 
     /// <summary>Marks a response the handler synthesised because the session is gone (not a real API answer).</summary>
     public const string SessionEndedHeader = "X-Nv-Session-Ended";
@@ -251,6 +283,12 @@ public static class ProblemMapper
         catch (Exception ex) when (ex is JsonException or HttpRequestException or InvalidOperationException)
         {
             // Not a problem document (proxy error page etc.): fall back to the status.
+        }
+
+        if (status is >= 300 and < 400)
+        {
+            // Redirects are never followed (a body or token could be replayed to the target): treat as a misconfigured API address.
+            return new ApiError("API_UNAVAILABLE", "We can't reach the service right now. Please try again in a moment.", correlation, 502);
         }
 
         code ??= CodeForStatus(status);

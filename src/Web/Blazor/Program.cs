@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.CookiePolicy;
-using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Http;
 using MudBlazor.Services;
 using NexaVerify.Web;
@@ -24,7 +23,7 @@ builder.Services.AddMudServices(config =>
 
 builder.Services.AddAntiforgery(options =>
 {
-    options.Cookie.Name = "nv.af";
+    options.Cookie.Name = cookieOptions.RequireSecure ? "__Host-nv.af" : "nv.af"; // __Host-: refused from sibling subdomains
     options.Cookie.HttpOnly = true;
     options.Cookie.SameSite = cookieOptions.SameSiteMode;
     options.Cookie.SecurePolicy = cookieOptions.RequireSecure ? CookieSecurePolicy.Always : CookieSecurePolicy.SameAsRequest;
@@ -41,41 +40,8 @@ builder.Services.AddScoped<IAppSnackbar, AppSnackbar>();
 // Development/UiDemo; every other environment must have a valid https Api:BaseUrl or the app does not start.
 builder.Services.AddPortalBff(builder.Configuration, builder.Environment);
 
-if (builder.Environment.IsProduction() && builder.Configuration["AllowedHosts"] is null or "" or "*")
-{
-    throw new InvalidOperationException("AllowedHosts must list the real host names in Production ('*' disables host-header validation).");
-}
-
 // Behind a TLS-terminating proxy the real client address and scheme arrive in X-Forwarded-* headers. Only proxies you list are trusted.
-var forwarded = builder.Configuration.GetSection("ForwardedHeaders");
-var forwardedEnabled = forwarded.GetValue<bool>("Enabled");
-if (forwardedEnabled)
-{
-    var proxies = forwarded.GetSection("KnownProxies").Get<string[]>() ?? [];
-    var networks = forwarded.GetSection("KnownNetworks").Get<string[]>() ?? [];
-    if (proxies.Length == 0 && networks.Length == 0)
-    {
-        throw new InvalidOperationException("ForwardedHeaders:Enabled requires ForwardedHeaders:KnownProxies and/or KnownNetworks. Trusting every sender would allow IP and scheme spoofing.");
-    }
-
-    builder.Services.Configure<ForwardedHeadersOptions>(options =>
-    {
-        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-        options.ForwardLimit = forwarded.GetValue<int?>("ForwardLimit") ?? 1;
-        options.KnownIPNetworks.Clear();
-        options.KnownProxies.Clear();
-        foreach (var proxy in proxies)
-        {
-            options.KnownProxies.Add(System.Net.IPAddress.Parse(proxy));
-        }
-
-        foreach (var network in networks)
-        {
-            var parts = network.Split('/');
-            options.KnownIPNetworks.Add(new System.Net.IPNetwork(System.Net.IPAddress.Parse(parts[0]), int.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture)));
-        }
-    });
-}
+var forwardedEnabled = ForwardedHeadersSetup.Configure(builder.Services, builder.Configuration);
 
 var app = builder.Build();
 

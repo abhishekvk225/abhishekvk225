@@ -35,7 +35,7 @@ public sealed class PortalAuth(
         }
 
         var tokens = login.Value;
-        var me = await api.GetMeAsync(tokens.AccessToken, ct);
+        var me = await api.GetMeAsync(tokens.AccessToken, ct, clientIp);
         if (!me.IsSuccess)
         {
             // Without a profile we cannot build a session; do not leave a live refresh token behind.
@@ -60,6 +60,7 @@ public sealed class PortalAuth(
             ClientName = profile.Client?.Name,
             Permissions = profile.Permissions,
             MustChangePassword = tokens.MustChangePassword || profile.MustChangePassword,
+            ClientIp = clientIp,
             CreatedAt = now,
             LastSeenAt = now,
             AbsoluteExpiresAt = now + options.Value.AbsoluteTimeout,

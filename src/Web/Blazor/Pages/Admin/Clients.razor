@@ -25,7 +25,7 @@
             </Filters>
         </FilterBar>
     </div>
-    <DataTable @key="@(_status ?? "all")" T="ClientListItemDto" Caption="Clients" Columns="_columns" LoadData="LoadAsync" Search="@_search" DefaultSort="name:asc"
+    <DataTable @key="@(_status ?? "all")" T="ClientListItemDto" Caption="Clients" Columns="_columns" LoadPage="LoadAsync" Search="@_search" DefaultSort="name:asc"
                EmptyMessage="No clients yet. Create the first one to get started.">
         <RowActions Context="client">
             <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Href="@($"admin/clients/{client.Id}")" aria-label="@($"Open {client.Name}")" />
@@ -54,7 +54,7 @@
             DataColumn<ClientListItemDto>.Text("Created", c => c.CreatedAt.ToString("d MMM yyyy", System.Globalization.CultureInfo.InvariantCulture), "createdAt"),
         ];
 
-    private Task<ApiResult<PagedResult<ClientListItemDto>>> LoadAsync(PageRequest page) => Api.ListAsync(page, _status);
+    private Task<ApiResult<PagedResult<ClientListItemDto>>> LoadAsync(PageRequest page, CancellationToken ct) => Api.ListAsync(page, _status, ct);
 
     private void OnSearch(string? text) => _search = text;
 

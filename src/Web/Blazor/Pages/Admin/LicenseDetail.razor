@@ -3,18 +3,18 @@
 @inject ILicensingApiClient Api
 @inject IDialogService Dialogs
 @inject IAppSnackbar Snackbar
-@inject CurrentUserState User
+@implements IDisposable
 
-<PageTitle>@(_result is { IsSuccess: true } ? _result.Value.Name : "License") · Admin · NexaVerify</PageTitle>
+<PageTitle>@(_state.Result is { IsSuccess: true } r ? r.Value.Name : "License") · Admin · NexaVerify</PageTitle>
 
-<PageState T="LicenseDto" Result="_result" OnRetry="LoadAsync">
+<PageState T="LicenseDto" Result="_state.Result" OnRetry="ReloadAsync">
     <Loading><SkeletonCard Lines="4" /></Loading>
     <ChildContent Context="license">
         <PageHeader Title="@license.Name" Subtitle="@($"License of {license.ClientName}")" Breadcrumbs="Crumbs(license)">
             <Actions>
                 <StatusChip Kind="StatusKind.License" Value="@license.EffectiveStatus" />
                 <Can Permission="@WebPermissions.LicensesUpdate">
-                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Edit" OnClick="() => RenameAsync(license)">Edit</MudButton>
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Edit" OnClick="() => RenameAsync(license)" data-testid="edit-license">Edit</MudButton>
                 </Can>
                 <Can Permission="@WebPermissions.LicensesRenew">
                     @if (license.Status is not "Revoked")
@@ -88,7 +88,7 @@
                             }
                         </div>
                     }
-                    <DataTable @ref="_ledger" T="LicenseTransactionDto" Caption="Credit ledger" Columns="_columns" LoadData="p => Api.GetTransactionsAsync(license.Id, p)" PageSize="25" DefaultSort="createdAt:desc"
+                    <DataTable @ref="_ledger" T="LicenseTransactionDto" Caption="Credit ledger" Columns="_columns" LoadPage="(p, ct) => Api.GetTransactionsAsync(license.Id, p, ct)" PageSize="25" DefaultSort="createdAt:desc"
                                EmptyMessage="No credit movements yet.">
                         <RowActions Context="tx">
                             <Can Permission="@WebPermissions.LicensesAdjust">
@@ -106,7 +106,8 @@
 </PageState>
 
 @code {
-    private ApiResult<LicenseDto>? _result;
+    private readonly LoadState<LicenseDto> _state = new();
+    private Guid? _loadedId;
     private DataTable<LicenseTransactionDto>? _ledger;
     private LedgerVerificationDto? _verification;
     private IReadOnlyList<DataColumn<LicenseTransactionDto>> _columns = [];
@@ -126,13 +127,21 @@
             DataColumn<LicenseTransactionDto>.Text("By", t => t.ActorType),
         ];
 
-    protected override Task OnParametersSetAsync() => LoadAsync();
-
-    private async Task LoadAsync()
+    protected override async Task OnParametersSetAsync()
     {
-        _result = null;
-        _result = await Api.GetAsync(Id);
+        if (_loadedId == Id)
+        {
+            return;
+        }
+
+        _loadedId = Id;
+        _verification = null;
+        await _state.LoadAsync(ct => Api.GetAsync(Id, ct));
     }
+
+    private Task ReloadAsync() => _state.LoadAsync(ct => Api.GetAsync(Id, ct));
+
+    public void Dispose() => _state.Dispose();
 
     private static List<BreadcrumbItem> Crumbs(LicenseDto l) => [new("Licenses", "admin/licenses"), new(l.Name, null, true)];
 
@@ -156,135 +165,84 @@
         new("Internal notes", l.Notes),
     ];
 
-    private async Task RefreshAfterAsync(ApiResult<LicenseDto> result, string message)
+    private async Task ReloadLedgerAsync()
     {
-        if (result.Report(Snackbar, message))
+        if (_ledger is not null)
         {
-            _result = result;
-            if (_ledger is not null)
-            {
-                await _ledger.ReloadAsync();
-            }
+            await _ledger.ReloadAsync();
         }
     }
 
-    private async Task RenameAsync(LicenseDto license)
+    /// <summary>After a dialog whose API call already returned the new license: show it, then refresh the ledger.</summary>
+    private async Task<bool> SaveLicenseAsync<T>(T model, RenderFragment<T> fields, string title, string submit, Func<T, Task<ApiResult<LicenseDto>>> call, Func<T, string> success, bool ledgerChanged = false)
+        where T : class
     {
-        var form = new LicenseNameForm { Name = license.Name, Notes = license.Notes, RowVersion = license.RowVersion };
-        var saved = await Dialogs.ShowFormAsync(
-            "Edit license", form, m => @<LicenseActionFields Rename="m" />,
+        var saved = await Dialogs.SaveAsync(
+            Snackbar, title, model, fields,
             async m =>
             {
-                var result = await Api.UpdateAsync(license.Id, m.ToRequest());
+                var result = await call(m);
                 if (result.IsSuccess)
                 {
-                    _result = result;
+                    _state.Set(result);
                 }
 
                 return result.ToFormError();
             },
-            "Save changes");
-        if (saved is not null)
+            submit, success);
+        if (saved is not null && ledgerChanged)
         {
-            Snackbar.Success("License details saved.");
+            await ReloadLedgerAsync();
         }
+
+        return saved is not null;
     }
 
-    private async Task RenewAsync(LicenseDto license)
+    private Task RenameAsync(LicenseDto license) =>
+        SaveLicenseAsync(new LicenseNameForm { Name = license.Name, Notes = license.Notes, RowVersion = license.RowVersion }, m => @<LicenseActionFields Rename="m" />,
+            "Edit license", "Save changes", m => Api.UpdateAsync(license.Id, m.ToRequest()), _ => "License details saved.");
+
+    private Task RenewAsync(LicenseDto license) =>
+        SaveLicenseAsync(new RenewLicenseForm { ExpiresAt = license.ExpiresAt.AddYears(1) }, m => @<LicenseActionFields Renew="m" />,
+            "Renew license", "Renew", m => Api.RenewAsync(license.Id, m.ToRequest()), _ => "The license was renewed.", ledgerChanged: true);
+
+    private Task AdjustAsync(LicenseDto license) =>
+        SaveLicenseAsync(new AdjustLicenseForm(), m => @<LicenseActionFields Adjust="m" />,
+            "Adjust credits", "Apply adjustment", m => Api.AdjustAsync(license.Id, m.ToRequest()),
+            m => m.Credits > 0 ? $"{UiText.Number(m.Credits)} credits were added." : $"{UiText.Number(-m.Credits)} credits were removed.", ledgerChanged: true);
+
+    private async Task ApplyStatusAsync(Task<ApiResult<LicenseDto>?> action)
     {
-        var form = new RenewLicenseForm { ExpiresAt = license.ExpiresAt.AddYears(1) };
-        var saved = await Dialogs.ShowFormAsync(
-            "Renew license", form, m => @<LicenseActionFields Renew="m" />,
-            async m =>
-            {
-                var result = await Api.RenewAsync(license.Id, m.ToRequest());
-                if (result.IsSuccess)
-                {
-                    _result = result;
-                }
-
-                return result.ToFormError();
-            },
-            "Renew");
-        if (saved is not null)
+        if (await action is { IsSuccess: true } result)
         {
-            Snackbar.Success("The license was renewed.");
-            if (_ledger is not null)
-            {
-                await _ledger.ReloadAsync();
-            }
+            _state.Set(result);
+            await ReloadLedgerAsync();
         }
     }
 
-    private async Task AdjustAsync(LicenseDto license)
-    {
-        var saved = await Dialogs.ShowFormAsync(
-            "Adjust credits", new AdjustLicenseForm(), m => @<LicenseActionFields Adjust="m" />,
-            async m =>
-            {
-                var result = await Api.AdjustAsync(license.Id, m.ToRequest());
-                if (result.IsSuccess)
-                {
-                    _result = result;
-                }
+    private Task ActivateAsync(LicenseDto license) =>
+        ApplyStatusAsync(Dialogs.ConfirmAndApplyAsync(Snackbar, "Activate this license?", "The client can use its credits straight away.", "Activate",
+            _ => Api.ActivateAsync(license.Id), "The license is active."));
 
-                return result.ToFormError();
-            },
-            "Apply adjustment");
-        if (saved is not null)
-        {
-            Snackbar.Success(saved.Credits > 0 ? $"{UiText.Number(saved.Credits)} credits were added." : $"{UiText.Number(-saved.Credits)} credits were removed.");
-            if (_ledger is not null)
-            {
-                await _ledger.ReloadAsync();
-            }
-        }
-    }
+    private Task SuspendAsync(LicenseDto license) =>
+        ApplyStatusAsync(Dialogs.ConfirmAndApplyAsync(Snackbar, "Suspend this license?", "The client cannot use its credits until you activate it again. Nothing is lost.",
+            "Suspend license", reason => Api.SuspendAsync(license.Id, reason), "The license was suspended.", destructive: true, requireReason: true));
 
-    private async Task ActivateAsync(LicenseDto license)
-    {
-        var confirmed = await Dialogs.ConfirmAsync("Activate this license?", "The client can use its credits straight away.", "Activate");
-        if (confirmed is not null)
-        {
-            await RefreshAfterAsync(await Api.ActivateAsync(license.Id), "The license is active.");
-        }
-    }
-
-    private async Task SuspendAsync(LicenseDto license)
-    {
-        var confirmed = await Dialogs.ConfirmAsync(
-            "Suspend this license?", "The client cannot use its credits until you activate it again. Nothing is lost.", "Suspend license", destructive: true, requireReason: true);
-        if (confirmed is not null)
-        {
-            await RefreshAfterAsync(await Api.SuspendAsync(license.Id, confirmed.Reason), "The license was suspended.");
-        }
-    }
-
-    private async Task RevokeAsync(LicenseDto license)
-    {
-        var confirmed = await Dialogs.ConfirmAsync(
-            "Revoke this license?", "Revoking is permanent: the remaining credits are written off and the license can never be used again.",
-            "Revoke license", destructive: true, requiredPhrase: "REVOKE", requireReason: true);
-        if (confirmed is not null)
-        {
-            await RefreshAfterAsync(await Api.RevokeAsync(license.Id, confirmed.Reason), "The license was revoked.");
-        }
-    }
+    private Task RevokeAsync(LicenseDto license) =>
+        ApplyStatusAsync(Dialogs.ConfirmAndApplyAsync(Snackbar, "Revoke this license?", "Revoking is permanent: the remaining credits are written off and the license can never be used again.",
+            "Revoke license", reason => Api.RevokeAsync(license.Id, reason), "The license was revoked.", destructive: true, requireReason: true, requiredPhrase: "REVOKE"));
 
     private async Task RefundAsync(LicenseTransactionDto tx)
     {
-        var saved = await Dialogs.ShowFormAsync(
-            "Refund this charge", new RefundForm(), m => @<LicenseActionFields Refund="m" />,
+        var saved = await Dialogs.SaveAsync(
+            Snackbar, "Refund this charge", new RefundForm(), m => @<LicenseActionFields Refund="m" />,
             async m => (await Api.RefundAsync(tx.Id, new RefundRequest(m.Reason.Trim()))).ToFormError(),
-            "Refund");
+            "Refund", _ => "The charge was refunded.");
         if (saved is not null)
         {
-            Snackbar.Success("The charge was refunded.");
-            await LoadAsync();
-            if (_ledger is not null)
-            {
-                await _ledger.ReloadAsync();
-            }
+            // Refresh the license quietly (the page stays on screen) and the ledger once.
+            await _state.LoadAsync(ct => Api.GetAsync(Id, ct), keepCurrent: true);
+            await ReloadLedgerAsync();
         }
     }
 

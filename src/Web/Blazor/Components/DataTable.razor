@@ -1,4 +1,5 @@
 @typeparam T
+@implements IDisposable
 
 <div data-testid="data-table" aria-busy="@(_loading ? "true" : "false")">
     @if (_result is null)
@@ -118,9 +119,16 @@
     private string? _lastSearch;
     private bool _firstLoadDone;
     private int _requestId;
+    private CancellationTokenSource? _cts;
 
     /// <summary>Server-side data source. The table never holds more than one page.</summary>
-    [Parameter, EditorRequired] public Func<PageRequest, Task<ApiResult<PagedResult<T>>>> LoadData { get; set; } = default!;
+    [Parameter] public Func<PageRequest, Task<ApiResult<PagedResult<T>>>>? LoadData { get; set; }
+
+    /// <summary>
+    /// Preferred data source: receives a token that is cancelled when a newer request replaces this one or the table goes away,
+    /// so abandoned requests stop instead of running to their timeout. Either this or <see cref="LoadData"/> must be set.
+    /// </summary>
+    [Parameter] public Func<PageRequest, CancellationToken, Task<ApiResult<PagedResult<T>>>>? LoadPage { get; set; }
 
     [Parameter, EditorRequired] public IReadOnlyList<DataColumn<T>> Columns { get; set; } = [];
 
@@ -171,15 +179,30 @@
     private async Task LoadAsync()
     {
         var id = ++_requestId;
+        _cts?.Cancel();
+        _cts?.Dispose();
+        var cts = _cts = new CancellationTokenSource();
         _loading = true;
         StateHasChanged();
 
         ApiResult<PagedResult<T>> result;
         try
         {
-            result = await LoadData(new PageRequest { Page = _page, PageSize = _pageSize, Sort = _sort, Search = _lastSearch }.Normalize());
+            result = await FetchAsync(cts.Token);
+
+            // The page was emptied or the filter narrowed while the user was on a later page: step back to the last real page
+            // instead of showing an empty table without a pager.
+            if (result.IsSuccess && result.Value.Items.Count == 0 && _page > 1 && result.Value.TotalCount > 0)
+            {
+                _page = Math.Max(1, result.Value.TotalPages);
+                result = await FetchAsync(cts.Token);
+            }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException)
+        {
+            return; // superseded or disposed
+        }
+        catch (Exception)
         {
             result = ApiResult<PagedResult<T>>.Fail(ApiError.Unexpected());
         }
@@ -191,6 +214,20 @@
 
         _result = result;
         _loading = false;
+    }
+
+    private Task<ApiResult<PagedResult<T>>> FetchAsync(CancellationToken ct)
+    {
+        var request = new PageRequest { Page = _page, PageSize = _pageSize, Sort = _sort, Search = _lastSearch }.Normalize();
+        return LoadPage is not null
+            ? LoadPage(request, ct)
+            : LoadData?.Invoke(request) ?? throw new InvalidOperationException("DataTable needs LoadPage or LoadData.");
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
     }
 
     private Task PreviousAsync() => GoToAsync(_page - 1);

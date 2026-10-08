@@ -16,7 +16,7 @@
     <div class="pa-4">
         <FilterBar SearchLabel="Search users" SearchPlaceholder="Name or email" OnSearch="OnSearch" />
     </div>
-    <DataTable @ref="_table" T="PlatformUserDto" Caption="Platform users" Columns="_columns" LoadData="p => Api.ListUsersAsync(p)" Search="@_search" PageSize="25"
+    <DataTable @ref="_table" T="PlatformUserDto" Caption="Platform users" Columns="_columns" LoadPage="(p, ct) => Api.ListUsersAsync(p, ct)" Search="@_search" PageSize="25"
                EmptyMessage="No platform users found.">
         <RowActions Context="user">
             <MudIconButton Icon="@Icons.Material.Outlined.Edit" OnClick="() => EditAsync(user)" aria-label="@($"Edit {user.FullName}")" />
@@ -60,13 +60,12 @@
             return;
         }
 
-        var saved = await Dialogs.ShowFormAsync(
-            "Add a platform user", new PlatformUserForm(), m => @<AccessFields User="m" Roles="roles" />,
+        var saved = await Dialogs.SaveAsync(
+            Snackbar, "Add a platform user", new PlatformUserForm(), m => @<AccessFields User="m" Roles="roles" />,
             async m => (await Api.CreateUserAsync(m.ToCreateRequest())).ToFormError(),
-            "Add user");
+            "Add user", m => $"{m.FullName} was added. They must change the temporary password when they first sign in.");
         if (saved is not null)
         {
-            Snackbar.Success($"{saved.FullName} was added. They must change the temporary password when they first sign in.");
             await ReloadAsync();
         }
     }
@@ -79,13 +78,12 @@
         }
 
         var form = new PlatformUserForm { Id = user.Id, Email = user.Email, FullName = user.FullName, Roles = user.Roles.ToList(), IsActive = user.Status != "Inactive" };
-        var saved = await Dialogs.ShowFormAsync(
-            $"Edit {user.FullName}", form, m => @<AccessFields User="m" Roles="roles" />,
+        var saved = await Dialogs.SaveAsync(
+            Snackbar, $"Edit {user.FullName}", form, m => @<AccessFields User="m" Roles="roles" />,
             async m => (await Api.UpdateUserAsync(user.Id, m.ToUpdateRequest())).ToFormError(),
-            "Save changes");
+            "Save changes", _ => "The user was saved.");
         if (saved is not null)
         {
-            Snackbar.Success("The user was saved.");
             await ReloadAsync();
         }
     }

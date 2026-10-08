@@ -87,28 +87,7 @@
 
     private void MapErrors(ApiError error)
     {
-        var mapped = false;
-        if (error.FieldErrors is not null)
-        {
-            var properties = typeof(T).GetProperties().ToDictionary(p => p.Name, p => p.Name, StringComparer.OrdinalIgnoreCase);
-            foreach (var (field, messages) in error.FieldErrors)
-            {
-                if (properties.TryGetValue(field, out var name))
-                {
-                    foreach (var message in messages)
-                    {
-                        _store.Add(_context.Field(name), message);
-                    }
-
-                    mapped = true;
-                }
-                else
-                {
-                    _generalErrors.AddRange(messages);
-                }
-            }
-        }
-
+        _generalErrors.AddRange(FormErrorMapper.Apply(typeof(T), _context, _store, error.FieldErrors, out var mapped));
         if (!mapped || _generalErrors.Count > 0 || error.FieldErrors is null)
         {
             var text = string.IsNullOrWhiteSpace(error.CorrelationId) ? error.Message : $"{error.Message} (ref {error.CorrelationId})";

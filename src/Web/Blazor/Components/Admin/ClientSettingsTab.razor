@@ -2,8 +2,9 @@
 @using NexaVerify.Contracts.Tenancy
 @inject IClientsApiClient Api
 @inject IAppSnackbar Snackbar
+@implements IDisposable
 
-<PageState T="IReadOnlyList<SettingDto>" Result="_result" OnRetry="LoadAsync" IsEmpty="@(s => s.Count == 0)" EmptyTitle="No settings" EmptyMessage="This client has no configurable settings.">
+<PageState T="IReadOnlyList<SettingDto>" Result="_state.Result" OnRetry="LoadAsync" IsEmpty="@(s => s.Count == 0)" EmptyTitle="No settings" EmptyMessage="This client has no configurable settings.">
     <ChildContent Context="settings">
         <MudPaper Class="nv-card nv-card-pad" Elevation="0">
             <MudText Typo="Typo.body2" Class="nv-muted mb-4">
@@ -51,20 +52,20 @@
 
 @code {
     private readonly Dictionary<string, object> _values = new(StringComparer.Ordinal);
-    private ApiResult<IReadOnlyList<SettingDto>>? _result;
+    private readonly LoadState<IReadOnlyList<SettingDto>> _state = new();
     private bool _busy;
 
     [Parameter, EditorRequired] public Guid ClientId { get; set; }
 
     protected override Task OnInitializedAsync() => LoadAsync();
 
+    public void Dispose() => _state.Dispose();
+
     private async Task LoadAsync()
     {
-        _result = null;
-        _result = await Api.GetSettingsAsync(ClientId);
-        if (_result.IsSuccess)
+        if (await _state.LoadAsync(ct => Api.GetSettingsAsync(ClientId, ct)) && _state.Result is { IsSuccess: true } loaded)
         {
-            Reset(_result.Value);
+            Reset(loaded.Value);
         }
     }
 
@@ -91,13 +92,13 @@
 
     private async Task SaveAsync()
     {
-        if (_result is not { IsSuccess: true })
+        if (_state.Result is not { IsSuccess: true } loadedResult)
         {
             return;
         }
 
         var changed = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
-        foreach (var setting in _result.Value.Where(s => s.Editable))
+        foreach (var setting in loadedResult.Value.Where(s => s.Editable))
         {
             var current = _values[setting.Key];
             if (Equals(current, Read(setting)))
@@ -126,7 +127,7 @@
             var result = await Api.UpdateSettingsAsync(ClientId, new UpdateSettingsRequest(changed));
             if (result.Report(Snackbar, "Settings saved."))
             {
-                _result = result;
+                _state.Set(result);
                 Reset(result.Value);
             }
         }

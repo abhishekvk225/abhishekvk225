@@ -16,7 +16,7 @@
     <HeadOutlet @rendermode="PageRenderMode" />
 </head>
 <body>
-    <Routes @rendermode="PageRenderMode" />
+    <Routes @rendermode="PageRenderMode" ClientIp="@ClientIp" />
 
     <div id="blazor-error-ui" role="alert">
         An unexpected error occurred.
@@ -44,6 +44,9 @@
         HttpContext is { } http && StaticPaths.Any(p => http.Request.Path.StartsWithSegments(p, StringComparison.OrdinalIgnoreCase))
             ? null
             : InteractiveMode;
+
+    // The person's address (after trusted-proxy processing), handed to the circuit so its API calls can be attributed and limited per person.
+    private string? ClientIp => HttpContext?.Connection.RemoteIpAddress?.ToString();
 
     private string Nonce => HttpContext.GetCspNonce();
 }

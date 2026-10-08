@@ -1,3 +1,4 @@
+@inject ClientAddress Address
 <ThemeHost>
     <Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
         <Found Context="routeData">
@@ -20,3 +21,9 @@
         </Found>
     </Router>
 </ThemeHost>
+
+@code {
+    [Parameter] public string? ClientIp { get; set; }
+
+    protected override void OnInitialized() => Address.Value = ClientIp;
+}
