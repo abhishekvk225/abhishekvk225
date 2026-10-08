@@ -62,6 +62,12 @@ internal sealed class ClientQueries : IClientQueries
         return row is null ? null : new ClientUserRow(row.User, row.Membership, row.Role ?? string.Empty);
     }
 
+    public async Task<HashSet<Guid>> GetUserIdsAsync(Guid clientId, IReadOnlyCollection<Guid> candidateIds, CancellationToken cancellationToken) =>
+        (await _db.Users.AsNoTracking()
+            .Where(u => u.ClientId == clientId && !u.IsPlatformUser && candidateIds.Contains(u.Id))
+            .Select(u => u.Id)
+            .ToListAsync(cancellationToken)).ToHashSet();
+
     public Task<int> CountActiveUsersWithRoleAsync(Guid clientId, string roleName, CancellationToken cancellationToken) =>
         (from u in _db.Users
          where u.ClientId == clientId && !u.IsPlatformUser && u.Status == UserStatus.Active && u.IsActive

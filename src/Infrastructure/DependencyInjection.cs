@@ -173,6 +173,8 @@ public static class DependencyInjection
 
         services.AddOptions<LedgerVerificationOptions>().Bind(configuration.GetSection(LedgerVerificationOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
         services.AddScoped<ILedgerVerificationStore, LedgerVerificationStore>();
+        services.AddScoped<LedgerAnchorService>();
+        services.AddSingleton<ILedgerRunLauncher, LedgerRunLauncher>();
         services.AddHostedService<LedgerVerificationJob>();
 
         services.AddOptions<LicenseAlertOptions>().Bind(configuration.GetSection(LicenseAlertOptions.SectionName)).ValidateDataAnnotations()

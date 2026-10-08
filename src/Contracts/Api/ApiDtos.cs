@@ -17,6 +17,16 @@ public sealed record RevokeApiKeyRequest(string Reason);
 /// <summary>Issues a replacement key. The old key stops working after <c>GraceMinutes</c> (0 = immediately).</summary>
 public sealed record RegenerateApiKeyRequest(int GraceMinutes);
 
+/// <summary>Emergency: revoke every active API key of a client (or one key) at once.</summary>
+public sealed record EmergencyRevokeRequest(string Reason);
+
+public sealed record EmergencyRevokeResultDto(int RevokedKeys, bool ApiAccessDisabled);
+
+/// <summary>The client-wide kill switch: while disabled, no API key of the client is accepted (sign-in to the portal is unaffected).</summary>
+public sealed record SetApiAccessRequest(bool Disabled, string Reason);
+
+public sealed record ApiAccessDto(bool Disabled);
+
 public sealed record ApiScopeDto(string Key, string Description);
 
 public sealed record ApiRequestLogDto(

@@ -6,6 +6,9 @@ namespace NexaVerify.Application.Abstractions;
 /// </summary>
 public interface IPlatformCrypto
 {
+    /// <summary>Identifier of the master key in use (stored next to a MAC so a key rotation can be told apart from tampering).</summary>
+    string KeyId { get; }
+
     /// <summary>AES-256-GCM. <paramref name="context"/> (for example the owning user id) is authenticated, so a ciphertext cannot be moved to another record.</summary>
     byte[] Protect(ReadOnlySpan<byte> plaintext, string purpose, string context);
 

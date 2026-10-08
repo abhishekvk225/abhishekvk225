@@ -58,6 +58,7 @@ public sealed partial class LicenseService : ILicenseService, ILicenseAdjustment
     private readonly ILicenseAdjustmentAtomics _adjustmentAtomics;
     private readonly ICurrentUser _currentUser;
     private readonly LicensingOptions _licensing;
+    private readonly LedgerAnchorService _anchors;
 
     public LicenseService(
         ILicenseRepository licenses,
@@ -71,8 +72,10 @@ public sealed partial class LicenseService : ILicenseService, ILicenseAdjustment
         ILicenseAdjustmentRepository adjustments,
         ILicenseAdjustmentAtomics adjustmentAtomics,
         ICurrentUser currentUser,
-        IOptions<LicensingOptions> licensing)
+        IOptions<LicensingOptions> licensing,
+        LedgerAnchorService anchors)
     {
+        _anchors = anchors;
         _adjustments = adjustments;
         _adjustmentAtomics = adjustmentAtomics;
         _currentUser = currentUser;
@@ -309,7 +312,8 @@ public sealed partial class LicenseService : ILicenseService, ILicenseAdjustment
         }
 
         var entries = await _ledger.GetAllAsync(id, cancellationToken);
-        return LedgerVerifier.Verify(license, entries);
+        var (authentic, forged) = await _anchors.LoadAsync(id, cancellationToken);
+        return LedgerVerifier.Verify(license, entries, authentic, forged);
     }
 
     private Task<Result<LicenseDto>> TransitionAsync(Guid id, string action, Action<License, DateTime> change, CancellationToken cancellationToken, string? reason = null)

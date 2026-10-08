@@ -38,6 +38,7 @@ public static class DependencyInjection
         services.AddScoped<ILicenseAdjustmentService>(sp => sp.GetRequiredService<LicenseService>());
         services.AddScoped<IApiKeyService, Api.ApiKeyService>();
         services.AddScoped<IApiLogService, Api.ApiLogService>();
+        services.AddScoped<IEmergencyAccessService, Api.EmergencyAccessService>();
         services.AddScoped<IWebhookService, Api.WebhookService>();
         services.AddScoped<IFaceRecognitionService, Faces.FaceRecognitionService>();
         services.AddScoped<IFaceProfileService, Faces.FaceProfileService>();

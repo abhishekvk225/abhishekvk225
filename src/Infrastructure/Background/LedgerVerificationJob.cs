@@ -56,7 +56,7 @@ public sealed class LedgerVerificationJob : BackgroundService
         {
             await using var scope = _scopes.CreateAsyncScope();
             using var platform = scope.ServiceProvider.GetRequiredService<ITenantScope>().BeginPlatform("ledger verification");
-            var result = await scope.ServiceProvider.GetRequiredService<ILedgerVerificationService>().VerifyAllAsync(cancellationToken);
+            var result = await scope.ServiceProvider.GetRequiredService<ILedgerVerificationService>().RunAsync("nightly", null, cancellationToken);
             if (result.IsFailure)
             {
                 _logger.LogWarning("Ledger verification skipped: {Message}", result.Error!.Message);

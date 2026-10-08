@@ -23,6 +23,8 @@ public sealed class PlatformCrypto : IPlatformCrypto
         _master = master;
     }
 
+    public string KeyId => _master.MasterKeyId;
+
     public byte[] Protect(ReadOnlySpan<byte> plaintext, string purpose, string context)
     {
         var payload = new byte[NonceSize + TagSize + plaintext.Length];
@@ -48,7 +50,7 @@ public sealed class PlatformCrypto : IPlatformCrypto
     public byte[] ComputeMac(string purpose, ReadOnlySpan<byte> data) => HMACSHA256.HashData(KeyFor(purpose), data);
 
     private byte[] KeyFor(string purpose) =>
-        _keys.GetOrAdd(purpose, p => HKDF.DeriveKey(HashAlgorithmName.SHA256, _master.Key, 32, salt: null!, info: Encoding.UTF8.GetBytes("nexaverify/platform/" + p)));
+        _keys.GetOrAdd(purpose, p => HKDF.DeriveKey(HashAlgorithmName.SHA256, _master.Key, 32, salt: null, info: Encoding.UTF8.GetBytes("nexaverify/platform/" + p)));
 
     private static byte[] Aad(string purpose, string context) => Encoding.UTF8.GetBytes($"plat|{purpose}|{context}");
 }

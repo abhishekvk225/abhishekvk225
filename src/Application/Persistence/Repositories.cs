@@ -140,6 +140,9 @@ public interface IClientQueries
 
     Task<ClientUserRow?> GetUserAsync(Guid clientId, Guid userId, CancellationToken cancellationToken);
 
+    /// <summary>Which of the given ids are users of this client (everyone else - platform staff, other tenants - is not).</summary>
+    Task<HashSet<Guid>> GetUserIdsAsync(Guid clientId, IReadOnlyCollection<Guid> candidateIds, CancellationToken cancellationToken);
+
     Task<int> CountActiveUsersWithRoleAsync(Guid clientId, string roleName, CancellationToken cancellationToken);
 
     Task<(IReadOnlyList<AuditLog> Items, int Total)> ListAuditAsync(Guid clientId, DateTime? from, DateTime? to, string? action, int skip, int take, CancellationToken cancellationToken);
@@ -317,6 +320,11 @@ public interface IApiKeyRepository
     Task<IReadOnlyList<Domain.Api.ApiKey>> ListAsync(CancellationToken cancellationToken);
 
     Task<int> CountActiveAsync(DateTime now, CancellationToken cancellationToken);
+
+    /// <summary>Platform use: explicitly filtered by client (the platform scope would otherwise see every tenant's keys). Tracked.</summary>
+    Task<IReadOnlyList<Domain.Api.ApiKey>> ListActiveForClientAsync(Guid clientId, CancellationToken cancellationToken);
+
+    Task<Domain.Api.ApiKey?> GetForClientAsync(Guid clientId, Guid keyId, CancellationToken cancellationToken);
 
     Task<bool> PrefixExistsAsync(string prefix, CancellationToken cancellationToken);
 

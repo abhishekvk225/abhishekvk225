@@ -42,10 +42,26 @@ public sealed class AdminDashboardController : ApiControllerBase
         return result.IsSuccess ? new CsvStreamResult(result.Value) : ProblemFor(result.Error!);
     }
 
-    /// <summary>Recomputes every license's hash chain and balance; returns the first broken row of each license that fails (409 if a check is already running).</summary>
+    /// <summary>
+    /// Starts a ledger tamper check in the background and returns 202 with a run id at once (409 if a check is already running on any
+    /// node). The optional body limits the check to one license. Poll the run with <c>GET .../runs/{id}</c>.
+    /// </summary>
     [HttpPost("licensing/verify-ledger")]
     [HasPermission(Permissions.Licenses.VerifyLedger)]
-    [ProducesResponseType<LedgerVerificationReportDto>(StatusCodes.Status200OK)]
-    public async Task<IActionResult> VerifyLedger(CancellationToken cancellationToken) =>
-        ToActionResult(await _verification.VerifyAllAsync(cancellationToken));
+    [ProducesResponseType<LedgerRunDto>(StatusCodes.Status202Accepted)]
+    public async Task<IActionResult> VerifyLedger([FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] VerifyLedgerRequest? request, CancellationToken cancellationToken) =>
+        ToActionResult(await _verification.StartAsync(request?.LicenseId, cancellationToken), run => Accepted($"/api/v1/admin/licensing/verify-ledger/runs/{run.Id}", run));
+
+    /// <summary>Progress and, once finished, the result of a ledger check: counts and the first broken row of each failing license.</summary>
+    [HttpGet("licensing/verify-ledger/runs/{id:guid}")]
+    [HasPermission(Permissions.Licenses.VerifyLedger)]
+    [ProducesResponseType<LedgerRunDto>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> VerifyLedgerRun(Guid id, CancellationToken cancellationToken) =>
+        ToActionResult(await _verification.GetRunAsync(id, cancellationToken));
+
+    /// <summary>The most recent checks (manual and nightly), newest first.</summary>
+    [HttpGet("licensing/verify-ledger/runs")]
+    [HasPermission(Permissions.Licenses.VerifyLedger)]
+    public async Task<IActionResult> VerifyLedgerRuns(CancellationToken cancellationToken) =>
+        ToActionResult(await _verification.ListRunsAsync(cancellationToken));
 }

@@ -38,6 +38,35 @@ internal sealed class LedgerVerificationStore : ILedgerVerificationStore
             .Where(t => t.LicenseId == licenseId && t.Id > afterEntryId)
             .OrderBy(t => t.Id).Take(take)
             .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<LedgerCheckpoint>> ListCheckpointsAsync(Guid licenseId, CancellationToken cancellationToken) =>
+        await _db.LedgerCheckpoints.AsNoTracking().Where(c => c.LicenseId == licenseId).OrderBy(c => c.LastEntryId).ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<LicenseLedgerHead>> ListOrphanCheckpointLicensesAsync(CancellationToken cancellationToken) =>
+        await _db.LedgerCheckpoints.AsNoTracking()
+            .Where(c => !_db.Licenses.Any(l => l.Id == c.LicenseId))
+            .Select(c => new { c.LicenseId, c.ClientId })
+            .Distinct()
+            .Select(c => new LicenseLedgerHead(c.LicenseId, c.ClientId, 0))
+            .ToListAsync(cancellationToken);
+
+    public void Add(LedgerCheckpoint checkpoint) => _db.LedgerCheckpoints.Add(checkpoint);
+
+    public async Task<IReadOnlyList<LedgerBreakRecord>> ListOpenBreaksAsync(CancellationToken cancellationToken) =>
+        await _db.LedgerBreakRecords.Where(r => r.ClearedAt == null).ToListAsync(cancellationToken);
+
+    public void Add(LedgerBreakRecord record) => _db.LedgerBreakRecords.Add(record);
+
+    public void Add(LedgerVerificationRun run) => _db.LedgerVerificationRuns.Add(run);
+
+    public Task<LedgerVerificationRun?> GetRunAsync(Guid id, CancellationToken cancellationToken) =>
+        _db.LedgerVerificationRuns.FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
+
+    public async Task<IReadOnlyList<LedgerVerificationRun>> ListRunningAsync(CancellationToken cancellationToken) =>
+        await _db.LedgerVerificationRuns.Where(r => r.Status == LedgerRunStatus.Running).ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<LedgerVerificationRun>> ListRecentRunsAsync(int take, CancellationToken cancellationToken) =>
+        await _db.LedgerVerificationRuns.AsNoTracking().OrderByDescending(r => r.StartedAt).Take(take).ToListAsync(cancellationToken);
 }
 
 internal sealed class LicenseAlertRepository : ILicenseAlertRepository

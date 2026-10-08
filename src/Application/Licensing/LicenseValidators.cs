@@ -66,6 +66,14 @@ public sealed class RejectAdjustmentRequestValidator : AbstractValidator<RejectA
     }
 }
 
+public sealed class VerifyLedgerRequestValidator : AbstractValidator<VerifyLedgerRequest>
+{
+    public VerifyLedgerRequestValidator()
+    {
+        RuleFor(x => x.LicenseId).NotEqual(Guid.Empty).When(x => x.LicenseId.HasValue);
+    }
+}
+
 public sealed class RefundRequestValidator : AbstractValidator<RefundRequest>
 {
     public RefundRequestValidator()

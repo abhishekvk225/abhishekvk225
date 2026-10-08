@@ -21,6 +21,12 @@ internal sealed class ApiKeyRepository : IApiKeyRepository
     public Task<int> CountActiveAsync(DateTime now, CancellationToken cancellationToken) =>
         _db.ApiKeys.CountAsync(k => k.Status == ApiKeyStatus.Active && (k.ExpiresAt == null || k.ExpiresAt > now), cancellationToken);
 
+    public async Task<IReadOnlyList<ApiKey>> ListActiveForClientAsync(Guid clientId, CancellationToken cancellationToken) =>
+        await _db.ApiKeys.Where(k => k.ClientId == clientId && k.Status == ApiKeyStatus.Active).ToListAsync(cancellationToken);
+
+    public Task<ApiKey?> GetForClientAsync(Guid clientId, Guid keyId, CancellationToken cancellationToken) =>
+        _db.ApiKeys.FirstOrDefaultAsync(k => k.ClientId == clientId && k.Id == keyId, cancellationToken);
+
     public Task<bool> PrefixExistsAsync(string prefix, CancellationToken cancellationToken) => _db.ApiKeys.AnyAsync(k => k.KeyPrefix == prefix, cancellationToken);
 
     public void Add(ApiKey key) => _db.ApiKeys.Add(key);

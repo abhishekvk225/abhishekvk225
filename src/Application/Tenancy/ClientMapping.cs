@@ -11,6 +11,9 @@ internal static class ClientMapping
         c.PostalCode, c.Country, c.Website, c.Industry, c.TimeZone, c.Status.ToString(), c.StatusReason, c.StatusChangedAt,
         c.Notes, c.CreatedAt, c.UpdatedAt, Convert.ToBase64String(c.RowVersion));
 
+    /// <summary>The client's own view of its record: platform-internal notes and the suspension reason text are not part of it.</summary>
+    public static ClientDto ToClientView(this Client c) => c.ToDto() with { Notes = null, StatusReason = null };
+
     public static ClientListItemDto ToListItem(this ClientListRow row) => new(
         row.Client.Id, row.Client.Code, row.Client.Name, row.Client.ContactEmail, row.Client.Status.ToString(),
         row.Client.Country, row.Client.CreatedAt, row.UserCount);

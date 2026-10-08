@@ -45,3 +45,19 @@ public sealed class RegenerateApiKeyRequestValidator : AbstractValidator<Regener
         RuleFor(x => x.GraceMinutes).InclusiveBetween(0, 7 * 24 * 60);
     }
 }
+
+public sealed class EmergencyRevokeRequestValidator : AbstractValidator<EmergencyRevokeRequest>
+{
+    public EmergencyRevokeRequestValidator()
+    {
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+    }
+}
+
+public sealed class SetApiAccessRequestValidator : AbstractValidator<SetApiAccessRequest>
+{
+    public SetApiAccessRequestValidator()
+    {
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+    }
+}

@@ -87,6 +87,12 @@ public class AppDbContext : DbContext, IUnitOfWork
 
     public DbSet<LicenseAdjustmentRequest> LicenseAdjustmentRequests => Set<LicenseAdjustmentRequest>();
 
+    public DbSet<LedgerCheckpoint> LedgerCheckpoints => Set<LedgerCheckpoint>();
+
+    public DbSet<LedgerBreakRecord> LedgerBreakRecords => Set<LedgerBreakRecord>();
+
+    public DbSet<LedgerVerificationRun> LedgerVerificationRuns => Set<LedgerVerificationRun>();
+
     public DbSet<Domain.Api.ApiKey> ApiKeys => Set<Domain.Api.ApiKey>();
 
     public DbSet<Domain.Api.ApiRequestLog> ApiRequestLogs => Set<Domain.Api.ApiRequestLog>();

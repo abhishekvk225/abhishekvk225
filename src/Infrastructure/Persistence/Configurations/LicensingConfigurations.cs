@@ -118,3 +118,45 @@ internal sealed class LicenseAdjustmentRequestConfiguration : IEntityTypeConfigu
         b.HasIndex(x => new { x.LicenseId, x.RequestedAt });
     }
 }
+
+internal sealed class LedgerCheckpointConfiguration : IEntityTypeConfiguration<LedgerCheckpoint>
+{
+    public void Configure(EntityTypeBuilder<LedgerCheckpoint> b)
+    {
+        b.ToTable("LedgerCheckpoints", "licensing");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Id).ValueGeneratedOnAdd();
+        b.Property(x => x.HeadHash).HasColumnType("binary(32)").IsRequired();
+        b.Property(x => x.Mac).HasColumnType("binary(32)").IsRequired();
+        b.Property(x => x.KeyId).HasMaxLength(60).IsUnicode(false).IsRequired();
+        b.HasOne<License>().WithMany().HasForeignKey(x => x.LicenseId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Client>().WithMany().HasForeignKey(x => x.ClientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => new { x.LicenseId, x.LastEntryId }).IsUnique(); // one anchor per ledger head
+    }
+}
+
+internal sealed class LedgerBreakRecordConfiguration : IEntityTypeConfiguration<LedgerBreakRecord>
+{
+    public void Configure(EntityTypeBuilder<LedgerBreakRecord> b)
+    {
+        b.ToTable("LedgerBreakRecords", "licensing");
+        b.Property(x => x.BreakKey).HasMaxLength(60).IsUnicode(false).IsRequired();
+        b.Property(x => x.Reason).HasMaxLength(400).IsRequired();
+        // No foreign key to Licenses on purpose: a record about a license that has been deleted must still be storable.
+        b.HasOne<Client>().WithMany().HasForeignKey(x => x.ClientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => new { x.LicenseId, x.BreakKey }).IsUnique();
+    }
+}
+
+internal sealed class LedgerVerificationRunConfiguration : IEntityTypeConfiguration<LedgerVerificationRun>
+{
+    public void Configure(EntityTypeBuilder<LedgerVerificationRun> b)
+    {
+        b.ToTable("LedgerVerificationRuns", "licensing");
+        b.Property(x => x.Trigger).HasMaxLength(20).IsUnicode(false).IsRequired();
+        b.Property(x => x.BreaksJson).HasColumnType("nvarchar(max)");
+        b.Property(x => x.Error).HasMaxLength(400);
+        b.HasIndex(x => x.StartedAt).IsDescending();
+        b.HasIndex(x => x.Status);
+    }
+}
