@@ -157,26 +157,44 @@ public static class ApiDocsContent
     public static DocSample[] WebhookVerification { get; } =
     [
         new("C#", """
+            using System.Globalization;
             using System.Security.Cryptography;
             using System.Text;
 
             // header: the X-Signature value, for example "t=1760000000,v1=9f2c...". body: the raw request body, exactly as received.
             static bool IsValid(string secret, string header, string body, TimeSpan tolerance)
             {
-                var parts = header.Split(',').Select(p => p.Split('=', 2)).Where(p => p.Length == 2).ToDictionary(p => p[0], p => p[1]);
-                if (!parts.TryGetValue("t", out var t) || !parts.TryGetValue("v1", out var v1) || !long.TryParse(t, out var seconds))
+                string? t = null, v1 = null;
+                foreach (var part in header.Split(','))
+                {
+                    var pair = part.Split('=', 2);
+                    if (pair.Length != 2) continue;
+                    if (pair[0].Trim() == "t") t = pair[1].Trim();
+                    else if (pair[0].Trim() == "v1") v1 = pair[1].Trim();
+                }
+
+                // The timestamp must be plain digits and a sensible date, otherwise the message is rejected.
+                if (t is null || v1 is null || !long.TryParse(t, NumberStyles.None, CultureInfo.InvariantCulture, out var seconds) || seconds > 253402300799)
                 {
                     return false;
                 }
 
-                // Reject old messages so a captured request cannot be replayed later.
-                if (DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeSeconds(seconds) > tolerance)
+                // Reject old messages (replays) and messages dated in the future (allowing one minute of clock difference).
+                var age = DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeSeconds(seconds);
+                if (age > tolerance || age < TimeSpan.FromMinutes(-1))
+                {
+                    return false;
+                }
+
+                // Malformed hex is simply "not valid", never an exception.
+                var received = new byte[32];
+                if (!Convert.TryFromHexString(v1, received, out var written) || written != received.Length)
                 {
                     return false;
                 }
 
                 var expected = HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes($"{t}.{body}"));
-                return CryptographicOperations.FixedTimeEquals(Convert.FromHexString(v1), expected);
+                return CryptographicOperations.FixedTimeEquals(received, expected);
             }
             """),
         new("JavaScript", """
@@ -184,14 +202,21 @@ public static class ApiDocsContent
 
             // header: the X-Signature value, body: the raw request body (a string, before any JSON parsing).
             export function isValid(secret, header, body, toleranceSeconds = 300) {
-              const parts = Object.fromEntries(header.split(",").map((p) => p.split("=")));
-              if (!parts.t || !parts.v1) return false;
-              if (Math.abs(Date.now() / 1000 - Number(parts.t)) > toleranceSeconds) return false;
+              const parts = {};
+              for (const part of header.split(",")) {
+                const i = part.indexOf("=");
+                if (i > 0) parts[part.slice(0, i).trim()] = part.slice(i + 1).trim();
+              }
 
-              const expected = crypto.createHmac("sha256", secret).update(`${parts.t}.${body}`).digest("hex");
-              const received = Buffer.from(parts.v1, "hex");
-              const wanted = Buffer.from(expected, "hex");
-              return received.length === wanted.length && crypto.timingSafeEqual(received, wanted);
+              // The timestamp must be plain digits and the signature 64 hex characters, otherwise the message is rejected.
+              if (!/^\d{1,12}$/.test(parts.t ?? "") || !/^[0-9a-fA-F]{64}$/.test(parts.v1 ?? "")) return false;
+
+              // Reject old messages (replays) and messages dated in the future (allowing one minute of clock difference).
+              const age = Date.now() / 1000 - Number(parts.t);
+              if (age > toleranceSeconds || age < -60) return false;
+
+              const expected = crypto.createHmac("sha256", secret).update(`${parts.t}.${body}`).digest();
+              return crypto.timingSafeEqual(Buffer.from(parts.v1, "hex"), expected);
             }
             """),
     ];
@@ -279,7 +304,7 @@ public static class ApiDocsContent
         ErrorCodes.UnsupportedMediaType => "Send the request in the format the endpoint expects (for example multipart form data).",
         ErrorCodes.RequestTimeout => "The request took too long.",
         ErrorCodes.InternalError => "Something went wrong on our side. Retry, and quote the correlation id if it persists.",
-        ErrorCodes.FaceProviderUnavailable => "The face engine is temporarily unavailable. You are not charged; retry after the Retry-After delay.",
+        ErrorCodes.FaceProviderUnavailable => "The face engine is temporarily unavailable. You are not charged; try again in a moment.",
         _ => Humanize(code),
     };
 

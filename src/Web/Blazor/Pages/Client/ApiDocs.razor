@@ -69,9 +69,8 @@
     <MudPaper Class="nv-card nv-card-pad" Elevation="0">
         <MudText Typo="Typo.h4" HtmlTag="h2" id="limits" Class="mb-2">Rate limits</MudText>
         <MudText Typo="Typo.body1" Class="mb-3">
-            Each key may make a limited number of requests per minute, and your account has a daily allowance. Responses carry <code>X-RateLimit-Limit</code>,
-            <code>X-RateLimit-Remaining</code> and <code>X-RateLimit-Reset</code>. When you go over, you get status <code>429</code> with a <code>Retry-After</code> header
-            telling you how many seconds to wait. Wait that long, then try again.
+            Each key may make a limited number of requests per minute, and your account has a daily allowance. When you go over, you get status <code>429</code>
+            with a <code>Retry-After</code> header telling you how many seconds to wait. Wait that long, then try again.
         </MudText>
         <CodeSample Title="Retry politely (JavaScript)" Code="@ApiDocsContent.RetrySample.Code" />
     </MudPaper>
@@ -80,8 +79,9 @@
         <MudText Typo="Typo.h4" HtmlTag="h2" id="idempotency" Class="mb-2">Safe retries</MudText>
         <MudText Typo="Typo.body1">
             Registering and checking faces uses credits. Send an <code>Idempotency-Key</code> header (any unique text up to 100 characters, such as a UUID) with each of these calls.
-            If a request times out and you send it again with the same key within 24 hours, you get the original answer back
-            (marked with <code>Idempotent-Replayed: true</code>) and you are not charged twice. Use a new key for each new check.
+            If a request times out and you send it again with the same key, the same photo and the same details, you get the original answer back and you are not charged twice.
+            Use a new key for each new check, and for a different photo or different details.
+            Calls that fail because our face engine was unavailable are never charged and can simply be repeated.
         </MudText>
     </MudPaper>
 
