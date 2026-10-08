@@ -167,3 +167,85 @@ public interface IClientKeyProvisioner
 {
     Task ProvisionAsync(Guid clientId, CancellationToken cancellationToken);
 }
+
+public sealed record LicenseRow(Domain.Licensing.License License, string ClientName, string? PlanName);
+
+public interface ILicenseRepository
+{
+    Task<Domain.Licensing.License?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
+
+    Task<LicenseRow?> GetRowAsync(Guid id, CancellationToken cancellationToken);
+
+    Task<bool> KeyExistsAsync(string licenseKey, CancellationToken cancellationToken);
+
+    Task<(IReadOnlyList<LicenseRow> Items, int Total)> ListAsync(
+        Guid? clientId, Domain.Licensing.LicenseStatus? status, int? expiringInDays, string? search, DateTime now, int skip, int take, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<LicenseRow>> ListForClientAsync(Guid clientId, CancellationToken cancellationToken);
+
+    /// <summary>Licenses that have passed their end date but are not yet marked Expired (the sweeper's worklist).</summary>
+    Task<IReadOnlyList<Guid>> GetDueForExpiryAsync(DateTime now, int max, CancellationToken cancellationToken);
+
+    void Add(Domain.Licensing.License license);
+
+    void SetExpectedVersion(Domain.Licensing.License license, byte[] rowVersion);
+}
+
+public interface ILedgerRepository
+{
+    void Add(Domain.Licensing.LicenseTransaction entry);
+
+    /// <summary>Hash of the most recent row of the license, or null when the ledger is empty. Only meaningful while the license row is locked by the caller's transaction.</summary>
+    Task<byte[]?> GetTailHashAsync(Guid licenseId, CancellationToken cancellationToken);
+
+    Task<Domain.Licensing.LicenseTransaction?> GetAsync(long id, CancellationToken cancellationToken);
+
+    Task<Domain.Licensing.LicenseTransaction?> FindByIdempotencyKeyAsync(Guid clientId, string key, CancellationToken cancellationToken);
+
+    Task<bool> HasRefundForAsync(long consumptionId, CancellationToken cancellationToken);
+
+    Task<(IReadOnlyList<Domain.Licensing.LicenseTransaction> Items, int Total)> ListAsync(Guid licenseId, int skip, int take, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<Domain.Licensing.LicenseTransaction>> GetAllAsync(Guid licenseId, CancellationToken cancellationToken);
+}
+
+public interface IPlanRepository
+{
+    Task<IReadOnlyList<Domain.Licensing.Plan>> ListAsync(CancellationToken cancellationToken);
+
+    Task<Domain.Licensing.Plan?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
+
+    Task<bool> CodeExistsAsync(string normalizedCode, Guid? exceptId, CancellationToken cancellationToken);
+
+    void Add(Domain.Licensing.Plan plan);
+}
+
+public interface ICostRuleRepository
+{
+    Task<IReadOnlyList<Domain.Licensing.CostRule>> ListPlatformRulesAsync(CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<Domain.Licensing.ClientCostRule>> ListClientRulesAsync(Guid clientId, CancellationToken cancellationToken);
+
+    void Add(Domain.Licensing.CostRule rule);
+
+    void Add(Domain.Licensing.ClientCostRule rule);
+}
+
+public sealed record ConsumeResult(int BalanceBefore, int BalanceAfter, DateTime ExpiresAt);
+
+/// <summary>
+/// The metering primitives that must be atomic. <see cref="TryConsumeAsync"/> is ONE conditional UPDATE: it succeeds only if
+/// the license is Active, inside its period and has enough remaining credits — so concurrent charges can never overdraw it.
+/// </summary>
+public interface IMeteringStore
+{
+    /// <summary>Licenses of the client that are Active and inside their period with at least one credit left, earliest-expiring first.</summary>
+    Task<IReadOnlyList<Domain.Licensing.License>> GetUsableAsync(Guid clientId, DateTime now, CancellationToken cancellationToken);
+
+    /// <summary>Statuses of all the client's licenses, used to explain why no license could be used.</summary>
+    Task<IReadOnlyList<LicenseAvailability>> GetAvailabilityAsync(Guid clientId, DateTime now, CancellationToken cancellationToken);
+
+    Task<ConsumeResult?> TryConsumeAsync(Guid licenseId, Guid clientId, int cost, DateTime now, CancellationToken cancellationToken);
+}
+
+public sealed record LicenseAvailability(Domain.Licensing.LicenseStatus Status, bool InPeriod, bool Ended, int Remaining);

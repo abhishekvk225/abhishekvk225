@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using NexaVerify.Application.Identity;
+using NexaVerify.Application.Licensing;
 using NexaVerify.Application.Tenancy;
 
 namespace NexaVerify.Application;
@@ -23,6 +24,14 @@ public static class DependencyInjection
         services.AddScoped<IClientService, ClientService>();
         services.AddScoped<IClientPortalService, ClientPortalService>();
         services.AddScoped<IClientSettingsService, ClientSettingsService>();
+        services.AddScoped<ICostRuleResolver, CostRuleResolver>();
+        services.AddScoped<ILicenseMeteringService, LicenseMeteringService>();
+        services.AddScoped<LedgerWriter>();
+        services.AddScoped<ILicenseService, LicenseService>();
+        services.AddScoped<IPlanService, PlanService>();
+        services.AddScoped<ICostRuleService, CostRuleService>();
+        services.AddScoped<IClientLicenseService, ClientLicenseService>();
+        services.AddScoped<ILicenseExpiryProcessor, LicenseExpiryProcessor>();
         return services;
     }
 }

@@ -8,7 +8,7 @@ Gate legend: ✅ passed · 🔄 in progress · ⬜ not started · ❌ failed. A 
 | M1 Foundation | ✅ | ✅ | ✅ | – | ✅ conditions fixed (re-verify in M2 gate) | ✅ | ✅ changes applied | 🔄 | ⬜ | ⬜ |
 | M2 Identity & Access | ✅ | ✅ | ✅ | 🔄 shell done; screens wire to API in M8 | ❌→fixed, re-verify | ✅ 136 API tests | changes applied, re-review | 🔄 | ⬜ | ⬜ |
 | M3 Client Management | ✅ | ✅ | ✅ | ⬜ (M8) | ⬜ | ✅ | ⬜ | 🔄 | ⬜ | ⬜ |
-| M4 Licensing & Metering | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
+| M4 Licensing & Metering | ✅ | ✅ | ✅ | ⬜ (M8) | ⬜ | ✅ 25 API + 17 domain tests | ⬜ | 🔄 | ⬜ | ⬜ |
 | M5 Face Recognition | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M6 API Management | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M7 Usage & Dashboards | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |

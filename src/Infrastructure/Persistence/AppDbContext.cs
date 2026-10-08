@@ -6,6 +6,7 @@ using NexaVerify.Application.Common;
 using NexaVerify.Domain.Auditing;
 using NexaVerify.Domain.Common;
 using NexaVerify.Domain.Identity;
+using NexaVerify.Domain.Licensing;
 using NexaVerify.Domain.Tenancy;
 
 namespace NexaVerify.Infrastructure.Persistence;
@@ -65,6 +66,16 @@ public class AppDbContext : DbContext, IUnitOfWork
     public DbSet<LoginHistory> LoginHistory => Set<LoginHistory>();
 
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+
+    public DbSet<Plan> Plans => Set<Plan>();
+
+    public DbSet<License> Licenses => Set<License>();
+
+    public DbSet<CostRule> CostRules => Set<CostRule>();
+
+    public DbSet<ClientCostRule> ClientCostRules => Set<ClientCostRule>();
+
+    public DbSet<LicenseTransaction> LicenseTransactions => Set<LicenseTransaction>();
 
     // Read by the compiled query filters at query time (EF re-evaluates them per context instance).
     private bool FilterIsPlatform => _tenant.IsPlatform;

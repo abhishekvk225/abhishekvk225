@@ -115,6 +115,14 @@ public static class DependencyInjection
         services.AddScoped<IClientEncryption>(sp => sp.GetRequiredService<ClientKeyService>());
         services.TryAddScoped<IRequestInfo, NullRequestInfo>();
 
+        services.AddScoped<ILicenseRepository, LicenseRepository>();
+        services.AddScoped<ILedgerRepository, LedgerRepository>();
+        services.AddScoped<IPlanRepository, PlanRepository>();
+        services.AddScoped<ICostRuleRepository, CostRuleRepository>();
+        services.AddScoped<IMeteringStore, MeteringStore>();
+        services.AddScoped<LicensingSeeder>();
+        services.AddHostedService<LicenseExpirySweeper>();
+
         return services;
     }
 }

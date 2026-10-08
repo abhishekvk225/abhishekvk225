@@ -153,6 +153,15 @@ public sealed class AuthApp : IAsyncDisposable
         return await action(db);
     }
 
+    /// <summary>Resolves services in a fresh scope bound to a tenant (or the platform when <paramref name="clientId"/> is null), like a request would.</summary>
+    public async Task<T> WithServicesAsync<T>(Guid? clientId, Func<IServiceProvider, Task<T>> action)
+    {
+        await using var scope = Factory.Services.CreateAsyncScope();
+        var tenant = scope.ServiceProvider.GetRequiredService<ITenantScope>();
+        using var bound = clientId is { } id ? tenant.BeginTenant(id) : tenant.BeginPlatform("test: service access");
+        return await action(scope.ServiceProvider);
+    }
+
     public Task<HttpResponseMessage> DeleteAsync(string path, string? token = null) =>
         SendAsync(new HttpRequestMessage(HttpMethod.Delete, path), token);
 

@@ -20,14 +20,16 @@ public sealed class DatabaseInitializer
     private readonly AppDbContext _db;
     private readonly DatabaseGuardsInstaller _guards;
     private readonly IdentitySeeder _seeder;
+    private readonly LicensingSeeder _licensingSeeder;
     private readonly ITenantScope _scope;
     private readonly ILogger<DatabaseInitializer> _logger;
 
-    public DatabaseInitializer(AppDbContext db, DatabaseGuardsInstaller guards, IdentitySeeder seeder, ITenantScope scope, ILogger<DatabaseInitializer> logger)
+    public DatabaseInitializer(AppDbContext db, DatabaseGuardsInstaller guards, IdentitySeeder seeder, LicensingSeeder licensingSeeder, ITenantScope scope, ILogger<DatabaseInitializer> logger)
     {
         _db = db;
         _guards = guards;
         _seeder = seeder;
+        _licensingSeeder = licensingSeeder;
         _scope = scope;
         _logger = logger;
     }
@@ -44,6 +46,9 @@ public sealed class DatabaseInitializer
 
         _logger.LogInformation("Seeding identity data");
         await _seeder.SeedAsync(cancellationToken);
+
+        _logger.LogInformation("Seeding licensing defaults");
+        await _licensingSeeder.SeedAsync(cancellationToken);
     }
 
     public Task RecoverSuperAdminAsync(string email, string password, CancellationToken cancellationToken) =>
