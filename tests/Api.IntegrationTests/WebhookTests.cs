@@ -340,4 +340,10 @@ public class WebhookTests : IAsyncLifetime
             response.StatusCode.ShouldBe(HttpStatusCode.BadRequest, url);
         }
     }
+
+    [Fact]
+    public async Task The_retention_purge_runs_without_touching_pending_work()
+    {
+        await _app.Factory.Services.GetRequiredService<WebhookDispatcher>().PurgeFinishedAsync(default);
+    }
 }

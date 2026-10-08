@@ -74,6 +74,12 @@ if (app.Environment.IsProduction())
     }
 }
 
+// The SSRF-guard bypass is for local development and tests only: any other environment (Staging included) refuses it.
+if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Testing") && app.Configuration.GetValue<bool>("Webhooks:AllowUnsafeTargets"))
+{
+    throw new InvalidOperationException("Webhooks:AllowUnsafeTargets is only permitted in the Development and Testing environments.");
+}
+
 var forwarded = app.Services.GetRequiredService<IOptions<ForwardedHeadersSettings>>().Value;
 if (forwarded.Enabled)
 {

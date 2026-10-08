@@ -128,11 +128,19 @@ public sealed class ApiKeyAuthenticator : IApiKeyAuthenticator
             return;
         }
 
-        _cache.Set(touchKey, true, TouchInterval);
-        using (_scope.BeginPlatform("api key last-used"))
+        // Informational only: a failed write must never fail an otherwise valid request, and is retried on the next call.
+        try
         {
-            await _db.ApiKeys.Where(k => k.Id == keyId)
-                .ExecuteUpdateAsync(s => s.SetProperty(k => k.LastUsedAt, now).SetProperty(k => k.LastUsedIp, ip != null && ip.Length <= 45 ? ip : null), cancellationToken);
+            using (_scope.BeginPlatform("api key last-used"))
+            {
+                await _db.ApiKeys.Where(k => k.Id == keyId)
+                    .ExecuteUpdateAsync(s => s.SetProperty(k => k.LastUsedAt, now).SetProperty(k => k.LastUsedIp, ip != null && ip.Length <= 45 ? ip : null), cancellationToken);
+            }
+
+            _cache.Set(touchKey, true, TouchInterval);
+        }
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        {
         }
     }
 

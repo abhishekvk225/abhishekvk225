@@ -59,7 +59,8 @@ public sealed class ApiUsageLimiter : IApiUsageLimiter
         var today = DateOnly.FromDateTime(now);
         var day = _day.GetOrAdd(clientId, _ => new Day { Date = today });
         var minuteWindow = _minute.GetOrAdd(credentialId, _ => new Window { Start = MinuteOf(now) });
-        var limit = credentialLimitPerMinute ?? perMinute;
+        // A credential may be tighter than the account limit, never looser (a client admin cannot raise their own ceiling).
+        var limit = credentialLimitPerMinute is { } own ? Math.Min(own, perMinute) : perMinute;
         var windowStart = MinuteOf(now);
 
         lock (minuteWindow.Gate)

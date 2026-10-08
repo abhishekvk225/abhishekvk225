@@ -255,6 +255,37 @@ public class ApiKeyTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_key_cannot_raise_its_own_limit_above_the_accounts()
+    {
+        var t = await NewTenantAsync("K14");
+        var key = await CreateKeyAsync(t, rate: 50_000);
+        var set = await _app.PutAsync($"/api/v1/admin/clients/{t.ClientId}/settings",
+            new UpdateSettingsRequest(new Dictionary<string, JsonElement> { [SettingKeys.Api.RateLimitPerMinute] = JsonSerializer.SerializeToElement(2) }), _platform.AccessToken);
+        set.StatusCode.ShouldBe(HttpStatusCode.OK, await set.Content.ReadAsStringAsync());
+
+        (await BalanceAsync(key.RawKey)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await BalanceAsync(key.RawKey)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await BalanceAsync(key.RawKey)).StatusCode.ShouldBe(HttpStatusCode.TooManyRequests);
+    }
+
+    [Fact]
+    public async Task Regenerating_with_a_grace_period_respects_the_key_cap()
+    {
+        var t = await NewTenantAsync("K15");
+        var first = await CreateKeyAsync(t, name: "k0");
+        for (var i = 1; i < 5; i++)
+        {
+            await CreateKeyAsync(t, name: "k" + i);
+        }
+
+        var graceful = await _app.PostAsync($"/api/v1/client/api-keys/{first.Key.Id}/regenerate", new RegenerateApiKeyRequest(60), t.Token);
+        graceful.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await CodeOf(graceful)).ShouldBe("APIKEY_LIMIT_REACHED");
+
+        (await _app.PostAsync($"/api/v1/client/api-keys/{first.Key.Id}/regenerate", new RegenerateApiKeyRequest(0), t.Token)).StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
     public async Task The_daily_quota_is_per_client_and_set_by_the_platform()
     {
         var a = await NewTenantAsync("K11A");

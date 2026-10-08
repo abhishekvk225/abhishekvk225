@@ -173,6 +173,22 @@ public sealed class ApiKeyService : IApiKeyService
             return Error.Conflict("APIKEY_NOT_USABLE", "Only an active key can be regenerated.");
         }
 
+        // The replacement carries the old scopes, so the caller must hold them too (a key never out-ranks the person minting it).
+        if (await CheckScopesAsync(old.ScopeList, cancellationToken) is { } scopeError)
+        {
+            return scopeError;
+        }
+
+        // With a grace period both keys stay live, so the regeneration adds one to the active count.
+        if (request.GraceMinutes > 0)
+        {
+            var settings = await _settings.GetEffectiveAsync(old.ClientId, cancellationToken);
+            if (await _keys.CountActiveAsync(now, cancellationToken) >= settings.Int(SettingKeys.Limits.MaxApiKeys))
+            {
+                return Error.Conflict("APIKEY_LIMIT_REACHED", "The maximum number of active API keys for this account has been reached. Regenerate without a grace period or revoke one first.");
+            }
+        }
+
         var (raw, prefix, hash) = ApiKeyMaterial.Generate();
         ApiKey replacement;
         try

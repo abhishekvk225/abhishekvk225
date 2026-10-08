@@ -72,6 +72,10 @@ public sealed class WebhookDispatcher : BackgroundService
         return new HttpClient(handler, disposeHandler: true) { Timeout = TimeSpan.FromSeconds(Math.Clamp(options.TimeoutSeconds, 1, 30)) };
     }
 
+    private const int DeliveryRetentionDays = 30;
+
+    private DateTime _lastPurge = DateTime.MinValue;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!_options.BackgroundEnabled)
@@ -85,12 +89,38 @@ public sealed class WebhookDispatcher : BackgroundService
             try
             {
                 await DispatchDueAsync(stoppingToken);
+                await PurgeFinishedAsync(stoppingToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogError(ex, "Webhook dispatch cycle failed");
             }
         }
+    }
+
+    /// <summary>Finished deliveries (payloads included) are kept 30 days for troubleshooting, then removed in small batches, at most hourly.</summary>
+    public async Task PurgeFinishedAsync(CancellationToken cancellationToken)
+    {
+        var now = _time.GetUtcNow().UtcDateTime;
+        if (now - _lastPurge < TimeSpan.FromHours(1))
+        {
+            return;
+        }
+
+        _lastPurge = now;
+        var cutoff = now.AddDays(-DeliveryRetentionDays);
+        await using var scope = _scopes.CreateAsyncScope();
+        using var platform = scope.ServiceProvider.GetRequiredService<ITenantScope>().BeginPlatform("webhook delivery retention");
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        int removed;
+        do
+        {
+            removed = await db.WebhookDeliveries
+                .Where(d => d.Status != DeliveryStatus.Pending && d.CreatedAt < cutoff)
+                .OrderBy(d => d.Id).Take(1000)
+                .ExecuteDeleteAsync(cancellationToken);
+        }
+        while (removed == 1000);
     }
 
     /// <summary>Claims and delivers everything currently due; returns how many deliveries were attempted. Public for tests.</summary>
@@ -158,7 +188,9 @@ public sealed class WebhookDispatcher : BackgroundService
                 error = $"The endpoint answered HTTP {statusCode}.";
             }
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        // Shutdown is not the receiver's fault: let it propagate so nothing is counted. Anything else (timeout, network, an
+        // undecryptable secret, a malformed URL) is a failed attempt, so a poison delivery always advances toward abandonment.
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             error = ex is TaskCanceledException ? "The endpoint did not answer in time." : "The endpoint could not be reached.";
             _logger.LogInformation("Webhook {DeliveryId} to endpoint {EndpointId} failed: {Reason}", id, endpoint.Id, ex.GetType().Name);
