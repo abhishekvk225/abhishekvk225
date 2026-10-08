@@ -160,6 +160,18 @@ internal sealed class CostRuleRepository : ICostRuleRepository
     public async Task<IReadOnlyList<ClientCostRule>> ListClientRulesAsync(Guid clientId, CancellationToken cancellationToken) =>
         await _db.ClientCostRules.Where(r => r.ClientId == clientId).OrderBy(r => r.Operation).ThenByDescending(r => r.EffectiveFrom).ToListAsync(cancellationToken);
 
+    public Task<ClientCostRule?> FindClientRuleAsync(Guid clientId, MeteredOperation operation, DateTime at, CancellationToken cancellationToken) =>
+        _db.ClientCostRules.AsNoTracking()
+            .Where(r => r.ClientId == clientId && r.Operation == operation && r.IsActive && r.EffectiveFrom <= at && (r.EffectiveTo == null || at < r.EffectiveTo))
+            .OrderByDescending(r => r.EffectiveFrom)
+            .FirstOrDefaultAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<CostRule>> FindPlatformRulesAsync(MeteredOperation operation, DateTime at, CancellationToken cancellationToken) =>
+        await _db.CostRules.AsNoTracking()
+            .Where(r => r.Operation == operation && r.IsActive && r.EffectiveFrom <= at && (r.EffectiveTo == null || at < r.EffectiveTo))
+            .OrderByDescending(r => r.EffectiveFrom)
+            .ToListAsync(cancellationToken);
+
     public void Add(CostRule rule) => _db.CostRules.Add(rule);
 
     public void Add(ClientCostRule rule) => _db.ClientCostRules.Add(rule);

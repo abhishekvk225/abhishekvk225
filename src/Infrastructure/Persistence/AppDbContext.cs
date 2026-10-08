@@ -108,6 +108,8 @@ public class AppDbContext : DbContext, IUnitOfWork
             cancellationToken);
     }
 
+    public void ClearTracked() => ChangeTracker.Clear();
+
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         try

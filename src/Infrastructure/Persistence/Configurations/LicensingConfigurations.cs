@@ -82,6 +82,7 @@ internal sealed class LicenseTransactionConfiguration : IEntityTypeConfiguration
         b.HasOne<Client>().WithMany().HasForeignKey(x => x.ClientId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<LicenseTransaction>().WithMany().HasForeignKey(x => x.ReferenceTransactionId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => new { x.LicenseId, x.Id });
+        b.HasIndex(x => new { x.LicenseId, x.PrevHash }).IsUnique(); // a chain cannot fork: one successor per previous hash
         b.HasIndex(x => new { x.ClientId, x.CreatedAt });
         b.HasIndex(x => new { x.ClientId, x.IdempotencyKey }).IsUnique().HasFilter("[IdempotencyKey] IS NOT NULL");
         b.HasIndex(x => x.ReferenceTransactionId).IsUnique().HasFilter("[ReferenceTransactionId] IS NOT NULL AND [Type] = 'Refund'");

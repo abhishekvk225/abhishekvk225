@@ -6,9 +6,9 @@ Gate legend: ✅ passed · 🔄 in progress · ⬜ not started · ❌ failed. A 
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | M0 Design docs | 🔄 (awaiting your sign-off) | – | – | – | 🔄 | – | 🔄 | – | – | ⬜ |
 | M1 Foundation | ✅ | ✅ | ✅ | – | ✅ conditions fixed (re-verify in M2 gate) | ✅ | ✅ changes applied | 🔄 | ⬜ | ⬜ |
-| M2 Identity & Access | ✅ | ✅ | ✅ | 🔄 shell done; screens wire to API in M8 | ❌→fixed, re-verify | ✅ 136 API tests | changes applied, re-review | 🔄 | ⬜ | ⬜ |
-| M3 Client Management | ✅ | ✅ | ✅ | ⬜ (M8) | ⬜ | ✅ | ⬜ | 🔄 | ⬜ | ⬜ |
-| M4 Licensing & Metering | ✅ | ✅ | ✅ | ⬜ (M8) | ⬜ | ✅ 25 API + 17 domain tests | ⬜ | 🔄 | ⬜ | ⬜ |
+| M2 Identity & Access | ✅ | ✅ | ✅ | 🔄 shell done; screens wire to API in M8 | ✅ re-verified: pass-with-conditions (Lows) | ✅ 136 API tests | changes applied, re-review | 🔄 | ⬜ | ⬜ |
+| M3 Client Management | ✅ | ✅ | ✅ | ⬜ (M8) | 🔄 pass-with-conditions (M3-M1..M3 open) | ✅ | 🔄 approve-with-changes, Majors fixed | 🔄 | ⬜ | ⬜ |
+| M4 Licensing & Metering | ✅ | ✅ | ✅ | ⬜ (M8) | 🔄 pass-with-conditions (see below) | ✅ 25 API + 17 domain tests | 🔄 Majors M-1..M-4 fixed | 🔄 | ⬜ | ⬜ |
 | M5 Face Recognition | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M6 API Management | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M7 Usage & Dashboards | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
@@ -20,3 +20,13 @@ Gate legend: ✅ passed · 🔄 in progress · ⬜ not started · ❌ failed. A 
 - .NET 10 SDK installed in the sandbox via apt (`dotnet-sdk-10.0`); SQL Server 2022 container runs through a manually started `dockerd`. NuGet is reachable.
 - M1 verified here: solution builds with warnings-as-errors; Domain/Application/Architecture unit tests, Infrastructure tenant/RLS tests (real SQL Server) and API pipeline tests pass.
 - **Not verified here**: `deploy/docker/Dockerfile.api` (build containers have no route to NuGet in this sandbox), CI workflows (need to run on GitHub), compose stack.
+
+## Review outcomes (reports in `docs/reviews/`)
+- **Code review M3/M4 — approve-with-changes, no blockers.** Fixed: M-1 admin ops load the license inside the transaction and retry on version conflict (regression: interleave test now requires every adjust to succeed first try); M-2 sweeper clears the tracker on conflict; M-3 cost rules filtered in SQL, `AsNoTracking`, memoised per request; M-4 per-user refresh-token query. Minors tracked for M10 cleanup.
+- **Security review M2–M4 — no Critical/High.** Fixed: unique `(LicenseId, PrevHash)` ledger index (migration `LedgerUniqueChain`); client views no longer expose license notes, suspend reasons, staff actor ids or ledger reasons (M4-M4).
+- **Open conditions, must land with M5/M6/M7:**
+  - M4-M1: M5 derives idempotency keys server-side (or binds key → operation/request, 409 on mismatch).
+  - M4-M2: M5 withholds the result when the charge fails after preflight.
+  - M4-M3: nightly ledger-verification job + alert (M7); consider keyed HMAC anchor (M9).
+  - M3-M1/M2/M3: redact platform-staff data from client audit/profile; target-privilege check in client user management.
+  - M4-M5: cap / second approver on `licenses.adjust` (M9).

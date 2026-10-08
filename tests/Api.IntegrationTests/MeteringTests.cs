@@ -383,19 +383,12 @@ public class MeteringTests : IAsyncLifetime
         var license = await SeedLicenseAsync(client, 200, DateTime.UtcNow.AddDays(-1), DateTime.UtcNow.AddDays(30));
 
         var charges = Enumerable.Range(0, 40).Select(_ => Task.Run(() => ChargeAsync(client)));
+        // No client-side retry: the service itself must absorb the version bumps that concurrent charges cause.
         var adjusts = Enumerable.Range(0, 5).Select(i => Task.Run(async () =>
-        {
-            for (var attempt = 0; attempt < 10; attempt++)
-            {
-                var r = await _app.PostAsync($"/api/v1/admin/licenses/{license}/adjust", new AdjustLicenseRequest(1, "bump " + i), _platform.AccessToken);
-                if (r.StatusCode == HttpStatusCode.OK)
-                {
-                    return;
-                }
-            }
-        }));
-        await Task.WhenAll(charges.Concat(adjusts));
+            (await _app.PostAsync($"/api/v1/admin/licenses/{license}/adjust", new AdjustLicenseRequest(1, "bump " + i), _platform.AccessToken)).StatusCode)).ToList();
+        await Task.WhenAll(charges.Concat<Task>(adjusts));
 
+        adjusts.Select(t => t.Result).ShouldAllBe(code => code == HttpStatusCode.OK);
         (await VerifyAsync(license)).Valid.ShouldBeTrue();
     }
 

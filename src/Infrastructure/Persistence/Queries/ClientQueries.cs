@@ -121,6 +121,9 @@ internal sealed class ClientQueries : IClientQueries
     public async Task<IReadOnlyList<RefreshToken>> GetActiveRefreshTokensAsync(Guid clientId, CancellationToken cancellationToken) =>
         await _db.RefreshTokens.Where(t => t.ClientId == clientId && t.RevokedAt == null).ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<RefreshToken>> GetActiveRefreshTokensForUserAsync(Guid clientId, Guid userId, CancellationToken cancellationToken) =>
+        await _db.RefreshTokens.Where(t => t.ClientId == clientId && t.UserId == userId && t.RevokedAt == null).ToListAsync(cancellationToken);
+
     private IQueryable<UserProjection> ProjectUsers(IQueryable<User> users) =>
         users.Select(u => new UserProjection(
             u,

@@ -189,15 +189,8 @@ public sealed class LicenseService : ILicenseService
     public Task<Result<LicenseDto>> SuspendAsync(Guid id, LicenseReasonRequest request, CancellationToken cancellationToken) =>
         TransitionAsync(id, "license.suspended", (l, now) => l.Suspend(request.Reason ?? string.Empty, now), cancellationToken, request.Reason);
 
-    public async Task<Result<LicenseDto>> RevokeAsync(Guid id, LicenseReasonRequest request, CancellationToken cancellationToken)
-    {
-        var license = await _licenses.GetByIdAsync(id, cancellationToken);
-        if (license is null)
-        {
-            return Error.NotFound();
-        }
-
-        return await InTransactionAsync(license, async ct =>
+    public Task<Result<LicenseDto>> RevokeAsync(Guid id, LicenseReasonRequest request, CancellationToken cancellationToken) =>
+        InTransactionAsync(id, async (license, ct) =>
         {
             var before = license.Remaining;
             var written = license.Revoke(request.Reason ?? string.Empty);
@@ -209,19 +202,12 @@ public sealed class LicenseService : ILicenseService
 
             _audit.Record(new AuditEntry("license.revoked", nameof(License), license.Id.ToString(), license.ClientId, NewValues: new { request.Reason, WrittenOff = written }));
         }, cancellationToken);
-    }
 
-    public async Task<Result<LicenseDto>> RenewAsync(Guid id, RenewLicenseRequest request, CancellationToken cancellationToken)
+    public Task<Result<LicenseDto>> RenewAsync(Guid id, RenewLicenseRequest request, CancellationToken cancellationToken)
     {
-        var license = await _licenses.GetByIdAsync(id, cancellationToken);
-        if (license is null)
-        {
-            return Error.NotFound();
-        }
-
         var now = Now;
         var newEnd = DateTime.SpecifyKind(request.ExpiresAt, DateTimeKind.Utc);
-        return await InTransactionAsync(license, async ct =>
+        return InTransactionAsync(id, async (license, ct) =>
         {
             var before = license.Remaining;
             var oldEnd = license.ExpiresAt;
@@ -235,15 +221,8 @@ public sealed class LicenseService : ILicenseService
         }, cancellationToken);
     }
 
-    public async Task<Result<LicenseDto>> AdjustAsync(Guid id, AdjustLicenseRequest request, CancellationToken cancellationToken)
-    {
-        var license = await _licenses.GetByIdAsync(id, cancellationToken);
-        if (license is null)
-        {
-            return Error.NotFound();
-        }
-
-        return await InTransactionAsync(license, async ct =>
+    public Task<Result<LicenseDto>> AdjustAsync(Guid id, AdjustLicenseRequest request, CancellationToken cancellationToken) =>
+        InTransactionAsync(id, async (license, ct) =>
         {
             var before = license.Remaining;
             license.AdjustCredits(request.Credits);
@@ -251,7 +230,6 @@ public sealed class LicenseService : ILicenseService
             await _writer.AppendAsync(license, LedgerEntryType.Adjustment, request.Credits, before, ct, reason: request.Reason);
             _audit.Record(new AuditEntry("license.adjusted", nameof(License), license.Id.ToString(), license.ClientId, NewValues: new { request.Credits, request.Reason }));
         }, cancellationToken);
-    }
 
     public async Task<Result<LicenseTransactionDto>> RefundAsync(long transactionId, RefundRequest request, CancellationToken cancellationToken)
     {
@@ -266,34 +244,35 @@ public sealed class LicenseService : ILicenseService
             return Error.Conflict(ErrorCodes.Conflict, "Only a consumption can be refunded.");
         }
 
-        var license = await _licenses.GetByIdAsync(original.LicenseId, cancellationToken);
-        if (license is null)
-        {
-            return Error.NotFound();
-        }
-
         try
         {
-            return await _unitOfWork.ExecuteInTransactionAsync<Result<LicenseTransactionDto>>(
-                async ct =>
-                {
-                    // The unique index on (ReferenceTransactionId) for refunds is the real guard; this check gives a clean error first.
-                    if (await _ledger.HasRefundForAsync(transactionId, ct))
+            return await WithConflictRetryAsync(
+                () => _unitOfWork.ExecuteInTransactionAsync<Result<LicenseTransactionDto>>(
+                    async ct =>
                     {
-                        return Error.Conflict(ErrorCodes.Conflict, "This charge has already been refunded.");
-                    }
+                        // The unique index on (ReferenceTransactionId) for refunds is the real guard; this check gives a clean error first.
+                        if (await _ledger.HasRefundForAsync(transactionId, ct))
+                        {
+                            return Error.Conflict(ErrorCodes.Conflict, "This charge has already been refunded.");
+                        }
 
-                    var before = license.Remaining;
-                    license.Refund(-original.Credits);
-                    await _unitOfWork.SaveChangesAsync(ct);
-                    var entry = await _writer.AppendAsync(license, LedgerEntryType.Refund, -original.Credits, before, ct,
-                        operation: original.Operation, referenceTransactionId: original.Id, reason: request.Reason);
-                    _audit.Record(new AuditEntry("license.refunded", nameof(License), license.Id.ToString(), license.ClientId,
-                        NewValues: new { TransactionId = transactionId, Credits = -original.Credits, request.Reason }));
-                    await _unitOfWork.SaveChangesAsync(ct);
-                    return entry.ToDto();
-                },
-                cancellationToken);
+                        var license = await _licenses.GetByIdAsync(original.LicenseId, ct);
+                        if (license is null)
+                        {
+                            return Error.NotFound();
+                        }
+
+                        var before = license.Remaining;
+                        license.Refund(-original.Credits);
+                        await _unitOfWork.SaveChangesAsync(ct);
+                        var entry = await _writer.AppendAsync(license, LedgerEntryType.Refund, -original.Credits, before, ct,
+                            operation: original.Operation, referenceTransactionId: original.Id, reason: request.Reason);
+                        _audit.Record(new AuditEntry("license.refunded", nameof(License), license.Id.ToString(), license.ClientId,
+                            NewValues: new { TransactionId = transactionId, Credits = -original.Credits, request.Reason }));
+                        await _unitOfWork.SaveChangesAsync(ct);
+                        return entry.ToDto();
+                    },
+                    cancellationToken));
         }
         catch (DomainException ex)
         {
@@ -329,21 +308,12 @@ public sealed class LicenseService : ILicenseService
         return LedgerVerifier.Verify(license, entries);
     }
 
-    private Task<Result<LicenseDto>> TransitionAsync(Guid id, string action, Action<License, DateTime> change, CancellationToken cancellationToken, string? reason = null) =>
-        TransitionCoreAsync(id, action, change, reason, cancellationToken);
-
-    private async Task<Result<LicenseDto>> TransitionCoreAsync(Guid id, string action, Action<License, DateTime> change, string? reason, CancellationToken cancellationToken)
+    private Task<Result<LicenseDto>> TransitionAsync(Guid id, string action, Action<License, DateTime> change, CancellationToken cancellationToken, string? reason = null)
     {
-        var license = await _licenses.GetByIdAsync(id, cancellationToken);
-        if (license is null)
-        {
-            return Error.NotFound();
-        }
-
         var now = Now;
-        var before = license.Status;
-        return await InTransactionAsync(license, ct =>
+        return InTransactionAsync(id, (license, _) =>
         {
+            var before = license.Status;
             change(license, now);
             _audit.Record(new AuditEntry(action, nameof(License), license.Id.ToString(), license.ClientId,
                 OldValues: new { Status = before.ToString() }, NewValues: new { Status = license.Status.ToString(), Reason = reason }));
@@ -351,26 +321,57 @@ public sealed class LicenseService : ILicenseService
         }, cancellationToken);
     }
 
-    /// <summary>Applies a domain change plus its ledger/audit rows atomically; domain rule violations become API errors.</summary>
-    private async Task<Result<LicenseDto>> InTransactionAsync(License license, Func<CancellationToken, Task> change, CancellationToken cancellationToken)
+    /// <summary>
+    /// Applies a domain change plus its ledger/audit rows atomically; domain rule violations become API errors. The license is
+    /// loaded INSIDE the transaction and the whole unit is retried on a version conflict, because every metered charge bumps the
+    /// license's row version and would otherwise make admin changes fail while the client is being served.
+    /// </summary>
+    private async Task<Result<LicenseDto>> InTransactionAsync(Guid id, Func<License, CancellationToken, Task> change, CancellationToken cancellationToken)
     {
         try
         {
-            await _unitOfWork.ExecuteInTransactionAsync(
+            var found = await WithConflictRetryAsync(() => _unitOfWork.ExecuteInTransactionAsync(
                 async ct =>
                 {
-                    await change(ct);
+                    var license = await _licenses.GetByIdAsync(id, ct);
+                    if (license is null)
+                    {
+                        return false;
+                    }
+
+                    await change(license, ct);
                     await _unitOfWork.SaveChangesAsync(ct);
                     return true;
                 },
-                cancellationToken);
+                cancellationToken));
+            if (!found)
+            {
+                return Error.NotFound();
+            }
         }
         catch (DomainException ex)
         {
             return ex.ToError();
         }
 
-        return await ReloadAsync(license.Id, cancellationToken);
+        return await ReloadAsync(id, cancellationToken);
+    }
+
+    private async Task<T> WithConflictRetryAsync<T>(Func<Task<T>> attempt)
+    {
+        const int maxAttempts = 12;
+        for (var i = 1; ; i++)
+        {
+            try
+            {
+                return await attempt();
+            }
+            catch (ConcurrencyConflictException) when (i < maxAttempts)
+            {
+                _unitOfWork.ClearTracked(); // drop the stale entity so the retry reads current state
+                await Task.Delay(Random.Shared.Next(5, 40 + (i * 10))); // jitter so competing admin writers don't collide in lockstep
+            }
+        }
     }
 
     private async Task<Result<LicenseDto>> ReloadAsync(Guid id, CancellationToken cancellationToken) =>

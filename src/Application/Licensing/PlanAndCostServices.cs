@@ -300,7 +300,7 @@ public sealed class ClientLicenseService : IClientLicenseService
     public async Task<Result<LicenseDto>> GetAsync(Guid id, CancellationToken cancellationToken)
     {
         var row = await _licenses.GetRowAsync(id, cancellationToken);
-        return row is null || row.License.ClientId != _currentUser.ClientId ? Error.NotFound() : row.ToDto(_time.GetUtcNow().UtcDateTime);
+        return row is null || row.License.ClientId != _currentUser.ClientId ? Error.NotFound() : row.ToDto(_time.GetUtcNow().UtcDateTime) with { Notes = null, SuspendedReason = null };
     }
 
     public async Task<Result<PagedResult<LicenseTransactionDto>>> GetTransactionsAsync(Guid id, PageRequest page, CancellationToken cancellationToken)
@@ -313,7 +313,9 @@ public sealed class ClientLicenseService : IClientLicenseService
 
         var paging = page.Normalize();
         var (items, total) = await _ledger.ListAsync(id, paging.Skip, paging.PageSize, cancellationToken);
-        return new PagedResult<LicenseTransactionDto>(items.Select(t => t.ToDto()).ToList(), paging.Page, paging.PageSize, total);
+        // Clients see balance movements, not staff identities or internal justifications.
+        return new PagedResult<LicenseTransactionDto>(
+            items.Select(t => t.ToDto() with { ActorId = null, Reason = null }).ToList(), paging.Page, paging.PageSize, total);
     }
 }
 
@@ -346,17 +348,17 @@ public sealed class LicenseExpiryProcessor : ILicenseExpiryProcessor
         var processed = 0;
         foreach (var id in await _licenses.GetDueForExpiryAsync(now, batchSize, cancellationToken))
         {
-            var license = await _licenses.GetByIdAsync(id, cancellationToken);
-            if (license is null)
-            {
-                continue;
-            }
-
             try
             {
-                await _unitOfWork.ExecuteInTransactionAsync(
+                var done = await _unitOfWork.ExecuteInTransactionAsync(
                     async ct =>
                     {
+                        var license = await _licenses.GetByIdAsync(id, ct);
+                        if (license is null)
+                        {
+                            return false;
+                        }
+
                         var before = license.Remaining;
                         if (license.Expire(now) is not { } written)
                         {
@@ -374,10 +376,14 @@ public sealed class LicenseExpiryProcessor : ILicenseExpiryProcessor
                         return true;
                     },
                     cancellationToken);
-                processed++;
+                if (done)
+                {
+                    processed++;
+                }
             }
             catch (ConcurrencyConflictException)
             {
+                _unitOfWork.ClearTracked(); // don't let the stale entity poison the next license in the batch
                 // A concurrent charge/renewal touched it; the next sweep picks it up again if it is still due.
             }
         }

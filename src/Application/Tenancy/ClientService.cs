@@ -223,8 +223,7 @@ public sealed class ClientService : IClientService
         var user = row.User;
         var now = Now;
         user.RevokeSessions();
-        var clientTokens = await _queries.GetActiveRefreshTokensAsync(clientId, cancellationToken);
-        foreach (var token in clientTokens.Where(r => r.UserId == userId))
+        foreach (var token in await _queries.GetActiveRefreshTokensForUserAsync(clientId, userId, cancellationToken))
         {
             token.Revoke(now, "admin-password-reset");
         }

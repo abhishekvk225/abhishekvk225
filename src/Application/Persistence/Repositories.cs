@@ -144,6 +144,8 @@ public interface IClientQueries
     Task<(IReadOnlyList<LoginHistory> Items, int Total)> ListLoginsAsync(Guid clientId, DateTime? from, DateTime? to, string? outcome, int skip, int take, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<RefreshToken>> GetActiveRefreshTokensAsync(Guid clientId, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<RefreshToken>> GetActiveRefreshTokensForUserAsync(Guid clientId, Guid userId, CancellationToken cancellationToken);
 }
 
 public interface IClientSettingRepository
@@ -225,6 +227,12 @@ public interface ICostRuleRepository
     Task<IReadOnlyList<Domain.Licensing.CostRule>> ListPlatformRulesAsync(CancellationToken cancellationToken);
 
     Task<IReadOnlyList<Domain.Licensing.ClientCostRule>> ListClientRulesAsync(Guid clientId, CancellationToken cancellationToken);
+
+    /// <summary>Read-only, filtered in SQL: the client's newest rule for the operation that applies at <paramref name="at"/>.</summary>
+    Task<Domain.Licensing.ClientCostRule?> FindClientRuleAsync(Guid clientId, Domain.Licensing.MeteredOperation operation, DateTime at, CancellationToken cancellationToken);
+
+    /// <summary>Read-only, filtered in SQL: platform rules (plan-specific and default) for the operation that apply at <paramref name="at"/>, newest first.</summary>
+    Task<IReadOnlyList<Domain.Licensing.CostRule>> FindPlatformRulesAsync(Domain.Licensing.MeteredOperation operation, DateTime at, CancellationToken cancellationToken);
 
     void Add(Domain.Licensing.CostRule rule);
 
