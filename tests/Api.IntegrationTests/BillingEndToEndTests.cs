@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using NexaVerify.Api.IntegrationTests.Support;
 using NexaVerify.Contracts.Api;
 using NexaVerify.Contracts.Billing;
@@ -101,7 +102,7 @@ public class BillingEndToEndTests : BillingTestBase
         invoice.Content.Headers.ContentType!.MediaType.ShouldBe("text/html");
         invoice.Headers.GetValues("Content-Security-Policy").Single().ShouldContain("style-src 'unsafe-inline'");
         var html = await invoice.Content.ReadAsStringAsync();
-        html.ShouldContain(paid.InvoiceNumber);
+        html.ShouldContain(paid.InvoiceNumber!);
         html.ShouldContain("Seller Pvt Ltd");
         html.ShouldContain("GSTIN: 27AAAAA0000A1Z5");
         html.ShouldContain("Acme Pvt Ltd");
@@ -117,13 +118,13 @@ public class BillingEndToEndTests : BillingTestBase
         actions.ShouldContain("billing.checkout_created");
         actions.ShouldContain("billing.payment_succeeded");
         actions.ShouldContain("license.created");
-        var receipt = App.Emails.Sent.Single(m => m.Subject.Contains(paid.InvoiceNumber, StringComparison.Ordinal));
+        var receipt = App.Emails.Sent.Single(m => m.Subject.Contains(paid.InvoiceNumber!, StringComparison.Ordinal));
         receipt.To.ShouldBe("billing@acme.test");
         receipt.Body.ShouldContain("1,500 credits");
         receipt.Body.ShouldContain("INR 1,180.00");
         receipt.Body.ShouldContain($"/billing/orders/{checkout.OrderId}");
         var feed = await App.GetAsync("/api/v1/client/notifications", tenant.Token);
-        (await feed.Content.ReadFromJsonAsync<NotificationFeedDto>(AuthApp.Json))!.Page.Items.ShouldContain(n => n.Title == "Credits added" && n.Message.Contains("1500", StringComparison.Ordinal));
+        (await feed.Content.ReadFromJsonAsync<NotificationFeedDto>(AuthApp.Json))!.Notifications.Items.ShouldContain(n => n.Title == "Credits added" && n.Message.Contains("1500", StringComparison.Ordinal));
         var delivery = (await DeliveriesAsync(tenant.ClientId)).Single(d => d.EventType == WebhookEvents.LicenseToppedUp);
         delivery.PayloadJson.ShouldContain(checkout.OrderId.ToString());
         delivery.PayloadJson.ShouldContain(paid.LicenseId.Value.ToString());
@@ -133,12 +134,13 @@ public class BillingEndToEndTests : BillingTestBase
         var page = (await list.Content.ReadFromJsonAsync<PagedResult<OrderListItemDto>>(AuthApp.Json))!;
         page.TotalCount.ShouldBe(1);
         page.Items[0].InvoiceNumber.ShouldBe(paid.InvoiceNumber);
-        (await App.GetAsync("/api/v1/client/billing/orders?status=Pending", tenant.Token)).Content.ReadFromJsonAsync<PagedResult<OrderListItemDto>>(AuthApp.Json).Result!.TotalCount.ShouldBe(0);
+        var pendingList = await App.GetAsync("/api/v1/client/billing/orders?status=Pending", tenant.Token);
+        (await pendingList.Content.ReadFromJsonAsync<PagedResult<OrderListItemDto>>(AuthApp.Json))!.TotalCount.ShouldBe(0);
         var csv = await App.GetAsync("/api/v1/client/billing/orders/export.csv", tenant.Token);
         csv.StatusCode.ShouldBe(HttpStatusCode.OK);
         csv.Content.Headers.ContentType!.MediaType.ShouldBe("text/csv");
         var text = await csv.Content.ReadAsStringAsync();
-        text.ShouldContain(paid.InvoiceNumber);
+        text.ShouldContain(paid.InvoiceNumber!);
         text.ShouldContain("118000");
     }
 
@@ -474,8 +476,8 @@ public class BillingEndToEndTests : BillingTestBase
         (await CheckoutAsync(tenant, off.Id)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
         (await CheckoutAsync(tenant, off.Id, "has spaces")).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
 
-        var listed = await (await App.GetAsync("/api/v1/client/billing/packs", tenant.Token)).Content.ReadFromJsonAsync<List<CreditPackDto>>(AuthApp.Json);
-        listed!.Select(p => p.Id).ShouldNotContain(euro.Id);
+        var listed = (await (await App.GetAsync("/api/v1/client/billing/packs", tenant.Token)).Content.ReadFromJsonAsync<List<CreditPackDto>>(AuthApp.Json))!;
+        listed.Select(p => p.Id).ShouldNotContain(euro.Id);
         listed.Select(p => p.Id).ShouldNotContain(off.Id);
 
         (await App.PutAsync("/api/v1/client/billing/profile", Profile() with { Country = "India" }, tenant.Token)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);

@@ -76,6 +76,7 @@ public sealed partial class PaymentEventProcessor : IPaymentEventProcessor
     private readonly IEmailOutbox _outbox;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ITenantScope _scope;
+    private readonly ITenantContext _tenantContext;
     private readonly BillingOptions _options;
     private readonly PortalLinksOptions _portal;
     private readonly TimeProvider _time;
@@ -94,6 +95,7 @@ public sealed partial class PaymentEventProcessor : IPaymentEventProcessor
         IEmailOutbox outbox,
         IUnitOfWork unitOfWork,
         ITenantScope scope,
+        ITenantContext tenantContext,
         IOptions<BillingOptions> options,
         IOptions<PortalLinksOptions> portal,
         TimeProvider time,
@@ -111,6 +113,7 @@ public sealed partial class PaymentEventProcessor : IPaymentEventProcessor
         _outbox = outbox;
         _unitOfWork = unitOfWork;
         _scope = scope;
+        _tenantContext = tenantContext;
         _options = options.Value;
         _portal = portal.Value;
         _time = time;
@@ -125,13 +128,16 @@ public sealed partial class PaymentEventProcessor : IPaymentEventProcessor
         if (paymentEvent.OrderId is { } orderId)
         {
             // The order's tenant is only known after looking it up, so the lookup is the one thing done in platform scope.
-            using var lookup = _scope.BeginPlatform("billing: locate the order of a payment event");
+            // A signed-in client (the simulator, a status poll) may only ever see its own orders, and is not allowed into platform scope.
+            using var lookup = _tenantContext.ClientId is null ? _scope.BeginPlatform("billing: locate the order of a payment event") : null;
             order = await _orders.GetNoTrackingAsync(orderId, cancellationToken);
         }
 
         // Everything else runs inside the owning tenant: the license, ledger and webhook queries are tenant-filtered, so a
         // platform-wide scope here would fan a webhook event out to every client.
-        using var scope = order is null ? _scope.BeginPlatform("billing: payment event without an order") : _scope.BeginTenant(order.ClientId);
+        using var scope = order is not null
+            ? _scope.BeginTenant(order.ClientId)
+            : _tenantContext.ClientId is { } own ? _scope.BeginTenant(own) : _scope.BeginPlatform("billing: payment event without an order");
 
         Receipt? receipt = null;
         try
