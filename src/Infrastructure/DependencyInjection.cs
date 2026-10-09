@@ -10,6 +10,7 @@ using NexaVerify.Application.Api;
 using NexaVerify.Application.Auditing;
 using NexaVerify.Application.Dashboards;
 using NexaVerify.Application.Licensing;
+using NexaVerify.Application.Public;
 using NexaVerify.Application.Faces;
 using NexaVerify.Infrastructure.Faces;
 using NexaVerify.Infrastructure.Auditing;
@@ -85,6 +86,9 @@ public static class DependencyInjection
         services.AddOptions<PasswordPolicyOptions>().Bind(configuration.GetSection(PasswordPolicyOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
         services.AddOptions<PasswordHashingOptions>().Bind(configuration.GetSection(PasswordHashingOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
         services.AddOptions<JwtOptions>().Bind(configuration.GetSection(JwtOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
+        services.AddOptions<SignupOptions>().Bind(configuration.GetSection(SignupOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
+        services.AddOptions<CaptchaOptions>().Bind(configuration.GetSection(CaptchaOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
+        services.AddOptions<PortalLinksOptions>().Bind(configuration.GetSection(PortalLinksOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
         services.AddOptions<EmailOptions>().Bind(configuration.GetSection(EmailOptions.SectionName));
         services.AddOptions<SeedOptions>().Bind(configuration.GetSection(SeedOptions.SectionName));
 
@@ -99,6 +103,15 @@ public static class DependencyInjection
         services.AddScoped<IAuditLogWriter, AuditLogWriter>();
         services.AddScoped<IAuditService, AuditService>();
         services.AddScoped<ILoginThrottle, LoginThrottle>();
+        services.AddScoped<IPendingSignupRepository, PendingSignupRepository>();
+        services.AddScoped<IPendingSignupAtomics, PendingSignupAtomics>();
+        services.AddScoped<IContactRequestRepository, ContactRequestRepository>();
+        services.AddSingleton<IPublicThrottle, PublicThrottle>();
+        services.AddHttpClient<ICaptchaVerifier, TurnstileCaptchaVerifier>()
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false })
+            .ConfigureHttpClient((sp, client) => client.Timeout = TimeSpan.FromSeconds(sp.GetRequiredService<IOptions<CaptchaOptions>>().Value.TimeoutSeconds + 5));
+        services.AddSingleton<PublicDataPurger>();
+        services.AddHostedService(sp => sp.GetRequiredService<PublicDataPurger>());
         services.AddScoped<IRefreshTokenClaimer, RefreshTokenClaimer>();
         services.AddSingleton<NexaVerify.Application.Licensing.IDistributedLock, Platform.SqlDistributedLock>();
         services.AddSingleton<EmailOutbox>();

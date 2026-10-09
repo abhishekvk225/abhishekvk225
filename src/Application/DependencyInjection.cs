@@ -7,6 +7,7 @@ using NexaVerify.Application.Dashboards;
 using NexaVerify.Application.Faces;
 using NexaVerify.Application.Identity;
 using NexaVerify.Application.Licensing;
+using NexaVerify.Application.Public;
 using NexaVerify.Application.Tenancy;
 
 namespace NexaVerify.Application;
@@ -19,6 +20,12 @@ public static class DependencyInjection
         services.AddValidatorsFromAssembly(typeof(DependencyInjection).Assembly, includeInternalTypes: true);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<AuthOptions>, AuthOptionsValidator>());
         services.AddSingleton<PasswordPolicy>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<CaptchaOptions>, CaptchaOptionsValidator>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<PortalLinksOptions>, PortalLinksOptionsValidator>());
+        services.AddSingleton<DisposableEmailPolicy>();
+        services.AddScoped<ISignupService, SignupService>();
+        services.AddScoped<IPublicInfoService, PublicInfoService>();
+        services.AddScoped<IContactService, ContactService>();
 
         services.AddScoped<IMfaPolicy, MfaPolicy>();
         services.AddScoped<ISessionIssuer, SessionIssuer>();
@@ -27,7 +34,9 @@ public static class DependencyInjection
         services.AddScoped<IRoleService, RoleService>();
         services.AddScoped<IPlatformUserService, PlatformUserService>();
         services.AddScoped<IPasswordResetService, PasswordResetService>();
-        services.AddScoped<IClientService, ClientService>();
+        services.AddScoped<ClientService>();
+        services.AddScoped<IClientService>(sp => sp.GetRequiredService<ClientService>());
+        services.AddScoped<IClientProvisioner>(sp => sp.GetRequiredService<ClientService>());
         services.AddScoped<IClientPortalService, ClientPortalService>();
         services.AddScoped<IClientSettingsService, ClientSettingsService>();
         services.AddScoped<ICostRuleResolver, CostRuleResolver>();

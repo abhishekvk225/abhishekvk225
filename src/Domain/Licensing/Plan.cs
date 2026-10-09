@@ -29,6 +29,20 @@ public sealed class Plan : AuditableEntity
 
     public int MaxUsers { get; set; }
 
+    /// <summary>Shown on the public website (only active plans are listed).</summary>
+    public bool IsPublic { get; set; }
+
+    /// <summary>The plan self-service sign-ups start on; its public credits/period are the configured trial values.</summary>
+    public bool IsTrial { get; set; }
+
+    public int DisplayOrder { get; set; }
+
+    /// <summary>Optional text shown instead of "Contact us" (no payment is processed).</summary>
+    public string? DisplayPrice { get; set; }
+
+    /// <summary>Short marketing bullet points for the public plan card.</summary>
+    public List<string> Highlights { get; set; } = [];
+
     public static Plan Create(string code, string name, int defaultCredits, int defaultDurationDays)
     {
         if (string.IsNullOrWhiteSpace(code) || code.Length > 30 || !code.All(c => char.IsAsciiLetterOrDigit(c) || c == '-'))

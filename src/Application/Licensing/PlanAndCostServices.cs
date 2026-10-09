@@ -94,6 +94,18 @@ public sealed class PlanService : IPlanService
         plan.MaxApiKeys = r.MaxApiKeys;
         plan.MaxUsers = r.MaxUsers;
         plan.IsActive = r.IsActive;
+        plan.IsPublic = r.IsPublic ?? plan.IsPublic;
+        plan.IsTrial = r.IsTrial ?? plan.IsTrial;
+        plan.DisplayOrder = r.DisplayOrder ?? plan.DisplayOrder;
+        if (r.DisplayPrice is not null)
+        {
+            plan.DisplayPrice = string.IsNullOrWhiteSpace(r.DisplayPrice) ? null : r.DisplayPrice.Trim();
+        }
+
+        if (r.Highlights is not null)
+        {
+            plan.Highlights = r.Highlights.Select(h => h.Trim()).Where(h => h.Length > 0).ToList();
+        }
     }
 }
 

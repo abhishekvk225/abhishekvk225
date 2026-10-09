@@ -152,6 +152,23 @@ On the API side: add the portal's address to `ForwardedHeaders:KnownProxies` so 
 | `Auth__PasswordResetUrlTemplate`, `Cors__AllowedOrigins__0` | derived from `PORTAL_HOST` |
 | `FaceEngine__AllowMockInProduction` | `ALLOW_MOCK_FACE_ENGINE` (demo / rehearsal only) |
 | Portal `Api__BaseUrl`, `DataProtection__KeyPath`, `Session__AllowInMemoryStore` | `https://<API_HOST>`, `/keys` (named volume), `true` |
+## Public website and self-service sign-up (M11)
+| Key | Default | Notes |
+|---|---|---|
+| `Portal:PublicBaseUrl` | `https://portal.example.com` (`https://localhost:7200` in Development) | Where the customer portal is reachable. Verification and "you already have an account" emails link to `{PublicBaseUrl}/verify-email`, `/login`, `/forgot-password`. Absolute https URL without query (http only for localhost). **Set it per environment**; links are never built from request headers. |
+| `Signup:Enabled` | `true` | Master switch. **Decide explicitly per environment**: when `false`, `POST /public/signup` answers 403 and `GET /public/config` reports `signupEnabled=false`. |
+| `Signup:TrialCredits` / `Signup:TrialDays` | 100 / 14 | Credits and validity of the trial license created on verification (also what the public trial plan advertises). |
+| `Signup:VerificationHours` | 24 | Validity of the emailed link (a resend restarts it; max 3 resends). |
+| `Signup:MaxSignupsPerIpPerHour` / `MaxSignupsPerEmailPerDay` / `MaxContactsPerIpPerHour` | 5 / 3 / 5 | Shared (all nodes) counters, fixed UTC windows. IP over the limit = 429; address over the limit = silently no email. IPv6 per /64. |
+| `Signup:MinimumResponseMilliseconds` | 400 | Sign-up and resend responses take at least this long (timing neutrality). |
+| `Signup:ContactNotifyEmail` | empty | Receives new contact requests; empty = stored only (`GET /admin/contact-requests`). |
+| `Signup:ContactRetentionDays` | 180 | Older contact requests are deleted by a background job. Unverified sign-ups are deleted a day after their link expired, verified ones after 7 days. |
+| `Signup:DisposableEmailDomains` | `[]` | Extra refused domains (subdomains included), added to a small built-in list. |
+| `Signup:DefaultTimeZone` / `PurgeIntervalMinutes` | `UTC` / 60 | Zone of new clients / retention job interval. |
+| `Captcha:Provider` | `none` | `none` or `turnstile`. With `turnstile` the API verifies each sign-up token server-side and **fails closed** (missing token, provider error or timeout = 400 `CAPTCHA_FAILED`). The portal reads `siteKey` from `GET /public/config`. |
+| `Captcha:SiteKey` / `Captcha:SecretKey` | | Required with `turnstile`. `SecretKey` is a **secret** (use the secrets directory). |
+| `Captcha:VerifyUrl` / `TimeoutSeconds` | Cloudflare siteverify / 5 | https only; redirects are not followed. |
+
 ## Scalability and multi-node operation (M9b)
 Several API nodes behind a load balancer need no sticky sessions. What is shared, how, and what to set:
 

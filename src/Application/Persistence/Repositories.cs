@@ -225,6 +225,12 @@ public interface IPlanRepository
 
     Task<bool> CodeExistsAsync(string normalizedCode, Guid? exceptId, CancellationToken cancellationToken);
 
+    /// <summary>Active plans flagged public, in display order.</summary>
+    Task<IReadOnlyList<Domain.Licensing.Plan>> ListPublicAsync(CancellationToken cancellationToken);
+
+    /// <summary>The active trial plan self-service sign-ups start on (lowest display order), if any.</summary>
+    Task<Domain.Licensing.Plan?> GetTrialAsync(CancellationToken cancellationToken);
+
     void Add(Domain.Licensing.Plan plan);
 }
 

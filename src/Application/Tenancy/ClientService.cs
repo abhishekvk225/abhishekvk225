@@ -37,11 +37,23 @@ public interface IClientService
     Task<Result<PagedResult<LoginHistoryDto>>> GetLoginsAsync(Guid id, ActivityQuery query, CancellationToken cancellationToken);
 }
 
+/// <summary>How a client is provisioned: by an administrator (invitation email, no password known to anyone) or by self-service sign-up (the admin's own, already-hashed password).</summary>
+/// <param name="Details">The client and its first administrator.</param>
+/// <param name="AdminPasswordHash">The first admin's password hash; null = an unusable random password plus an invitation email.</param>
+/// <param name="Source">Recorded in the audit entry (for example <c>public-signup</c>).</param>
+public sealed record ClientProvisioning(CreateClientRequest Details, string? AdminPasswordHash = null, string? Source = null);
+
+/// <summary>Creates a client with its encryption key, first ClientAdmin user and membership in the caller's unit of work. The one implementation behind admin creation and self-service sign-up.</summary>
+public interface IClientProvisioner
+{
+    Task<Result<ClientDto>> ProvisionAsync(ClientProvisioning provisioning, CancellationToken cancellationToken);
+}
+
 /// <summary>
 /// Platform-side client management: create (with an invited first admin — no password is ever shared), edit, status
 /// lifecycle with immediate session invalidation, support-initiated password reset, and the client's activity trail.
 /// </summary>
-public sealed class ClientService : IClientService
+public sealed class ClientService : IClientService, IClientProvisioner
 {
     private readonly IClientRepository _clients;
     private readonly IClientQueries _queries;
@@ -119,8 +131,13 @@ public sealed class ClientService : IClientService
         return client is null || client.IsSystem ? Error.NotFound() : client.ToDto();
     }
 
-    public async Task<Result<ClientDto>> CreateAsync(CreateClientRequest request, CancellationToken cancellationToken)
+    public Task<Result<ClientDto>> CreateAsync(CreateClientRequest request, CancellationToken cancellationToken) =>
+        ProvisionAsync(new ClientProvisioning(request), cancellationToken);
+
+    public async Task<Result<ClientDto>> ProvisionAsync(ClientProvisioning provisioning, CancellationToken cancellationToken)
     {
+        var request = provisioning.Details;
+        var invite = provisioning.AdminPasswordHash is null;
         var now = Now;
         var code = request.Code.Trim().ToUpperInvariant();
         if (await _clients.CodeExistsAsync(code, cancellationToken))
@@ -147,17 +164,21 @@ public sealed class ClientService : IClientService
         _clients.Add(client);
         await _keys.ProvisionAsync(client.Id, cancellationToken);
 
-        // The first admin gets an unusable random password and chooses their own through the emailed invitation link.
-        var admin = User.Create(request.AdminEmail, request.AdminFullName, _hasher.Hash(_secure.CreateToken()), client.Id, isPlatformUser: false, mustChangePassword: false);
+        // An invited admin gets an unusable random password and chooses their own through the emailed link; a self-service admin already chose one.
+        var admin = User.Create(request.AdminEmail, request.AdminFullName, provisioning.AdminPasswordHash ?? _hasher.Hash(_secure.CreateToken()), client.Id, isPlatformUser: false, mustChangePassword: false);
         _users.Add(admin);
         await _users.SetRolesAsync(admin, [adminRole], cancellationToken);
         _memberships.Add(ClientUser.Create(client.Id, admin.Id, jobTitle: null, isOwner: true, now));
-        var invitation = await _resetService.IssueAsync(admin, ResetEmailKind.Invitation, cancellationToken);
+        var invitation = invite ? await _resetService.IssueAsync(admin, ResetEmailKind.Invitation, cancellationToken) : null;
 
         _audit.Record(new AuditEntry("client.created", nameof(Client), client.Id.ToString(), client.Id,
-            NewValues: new { client.Code, client.Name, client.ContactEmail, AdminEmail = admin.Email }));
+            NewValues: new { client.Code, client.Name, client.ContactEmail, AdminEmail = admin.Email, provisioning.Source }));
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-        await _resetService.SendAsync(admin, invitation, ResetEmailKind.Invitation, cancellationToken);
+        if (invitation is not null)
+        {
+            await _resetService.SendAsync(admin, invitation, ResetEmailKind.Invitation, cancellationToken);
+        }
+
         return client.ToDto();
     }
 
