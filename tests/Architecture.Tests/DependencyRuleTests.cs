@@ -152,6 +152,7 @@ public class DependencyRuleTests
         [
             "src/Application/Abstractions/ITenantScope.cs",
             "src/Application/Identity/",
+            "src/Application/Billing/", // payment webhooks arrive without a tenant: the order is located in platform scope, the rest runs inside its own tenant
             "src/Infrastructure/Tenancy/",
             "src/Infrastructure/Platform/",
             "src/Infrastructure/Persistence/",

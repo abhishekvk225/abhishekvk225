@@ -31,8 +31,9 @@ public sealed class SecurityHeadersMiddleware
             headers["Permissions-Policy"] = _options.PermissionsPolicy;
             headers["Cross-Origin-Opener-Policy"] = "same-origin";
 
-            // Swagger UI needs its own inline assets; it is only mapped outside production.
-            if (!context.Request.Path.StartsWithSegments("/swagger"))
+            // Swagger UI needs its own inline assets (only mapped outside production); a response that sets its own, stricter-than-needed
+            // policy (the printable invoice needs inline styles) keeps it.
+            if (!context.Request.Path.StartsWithSegments("/swagger") && !headers.ContainsKey("Content-Security-Policy"))
             {
                 headers["Content-Security-Policy"] = _options.ContentSecurityPolicy;
             }

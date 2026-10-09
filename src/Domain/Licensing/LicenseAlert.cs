@@ -9,6 +9,12 @@ public enum LicenseAlertType
     Expiring,
     Expired,
     ApiKeyExpiring,
+
+    /// <summary>A top-up purchase was paid and its credits granted (the subject is the order).</summary>
+    PaymentReceived,
+
+    /// <summary>A purchase was refunded (the subject is the refund).</summary>
+    PaymentRefunded,
 }
 
 public enum AlertSeverity

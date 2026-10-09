@@ -42,6 +42,8 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("Metering:Alerts:Enabled", "false"); // tests drive the alert processor and the ledger verifier by hand
         builder.UseSetting("Metering:LedgerVerification:Enabled", "false");
         builder.UseSetting("PasswordHashing:IterationCount", "10000");
+        builder.UseSetting("Billing:Enabled", "false"); // the billing tests switch it on (and pick a provider) through Settings
+        builder.UseSetting("Billing:Provider", "None");
         builder.UseSetting("Mfa:RequiredPlatformRoles", "-"); // MFA tests opt in; everything else signs in with a password only
         builder.UseSetting("Auth:SensitiveResponseMinimumMilliseconds", "0");
         builder.UseSetting("Auth:PasswordResetCooldownSeconds", "0");

@@ -61,22 +61,36 @@ public sealed record DueAlert(
 /// <summary>The alert rules, pure and deterministic (all inputs are parameters): which alerts a license or key is due for, right now.</summary>
 public static class LicenseAlertRules
 {
-    public static IReadOnlyList<DueAlert> Evaluate(LicenseAlertCandidate c, DateTime now, LicenseAlertOptions options)
+    /// <param name="billingUrl">Where the customer can buy more credits; set only while online billing is enabled. It is added to the webhook payload and to the notification text.</param>
+    public static IReadOnlyList<DueAlert> Evaluate(LicenseAlertCandidate c, DateTime now, LicenseAlertOptions options, string? billingUrl = null)
     {
         var due = new List<DueAlert>();
         var remaining = c.TotalCredits - c.ConsumedCredits;
         var percent = c.TotalCredits <= 0 ? 0 : (int)Math.Floor(100.0 * remaining / c.TotalCredits);
         var endDate = c.ExpiresAt.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
-        object Payload(int? days = null) => new
-        {
-            licenseId = c.LicenseId,
-            name = c.Name,
-            remainingCredits = remaining,
-            totalCredits = c.TotalCredits,
-            percentRemaining = percent,
-            expiresAt = c.ExpiresAt,
-            daysRemaining = days,
-        };
+        var buy = billingUrl is null ? string.Empty : " Buy more credits: " + billingUrl;
+        object Payload(int? days = null) => billingUrl is null
+            ? new
+            {
+                licenseId = c.LicenseId,
+                name = c.Name,
+                remainingCredits = remaining,
+                totalCredits = c.TotalCredits,
+                percentRemaining = percent,
+                expiresAt = c.ExpiresAt,
+                daysRemaining = days,
+            }
+            : new
+            {
+                licenseId = c.LicenseId,
+                name = c.Name,
+                remainingCredits = remaining,
+                totalCredits = c.TotalCredits,
+                percentRemaining = percent,
+                expiresAt = c.ExpiresAt,
+                daysRemaining = days,
+                billingUrl,
+            };
 
         var usable = c.Status == LicenseStatus.Active && c.StartsAt <= now && now < c.ExpiresAt;
         if (usable && c.TotalCredits > 0)
@@ -85,12 +99,12 @@ public static class LicenseAlertRules
             if (remaining == 0)
             {
                 due.Add(new DueAlert(LicenseAlertType.Exhausted, c.LicenseId, $"exhausted@{c.TotalCredits}", AlertSeverity.Critical, WebhookEvents.LicenseExhausted,
-                    "Credits used up", $"License \"{c.Name}\" has no credits left.", Payload()));
+                    "Credits used up", $"License \"{c.Name}\" has no credits left.{buy}", Payload()));
             }
             else if (remaining * 100L <= (long)options.LowBalancePercent * c.TotalCredits)
             {
                 due.Add(new DueAlert(LicenseAlertType.LowBalance, c.LicenseId, $"low{options.LowBalancePercent}@{c.TotalCredits}", AlertSeverity.Warning, WebhookEvents.LicenseLowBalance,
-                    "Credits running low", $"License \"{c.Name}\" has {remaining} of {c.TotalCredits} credits left ({percent}%).", Payload()));
+                    "Credits running low", $"License \"{c.Name}\" has {remaining} of {c.TotalCredits} credits left ({percent}%).{buy}", Payload()));
             }
         }
 
@@ -103,7 +117,7 @@ public static class LicenseAlertRules
                 {
                     var unit = days == 1 ? "day" : "days";
                     due.Add(new DueAlert(LicenseAlertType.Expiring, c.LicenseId, $"exp{days}d@{endDate}", days <= 1 ? AlertSeverity.Critical : AlertSeverity.Warning, WebhookEvents.LicenseExpiring,
-                        "License expiring soon", $"License \"{c.Name}\" expires within {days} {unit}.", Payload(days)));
+                        "License expiring soon", $"License \"{c.Name}\" expires within {days} {unit}.{buy}", Payload(days)));
                     break;
                 }
             }
@@ -112,7 +126,7 @@ public static class LicenseAlertRules
         if (c.Status is LicenseStatus.Active or LicenseStatus.Expired && c.ExpiresAt <= now && c.ExpiresAt >= now.AddDays(-options.ExpiredLookbackDays))
         {
             due.Add(new DueAlert(LicenseAlertType.Expired, c.LicenseId, $"expired@{endDate}", AlertSeverity.Critical, WebhookEvents.LicenseExpired,
-                "License expired", $"License \"{c.Name}\" has expired.", Payload()));
+                "License expired", $"License \"{c.Name}\" has expired.{buy}", Payload()));
         }
 
         return due;
@@ -172,13 +186,23 @@ public sealed class LicenseAlertService : ILicenseAlertService
     private readonly IWebhookPublisher _webhooks;
     private readonly IUnitOfWork _unitOfWork;
     private readonly Microsoft.Extensions.Options.IOptions<LicenseAlertOptions> _options;
+    private readonly Microsoft.Extensions.Options.IOptions<Billing.BillingOptions> _billing;
+    private readonly Microsoft.Extensions.Options.IOptions<Public.PortalLinksOptions> _portal;
 
-    public LicenseAlertService(ILicenseAlertRepository alerts, IWebhookPublisher webhooks, IUnitOfWork unitOfWork, Microsoft.Extensions.Options.IOptions<LicenseAlertOptions> options)
+    public LicenseAlertService(
+        ILicenseAlertRepository alerts,
+        IWebhookPublisher webhooks,
+        IUnitOfWork unitOfWork,
+        Microsoft.Extensions.Options.IOptions<LicenseAlertOptions> options,
+        Microsoft.Extensions.Options.IOptions<Billing.BillingOptions> billing,
+        Microsoft.Extensions.Options.IOptions<Public.PortalLinksOptions> portal)
     {
         _alerts = alerts;
         _webhooks = webhooks;
         _unitOfWork = unitOfWork;
         _options = options;
+        _billing = billing;
+        _portal = portal;
     }
 
     public async Task<int> RaiseDueAsync(
@@ -186,7 +210,8 @@ public sealed class LicenseAlertService : ILicenseAlertService
     {
         var options = _options.Value;
         var raised = 0;
-        var candidates = licenses.SelectMany(l => LicenseAlertRules.Evaluate(l, now, options).Select(a => (l.ClientId, Alert: a)))
+        var billingUrl = _billing.Value.Enabled ? _portal.Value.LinkTo("billing") : null;
+        var candidates = licenses.SelectMany(l => LicenseAlertRules.Evaluate(l, now, options, billingUrl).Select(a => (l.ClientId, Alert: a)))
             .Concat(apiKeys.SelectMany(k => LicenseAlertRules.Evaluate(k, now, options).Select(a => (k.ClientId, Alert: a))))
             .ToList();
         if (candidates.Count == 0)

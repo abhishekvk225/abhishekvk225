@@ -43,6 +43,11 @@ public static class ErrorCodes
     public const string SignupDisabled = "SIGNUP_DISABLED";
     public const string CaptchaFailed = "CAPTCHA_FAILED";
 
+    public const string BillingDisabled = "BILLING_DISABLED";
+    public const string BillingProfileIncomplete = "BILLING_PROFILE_INCOMPLETE";
+    public const string PaymentProviderUnavailable = "PAYMENT_PROVIDER_UNAVAILABLE";
+    public const string OrderNotRefundable = "ORDER_NOT_REFUNDABLE";
+
     public const string NoFaceDetected = "NO_FACE_DETECTED";
     public const string MultipleFaces = "MULTIPLE_FACES";
     public const string LowQualityImage = "LOW_QUALITY_IMAGE";

@@ -8,6 +8,8 @@ using NexaVerify.Application.Identity;
 using NexaVerify.Application.Persistence;
 using NexaVerify.Application.Api;
 using NexaVerify.Application.Auditing;
+using NexaVerify.Application.Billing;
+using NexaVerify.Infrastructure.Billing;
 using NexaVerify.Application.Dashboards;
 using NexaVerify.Application.Licensing;
 using NexaVerify.Application.Public;
@@ -89,6 +91,7 @@ public static class DependencyInjection
         services.AddOptions<SignupOptions>().Bind(configuration.GetSection(SignupOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
         services.AddOptions<CaptchaOptions>().Bind(configuration.GetSection(CaptchaOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
         services.AddOptions<PortalLinksOptions>().Bind(configuration.GetSection(PortalLinksOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
+        services.AddOptions<BillingOptions>().Bind(configuration.GetSection(BillingOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
         services.AddOptions<EmailOptions>().Bind(configuration.GetSection(EmailOptions.SectionName));
         services.AddOptions<SeedOptions>().Bind(configuration.GetSection(SeedOptions.SectionName));
 
@@ -148,6 +151,23 @@ public static class DependencyInjection
         services.AddScoped<ILicenseAdjustmentRepository, LicenseAdjustmentRepository>();
         services.AddScoped<ILicenseAdjustmentAtomics, LicenseAdjustmentAtomics>();
         services.AddScoped<LicensingSeeder>();
+
+        // Online payments (M12). No card data ever reaches these services: the customer pays on the provider's hosted page.
+        services.AddScoped<ICreditPackRepository, CreditPackRepository>();
+        services.AddScoped<IPaymentOrderRepository, PaymentOrderRepository>();
+        services.AddScoped<IPaymentEventRepository, PaymentEventRepository>();
+        services.AddScoped<IBillingProfileRepository, BillingProfileRepository>();
+        services.AddScoped<IPaymentOrderAtomics, PaymentOrderAtomics>();
+        services.AddScoped<IInvoiceNumberAllocator, InvoiceNumberAllocator>();
+        services.AddSingleton<IBillingThrottle, BillingThrottle>();
+        services.AddHttpClient<StripeProvider>((sp, client) => ConfigureProviderClient(client, sp.GetRequiredService<IOptions<BillingOptions>>().Value.Stripe.ApiBaseUrl, sp.GetRequiredService<IOptions<BillingOptions>>().Value.Stripe.TimeoutSeconds))
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
+        services.AddHttpClient<RazorpayProvider>((sp, client) => ConfigureProviderClient(client, sp.GetRequiredService<IOptions<BillingOptions>>().Value.Razorpay.ApiBaseUrl, sp.GetRequiredService<IOptions<BillingOptions>>().Value.Razorpay.TimeoutSeconds))
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
+        services.AddSingleton<SimulatedProvider>();
+        services.AddScoped<IPaymentProviderResolver, PaymentProviderResolver>();
+        services.AddSingleton<BillingMaintenanceProcessor>();
+        services.AddHostedService<BillingMaintenanceJob>();
         services.AddHostedService<LicenseExpirySweeper>();
 
         services.AddScoped<IFaceRepository, FaceRepository>();
@@ -209,5 +229,15 @@ public static class DependencyInjection
         services.AddHostedService<LicenseAlertJob>();
 
         return services;
+    }
+
+    private static void ConfigureProviderClient(HttpClient client, string baseUrl, int timeoutSeconds)
+    {
+        if (Uri.TryCreate(baseUrl.TrimEnd('/') + "/", UriKind.Absolute, out var uri))
+        {
+            client.BaseAddress = uri;
+        }
+
+        client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
     }
 }

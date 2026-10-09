@@ -97,6 +97,18 @@ public class AppDbContext : DbContext, IUnitOfWork
 
     public DbSet<LedgerVerificationRun> LedgerVerificationRuns => Set<LedgerVerificationRun>();
 
+    public DbSet<Domain.Billing.CreditPack> CreditPacks => Set<Domain.Billing.CreditPack>();
+
+    public DbSet<Domain.Billing.BillingProfile> BillingProfiles => Set<Domain.Billing.BillingProfile>();
+
+    public DbSet<Domain.Billing.PaymentOrder> PaymentOrders => Set<Domain.Billing.PaymentOrder>();
+
+    public DbSet<Domain.Billing.PaymentEvent> PaymentEvents => Set<Domain.Billing.PaymentEvent>();
+
+    public DbSet<Domain.Billing.Refund> Refunds => Set<Domain.Billing.Refund>();
+
+    public DbSet<Domain.Billing.InvoiceSequence> InvoiceSequences => Set<Domain.Billing.InvoiceSequence>();
+
     public DbSet<Domain.Api.ApiKey> ApiKeys => Set<Domain.Api.ApiKey>();
 
     public DbSet<Domain.Api.ApiRequestLog> ApiRequestLogs => Set<Domain.Api.ApiRequestLog>();

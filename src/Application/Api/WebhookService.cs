@@ -105,6 +105,8 @@ public sealed class WebhookService : IWebhookService
         new(WebhookEvents.LicenseExpired, "A license expired."),
         new(WebhookEvents.LicenseExhausted, "All credits were used."),
         new(WebhookEvents.ApiKeyExpiring, "An API key is about to expire."),
+        new(WebhookEvents.LicenseToppedUp, "A credit pack you bought was paid and its credits were added."),
+        new(WebhookEvents.LicenseCreditsRevoked, "Credits of a top-up were taken back because the purchase was refunded."),
     ];
 
     public async Task<Result<IReadOnlyList<WebhookEndpointDto>>> ListAsync(CancellationToken cancellationToken) =>

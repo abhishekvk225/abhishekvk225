@@ -44,7 +44,7 @@ public interface ILicenseService
 /// Platform-side license administration. Every change that moves credits writes an immutable ledger row in the same
 /// transaction as the license change, so the balance and its history can never disagree.
 /// </summary>
-public sealed partial class LicenseService : ILicenseService, ILicenseAdjustmentService
+public sealed partial class LicenseService : ILicenseService, ILicenseAdjustmentService, ILicenseGrantService
 {
     private readonly ILicenseRepository _licenses;
     private readonly ILedgerRepository _ledger;
@@ -117,7 +117,14 @@ public sealed partial class LicenseService : ILicenseService, ILicenseAdjustment
         return row is null ? Error.NotFound() : row.ToDto(Now);
     }
 
-    public async Task<Result<LicenseDto>> CreateAsync(Guid clientId, CreateLicenseRequest request, CancellationToken cancellationToken)
+    public Task<Result<LicenseDto>> CreateAsync(Guid clientId, CreateLicenseRequest request, CancellationToken cancellationToken) =>
+        CreateCoreAsync(clientId, request, "License issued", null, cancellationToken);
+
+    public Task<Result<LicenseDto>> CreateGrantAsync(Guid clientId, CreateLicenseRequest request, string ledgerReason, string source, CancellationToken cancellationToken) =>
+        CreateCoreAsync(clientId, request, ledgerReason, source, cancellationToken);
+
+    private async Task<Result<LicenseDto>> CreateCoreAsync(
+        Guid clientId, CreateLicenseRequest request, string ledgerReason, string? source, CancellationToken cancellationToken)
     {
         var client = await _clients.GetByIdAsync(clientId, cancellationToken);
         if (client is null || client.IsSystem)
@@ -164,9 +171,9 @@ public sealed partial class LicenseService : ILicenseService, ILicenseAdjustment
         await _unitOfWork.ExecuteInTransactionAsync(
             async ct =>
             {
-                await _writer.AppendAsync(license, LedgerEntryType.Grant, license.TotalCredits, 0, ct, reason: "License issued");
+                await _writer.AppendAsync(license, LedgerEntryType.Grant, license.TotalCredits, 0, ct, reason: ledgerReason);
                 _audit.Record(new AuditEntry("license.created", nameof(License), license.Id.ToString(), clientId,
-                    NewValues: new { license.LicenseKey, license.Name, license.TotalCredits, license.StartsAt, license.ExpiresAt, PlanId = plan?.Id }));
+                    NewValues: new { license.LicenseKey, license.Name, license.TotalCredits, license.StartsAt, license.ExpiresAt, PlanId = plan?.Id, Source = source }));
                 await _unitOfWork.SaveChangesAsync(ct);
                 return true;
             },

@@ -172,6 +172,29 @@ On the API side: add the portal's address to `ForwardedHeaders:KnownProxies` so 
 | `Captcha:SiteKey` / `Captcha:SecretKey` | | Required with `turnstile`. `SecretKey` is a **secret** (use the secrets directory). |
 | `Captcha:VerifyUrl` / `TimeoutSeconds` | Cloudflare siteverify / 5 | https only; redirects are not followed. |
 
+## Online payments (M12)
+Off unless enabled. Card data never reaches NexaVerify (hosted checkout). Keys are **secrets**: environment variables or the secrets directory (`Billing__Stripe__SecretKey`, ...), never `appsettings`. The provider adapters are **unverified against the live providers**; test with each provider's sandbox keys before going live.
+| Key | Default | Notes |
+|---|---|---|
+| `Billing:Enabled` | `false` (`true` in Development, with the simulated provider) | Master switch. When on, the provider settings below are validated at start-up. |
+| `Billing:Provider` | `None` | `None`, `Stripe`, `Razorpay` or `Simulated`. `Simulated` is refused (start-up error) outside the Development and Testing environments. Only this provider's webhook route exists. |
+| `Billing:Stripe:SecretKey` / `WebhookSecret` | | **Secrets** (`sk_...`/`rk_...`, `whsec_...`). Webhook endpoint to register: `https://<api>/api/v1/billing/webhooks/stripe`, events `checkout.session.completed`, `.async_payment_succeeded`, `.async_payment_failed`, `.expired`, `refund.created`. |
+| `Billing:Stripe:ApiBaseUrl` / `TimeoutSeconds` / `ToleranceSeconds` | `https://api.stripe.com` / 15 / 300 | Webhook timestamps further than this from now are rejected (replay). |
+| `Billing:Razorpay:KeyId` / `KeySecret` / `WebhookSecret` | | KeySecret and WebhookSecret are **secrets**. Webhook URL `https://<api>/api/v1/billing/webhooks/razorpay`, events `payment_link.paid`, `payment_link.expired`, `payment_link.cancelled`, `refund.created`. Uses Payment Links (hosted page). |
+| `Billing:Razorpay:ApiBaseUrl` / `TimeoutSeconds` | `https://api.razorpay.com` / 15 | |
+| `Billing:TaxPercent` / `TaxLabel` | 0 / `Tax` | Added to every pack price (for example 18 / `GST`). Frozen into each order. Region-specific rules are not supported. |
+| `Billing:AllowedCurrencies` | `["INR","USD"]` | Packs in other currencies are neither listed nor sold. |
+| `Billing:RequireBillingProfile` / `RequireTaxId` | `true` / `false` | Checkout needs a complete billing profile (and a GSTIN/VAT id when `RequireTaxId`). |
+| `Billing:CheckoutExpiryMinutes` | 60 | How long the hosted page stays open. |
+| `Billing:MaxCheckoutsPerUserPerHour` / `MaxCheckoutsPerClientPerHour` / `MaxOpenOrdersPerClient` | 10 / 30 / 5 | Shared (all nodes) counters. |
+| `Billing:ReconcileAfterMinutes` / `PendingExpiryHours` / `InlineReconcileSeconds` | 15 / 24 / 15 | Job and order-page confirmation with the provider when a webhook is late (0 = never inline). |
+| `Billing:JobIntervalMinutes` / `JobInitialDelaySeconds` / `JobBatchSize` | 60 / 120 / 100 | Reconcile/expiry job. |
+| `Billing:WebhookMaxBodyBytes` | 65536 | Larger webhook bodies get 413. |
+| `Billing:SuccessPath` / `CancelPath` | `/billing/success?order={orderId}` / `/billing/cancelled?order={orderId}` | Return pages on `Portal:PublicBaseUrl` (never trusted as proof of payment). |
+| `Billing:Seller:LegalName` / `AddressLines` / `TaxId` / `TaxIdLabel` / `Email` / `InvoiceFooter` | | Printed on invoices. Required (LegalName) when billing is on. |
+
+The platform reads `GET /api/v1/admin/billing/config` for the sandbox/live mode (derived from the key prefix); clients never see it. Alert emails and notifications link to `{Portal:PublicBaseUrl}/billing` while billing is enabled. Alert on log events 9010/9011/9013 (payment anomalies, not granted) and 9014 (refund paid out but credits not taken back).
+
 ## Scalability and multi-node operation (M9b)
 Several API nodes behind a load balancer need no sticky sessions. What is shared, how, and what to set:
 
