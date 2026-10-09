@@ -142,6 +142,12 @@ internal sealed class PlanRepository : IPlanRepository
     public Task<bool> CodeExistsAsync(string normalizedCode, Guid? exceptId, CancellationToken cancellationToken) =>
         _db.Plans.AnyAsync(p => p.Code == normalizedCode && p.Id != exceptId, cancellationToken);
 
+    public async Task<IReadOnlyList<Plan>> ListPublicAsync(CancellationToken cancellationToken) =>
+        await _db.Plans.AsNoTracking().Where(p => p.IsPublic && p.IsActive).OrderBy(p => p.DisplayOrder).ThenBy(p => p.Name).ToListAsync(cancellationToken);
+
+    public Task<Plan?> GetTrialAsync(CancellationToken cancellationToken) =>
+        _db.Plans.AsNoTracking().Where(p => p.IsTrial && p.IsActive).OrderBy(p => p.DisplayOrder).ThenBy(p => p.Name).FirstOrDefaultAsync(cancellationToken);
+
     public void Add(Plan plan) => _db.Plans.Add(plan);
 }
 

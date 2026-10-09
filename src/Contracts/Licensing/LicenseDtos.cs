@@ -75,11 +75,14 @@ public sealed record LicenseSummaryDto(
 
 public sealed record PlanDto(
     Guid Id, string Code, string Name, string? Description, int DefaultCredits, int DefaultDurationDays, int RateLimitPerMinute,
-    int? DailyQuota, int? MaxFaceProfiles, int MaxApiKeys, int MaxUsers, bool IsActive);
+    int? DailyQuota, int? MaxFaceProfiles, int MaxApiKeys, int MaxUsers, bool IsActive,
+    bool IsPublic = false, bool IsTrial = false, int DisplayOrder = 0, string? DisplayPrice = null, IReadOnlyList<string>? Highlights = null);
 
+/// <summary>The public-website fields (<c>IsPublic</c> .. <c>Highlights</c>) are optional: when omitted the stored value is kept; an empty <c>DisplayPrice</c>/<c>Highlights</c> clears it.</summary>
 public sealed record SavePlanRequest(
     string Code, string Name, string? Description, int DefaultCredits, int DefaultDurationDays, int RateLimitPerMinute,
-    int? DailyQuota, int? MaxFaceProfiles, int MaxApiKeys, int MaxUsers, bool IsActive);
+    int? DailyQuota, int? MaxFaceProfiles, int MaxApiKeys, int MaxUsers, bool IsActive,
+    bool? IsPublic = null, bool? IsTrial = null, int? DisplayOrder = null, string? DisplayPrice = null, IReadOnlyList<string>? Highlights = null);
 
 public sealed record CostRuleDto(
     Guid Id, string Scope, Guid? ClientId, Guid? PlanId, string Operation, int Credits, string ChargePolicy,

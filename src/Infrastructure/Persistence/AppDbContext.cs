@@ -63,6 +63,10 @@ public class AppDbContext : DbContext, IUnitOfWork
 
     public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
 
+    public DbSet<PendingSignup> PendingSignups => Set<PendingSignup>();
+
+    public DbSet<ContactRequest> ContactRequests => Set<ContactRequest>();
+
     public DbSet<LoginHistory> LoginHistory => Set<LoginHistory>();
 
     public DbSet<UserMfa> UserMfa => Set<UserMfa>();

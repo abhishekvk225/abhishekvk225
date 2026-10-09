@@ -16,7 +16,19 @@ internal sealed class PlanConfiguration : IEntityTypeConfiguration<Plan>
         b.Property(x => x.Code).HasMaxLength(30).IsUnicode(false).IsRequired();
         b.Property(x => x.Name).HasMaxLength(100).IsRequired();
         b.Property(x => x.Description).HasMaxLength(500);
+        b.Property(x => x.DisplayPrice).HasMaxLength(60);
+        b.Property(x => x.Highlights)
+            .HasConversion(
+                v => System.Text.Json.JsonSerializer.Serialize(v, (System.Text.Json.JsonSerializerOptions?)null),
+                v => System.Text.Json.JsonSerializer.Deserialize<List<string>>(v, (System.Text.Json.JsonSerializerOptions?)null) ?? new List<string>(),
+                new Microsoft.EntityFrameworkCore.ChangeTracking.ValueComparer<List<string>>(
+                    (a, c) => a != null && c != null && a.SequenceEqual(c),
+                    v => v.Aggregate(0, (hash, item) => HashCode.Combine(hash, item.GetHashCode())),
+                    v => v.ToList()))
+            .HasMaxLength(2000)
+            .IsRequired();
         b.HasIndex(x => x.Code).IsUnique();
+        b.HasIndex(x => new { x.IsPublic, x.DisplayOrder });
     }
 }
 

@@ -85,7 +85,7 @@ internal static class LicenseMapping
 
     public static PlanDto ToDto(this Plan p) => new(
         p.Id, p.Code, p.Name, p.Description, p.DefaultCredits, p.DefaultDurationDays, p.RateLimitPerMinute, p.DailyQuota, p.MaxFaceProfiles,
-        p.MaxApiKeys, p.MaxUsers, p.IsActive);
+        p.MaxApiKeys, p.MaxUsers, p.IsActive, p.IsPublic, p.IsTrial, p.DisplayOrder, p.DisplayPrice, p.Highlights.ToList());
 
     private static int UtilisationPercent(License l) => l.TotalCredits == 0 ? 0 : (int)Math.Round(100.0 * l.ConsumedCredits / l.TotalCredits);
 

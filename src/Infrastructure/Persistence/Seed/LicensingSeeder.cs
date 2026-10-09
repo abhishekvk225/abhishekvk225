@@ -25,10 +25,7 @@ public sealed class LicensingSeeder
 
         if (!await _db.Plans.AnyAsync(cancellationToken))
         {
-            var trial = Plan.Create("TRIAL", "Trial", 500, 14);
-            trial.RateLimitPerMinute = 30;
-            trial.MaxApiKeys = 2;
-            trial.MaxUsers = 3;
+            var trial = NewTrialPlan();
             var starter = Plan.Create("STARTER", "Starter", 10_000, 365);
             var business = Plan.Create("BUSINESS", "Business", 100_000, 365);
             business.RateLimitPerMinute = 300;
@@ -41,6 +38,15 @@ public sealed class LicensingSeeder
             _db.Plans.AddRange(trial, starter, business, enterprise);
         }
 
+        await _db.SaveChangesAsync(cancellationToken);
+
+        // The public website needs a trial plan to point sign-ups at; deployments that predate it (or lost it) get one. The migration
+        // flags an existing TRIAL plan, so this never duplicates it.
+        if (!await _db.Plans.AnyAsync(p => p.IsTrial, cancellationToken) && !await _db.Plans.AnyAsync(p => p.Code == "TRIAL", cancellationToken))
+        {
+            _db.Plans.Add(NewTrialPlan());
+        }
+
         if (!await _db.CostRules.AnyAsync(r => r.PlanId == null, cancellationToken))
         {
             _db.CostRules.AddRange(
@@ -51,5 +57,20 @@ public sealed class LicensingSeeder
         }
 
         await _db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>The public "Free trial": its public credits and period are the <c>Signup:TrialCredits</c> / <c>Signup:TrialDays</c> values.</summary>
+    private static Plan NewTrialPlan()
+    {
+        var trial = Plan.Create("TRIAL", "Free trial", 100, 14);
+        trial.Description = "Try NexaVerify with your own data. No credit card required.";
+        trial.RateLimitPerMinute = 30;
+        trial.MaxApiKeys = 2;
+        trial.MaxUsers = 3;
+        trial.IsPublic = true;
+        trial.IsTrial = true;
+        trial.DisplayOrder = 0;
+        trial.Highlights = ["Full API and web portal access", "Register, verify and identify faces", "No credit card required"];
+        return trial;
     }
 }

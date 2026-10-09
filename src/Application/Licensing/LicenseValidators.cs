@@ -96,6 +96,10 @@ public sealed class SavePlanRequestValidator : AbstractValidator<SavePlanRequest
         RuleFor(x => x.MaxFaceProfiles).GreaterThan(0).When(x => x.MaxFaceProfiles.HasValue);
         RuleFor(x => x.MaxApiKeys).InclusiveBetween(0, 1000);
         RuleFor(x => x.MaxUsers).InclusiveBetween(1, 100_000);
+        RuleFor(x => x.DisplayOrder).InclusiveBetween(0, 10_000).When(x => x.DisplayOrder.HasValue);
+        RuleFor(x => x.DisplayPrice).MaximumLength(60);
+        RuleFor(x => x.Highlights).Must(h => h is null || h.Count <= 10).WithMessage("At most 10 highlights.");
+        RuleForEach(x => x.Highlights).NotEmpty().MaximumLength(120);
     }
 }
 

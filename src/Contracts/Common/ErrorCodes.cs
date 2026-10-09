@@ -40,6 +40,9 @@ public static class ErrorCodes
 
     public const string PayloadTooLarge = "PAYLOAD_TOO_LARGE";
 
+    public const string SignupDisabled = "SIGNUP_DISABLED";
+    public const string CaptchaFailed = "CAPTCHA_FAILED";
+
     public const string NoFaceDetected = "NO_FACE_DETECTED";
     public const string MultipleFaces = "MULTIPLE_FACES";
     public const string LowQualityImage = "LOW_QUALITY_IMAGE";

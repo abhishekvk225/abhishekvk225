@@ -170,6 +170,22 @@ Image rules (server-enforced, configurable): `JPEG/PNG/WebP` detected by magic b
 | API usage (client) | calls, error rate, p95 latency, by key | ApiRequestLogs/UsageLogs |
 | System alerts | platform notifications (exhausted/expiring licenses, provider down, job failures, ledger-chain mismatch, error-rate spike) | Notifications + health checks |
 
+## 7a. Public API — `/api/v1/public` (anonymous; called server-to-server by the portal, no CORS)
+Added in M11. All endpoints are `[AllowAnonymous]`, bodies are capped at 16 KiB, and each POST is also covered by the per-IP `RateLimiting:AuthPerIpPerMinute` limiter. No tenant data is ever returned.
+
+| Method & path | Body | Success | Notes |
+|---|---|---|---|
+| `GET /public/plans` | – | `200` `[{id, name, description, credits, validityDays, highlights: string[], isTrial, displayPrice}]` | Active plans flagged public, by display order. `Cache-Control: public, max-age=60`. No prices: `displayPrice` is optional free text, otherwise show "Contact us". The trial plan reports `Signup:TrialCredits` / `Signup:TrialDays`. |
+| `GET /public/config` | – | `200` `{signupEnabled, trialCredits, trialDays, captcha: {provider: "none"\|"turnstile", siteKey: string\|null}}` | The Turnstile secret is never exposed. |
+| `POST /public/signup` | `{companyName, fullName, email, password, acceptTerms: true, captchaToken?, website?}` | `202` `{}` | Same response, body and (padded) timing whether the address is new, pending or already registered. New: a `PendingSignup` (password hash, SHA-256 of the token, 24 h expiry, one live row per address, a repeat replaces it) and a verification email linking to `{Portal:PublicBaseUrl}/verify-email?email=..&token=..`. Registered: a "you already have an account" email instead. Validation (password policy, `acceptTerms`, email format, disposable domains, missing fields) → `400` problem+json. `website` is a honeypot: non-empty = `202` and dropped. `403 SIGNUP_DISABLED` when `Signup:Enabled=false`; `400 CAPTCHA_FAILED`; `429 RATE_LIMITED` when the per-IP budget is used up. The per-address budget is exhausted silently (`202`, no email). |
+| `POST /public/signup/resend` | `{email}` | `202` `{}` | Always accepted. Only when a live pending sign-up exists: issues a fresh token (the old link stops working), restarts the 24 h period, re-sends the email; at most 3 resends per sign-up. Same IP and per-address budgets as sign-up. |
+| `POST /public/signup/verify` | `{email, token}` | `204` | Atomic and once-only: one conditional `UPDATE` claims the link, then in the same transaction the Client (Active, code from the company name, unique), the first `ClientAdmin` (password from the pending record, no forced change), the client data key and a trial license (`Signup:TrialCredits` credits, `Signup:TrialDays` days, ledger grant) are created through the same services as admin creation; audit `signup.verified` / `client.created` with source `public-signup`. Any failure (unknown, expired, wrong token, replay, address registered meanwhile, internal failure) is the same generic `400`; a failure rolls everything back and leaves the link usable. |
+| `POST /public/contact` | `{name, email, company?, message (≤4000), website?}` | `202` `{}` | Stored as a `ContactRequest` (deleted after `Signup:ContactRetentionDays`, 180) and announced to `Signup:ContactNotifyEmail`. Honeypot as above. `429` after `Signup:MaxContactsPerIpPerHour`. |
+
+Platform side: `GET /api/v1/admin/contact-requests?page&pageSize` (permission `clients.read`, newest first). Admin plan endpoints accept the optional `isPublic`, `isTrial`, `displayOrder`, `displayPrice`, `highlights` fields (omitted = keep the stored value; empty `displayPrice`/`highlights` clears it) and return them in `PlanDto`.
+
+New error codes: `SIGNUP_DISABLED` (403), `CAPTCHA_FAILED` (400).
+
 ## 7. Rate limiting & quotas
 - **Layer 1 — anonymous/auth endpoints**: per-IP sliding window (e.g. 10/min login, 5/min forgot-password) + per-account lockout.
 - **Layer 2 — authenticated**: partitioned per API key (or per user for JWT) — limit from key override → client setting → plan → platform default (all configurable). Token-bucket for face endpoints (burst allowed), fixed-window for the rest.
