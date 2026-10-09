@@ -1,0 +1,23 @@
+@using NexaVerify.Web.Services
+
+@* Code samples in several languages, switched with radio buttons and CSS (no script). Code is always plain text inside <pre>. *@
+<div class="mk-tabs" role="group" aria-label="@Label" data-testid="code-tabs">
+    @for (var i = 0; i < Samples.Count; i++)
+    {
+        var tabId = $"{Id}-tab-{i}";
+        <input type="radio" class="mk-tab-input" name="@($"{Id}-lang")" id="@tabId" checked="@(i == 0)" />
+        <label for="@tabId" class="mk-tab-label">@Samples[i].Language</label>
+    }
+    @foreach (var sample in Samples)
+    {
+        <div class="mk-tab-panel"><pre tabindex="0"><code>@sample.Code</code></pre></div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Id { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired] public IReadOnlyList<DocSample> Samples { get; set; } = [];
+}

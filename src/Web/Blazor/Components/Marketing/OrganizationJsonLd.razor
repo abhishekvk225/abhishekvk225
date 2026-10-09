@@ -1,0 +1,23 @@
+@using System.Text.Json
+@using NexaVerify.Web.Security
+@inject SiteUrls Urls
+@inject NavigationManager Nav
+
+@* The ONE place on the public site that writes raw markup. The content is built here from fixed text and the configured site address,
+   never from visitor input, and serialised with System.Text.Json's default encoder, which escapes < > & and ' so the data cannot
+   close the script element or inject markup. *@
+@((MarkupString)Markup)
+
+@code {
+    internal string Markup => $"<script type=\"application/ld+json\">{Json}</script>";
+
+    internal string Json => JsonSerializer.Serialize(new Dictionary<string, object?>
+    {
+        ["@context"] = "https://schema.org",
+        ["@type"] = "Organization",
+        ["name"] = "NexaVerify",
+        ["url"] = Urls.Absolute("/", Nav.BaseUri),
+        ["logo"] = Urls.Absolute("/favicon.svg", Nav.BaseUri),
+        ["description"] = "Face verification and identification software with an API and a web portal for businesses.",
+    });
+}

@@ -1,0 +1,59 @@
+@* Abstract face-scan graphic drawn in SVG. Decorative: hidden from assistive technology. Colours come from the site's CSS variables. *@
+<svg class="mk-hero-art" viewBox="0 0 480 440" role="presentation" aria-hidden="true" focusable="false" data-testid="hero-art">
+    <defs>
+        <linearGradient id="hero-g1" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="var(--mk-primary)" />
+            <stop offset="1" stop-color="var(--mk-violet)" />
+        </linearGradient>
+        <linearGradient id="hero-g2" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="var(--mk-accent)" stop-opacity="0.55" />
+            <stop offset="1" stop-color="var(--mk-accent)" stop-opacity="0" />
+        </linearGradient>
+        <clipPath id="hero-clip"><rect x="90" y="60" width="300" height="320" rx="36" /></clipPath>
+    </defs>
+
+    <circle cx="240" cy="220" r="205" fill="var(--mk-primary-soft)" />
+    <circle cx="240" cy="220" r="150" fill="none" stroke="var(--mk-line)" stroke-width="1.500" stroke-dasharray="3 7" />
+
+    <rect x="90" y="60" width="300" height="320" rx="36" fill="var(--mk-surface)" stroke="var(--mk-line)" stroke-width="1.500" />
+    <g clip-path="url(#hero-clip)">
+        <rect x="90" y="60" width="300" height="320" fill="url(#hero-g1)" opacity="0.08" />
+        <!-- head and shoulders -->
+        <ellipse cx="240" cy="205" rx="64" ry="78" fill="none" stroke="url(#hero-g1)" stroke-width="3" />
+        <path d="M120 380c8-62 56-98 120-98s112 36 120 98" fill="none" stroke="url(#hero-g1)" stroke-width="3" stroke-linecap="round" />
+        <!-- landmark points and mesh -->
+        <g stroke="var(--mk-primary)" stroke-width="1.200" opacity="0.45" fill="none">
+            <path d="M205 185l35-18 35 18M205 185l35 52 35-52M205 185v38l35 14 35-14v-38M222 262l18 8 18-8" />
+        </g>
+        <g fill="var(--mk-primary)">
+            <circle cx="205" cy="185" r="4.500" /><circle cx="275" cy="185" r="4.500" /><circle cx="240" cy="167" r="4" />
+            <circle cx="240" cy="237" r="4" /><circle cx="205" cy="223" r="4" /><circle cx="275" cy="223" r="4" />
+            <circle cx="222" cy="262" r="4" /><circle cx="258" cy="262" r="4" /><circle cx="240" cy="270" r="4" />
+        </g>
+        <!-- scan band -->
+        <rect class="mk-scan" x="90" y="150" width="300" height="70" fill="url(#hero-g2)" />
+        <line class="mk-scan" x1="90" y1="220" x2="390" y2="220" stroke="var(--mk-accent)" stroke-width="2.500" />
+    </g>
+
+    <!-- corner brackets -->
+    <g fill="none" stroke="var(--mk-accent)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M118 112V92a10 10 0 0 1 10-10h20" /><path d="M362 112V92a10 10 0 0 0-10-10h-20" />
+        <path d="M118 328v20a10 10 0 0 0 10 10h20" /><path d="M362 328v20a10 10 0 0 1-10 10h-20" />
+    </g>
+
+    <!-- result chip -->
+    <g transform="translate(300 316)">
+        <rect width="150" height="56" rx="16" fill="var(--mk-surface)" stroke="var(--mk-line)" stroke-width="1.500" />
+        <circle cx="30" cy="28" r="14" fill="var(--mk-success)" />
+        <path d="m23 28 5 5 9-10" fill="none" stroke="var(--mk-success-contrast)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+        <rect x="54" y="17" width="72" height="8" rx="4" fill="var(--mk-text)" opacity="0.75" />
+        <rect x="54" y="33" width="48" height="7" rx="3.500" fill="var(--mk-muted)" opacity="0.6" />
+    </g>
+    <!-- credit chip -->
+    <g transform="translate(26 120)">
+        <rect width="118" height="48" rx="14" fill="var(--mk-surface)" stroke="var(--mk-line)" stroke-width="1.500" />
+        <circle cx="26" cy="24" r="11" fill="none" stroke="var(--mk-primary)" stroke-width="3" />
+        <rect x="46" y="15" width="56" height="8" rx="4" fill="var(--mk-text)" opacity="0.75" />
+        <rect x="46" y="29" width="36" height="6" rx="3" fill="var(--mk-muted)" opacity="0.6" />
+    </g>
+</svg>

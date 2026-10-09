@@ -1,0 +1,52 @@
+@using NexaVerify.Web.Services
+
+<article class="mk-card mk-plan @(Plan.IsTrial ? "mk-plan-featured" : null)" data-testid="plan-card" aria-labelledby="@NameId">
+    @if (Plan.IsTrial)
+    {
+        <p class="mk-plan-flag">Start here</p>
+    }
+    <h3 id="@NameId" class="mk-h3">@Plan.Name</h3>
+    <p class="mk-plan-price" data-testid="plan-price">@PriceText</p>
+    @if (!string.IsNullOrWhiteSpace(Plan.Description))
+    {
+        <p class="mk-muted">@Plan.Description</p>
+    }
+    <p class="mk-plan-credits"><strong>@Plan.Credits.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</strong> credits <span class="mk-muted">&middot; valid for @ValidityText(Plan.ValidityDays)</span></p>
+    @if (Plan.Highlights.Count > 0)
+    {
+        <ul class="mk-checks">
+            @foreach (var highlight in Plan.Highlights)
+            {
+                <li><MkIcon Name="check" Size="18" /><span>@highlight</span></li>
+            }
+        </ul>
+    }
+    <div class="mk-plan-cta">
+        @if (Plan.IsTrial)
+        {
+            <a href="/signup" class="mk-btn mk-btn-primary">Start free trial</a>
+        }
+        else
+        {
+            <a href="/contact" class="mk-btn mk-btn-outline">Contact us</a>
+        }
+    </div>
+</article>
+
+@code {
+    [Parameter, EditorRequired] public PublicPlanDto Plan { get; set; } = default!;
+
+    private string NameId => $"plan-{Plan.Id:N}";
+
+    /// <summary>The API's price text, "Free" for a trial without one, otherwise a plain "Contact us" (no invented prices).</summary>
+    private string PriceText =>
+        !string.IsNullOrWhiteSpace(Plan.DisplayPrice) ? Plan.DisplayPrice! : Plan.IsTrial ? "Free" : "Contact us";
+
+    public static string ValidityText(int days) => days switch
+    {
+        365 => "1 year",
+        > 365 when days % 365 == 0 => $"{days / 365} years",
+        1 => "1 day",
+        _ => $"{days} days",
+    };
+}

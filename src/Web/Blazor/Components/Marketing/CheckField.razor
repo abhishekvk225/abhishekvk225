@@ -1,0 +1,24 @@
+@using System.Linq.Expressions
+@using Microsoft.AspNetCore.Components.Forms
+
+<div class="mk-field">
+    <div class="mk-check">
+        <InputCheckbox id="@Id" Value="Value" ValueChanged="ValueChanged" ValueExpression="ValueExpression" required="@Required" aria-describedby="@($"{Id}-error")" />
+        <label for="@Id">@ChildContent</label>
+    </div>
+    <div id="@Id-error" aria-live="polite"><ValidationMessage For="ValueExpression" class="mk-error" /></div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Id { get; set; } = string.Empty;
+
+    [Parameter] public bool Value { get; set; }
+
+    [Parameter] public EventCallback<bool> ValueChanged { get; set; }
+
+    [Parameter] public Expression<Func<bool>>? ValueExpression { get; set; }
+
+    [Parameter] public bool Required { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

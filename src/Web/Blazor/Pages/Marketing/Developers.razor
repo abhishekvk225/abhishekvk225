@@ -1,0 +1,57 @@
+@page "/developers"
+@layout MarketingLayout
+
+<SeoHead Title="Developers" Path="/developers" Description="Use the NexaVerify API: authenticate with an API key, register people, verify and identify faces, and receive signed webhooks. Examples in curl, C# and JavaScript." />
+
+<PageHero Eyebrow="Developers" Title="A small API for faces"
+          Lead="Register people, verify and identify with a few HTTPS calls. Authenticate with an API key from your portal.">
+    <div class="mk-hero-actions">
+        <a href="/signup" class="mk-btn mk-btn-primary mk-btn-lg">Get an API key</a>
+        <a href="/client/api-docs" class="mk-btn mk-btn-outline mk-btn-lg" data-testid="api-guide-link">Open the full API guide</a>
+    </div>
+    <p class="mk-muted mk-hero-note">The full guide, with every endpoint and error code, is inside the portal after you sign in.</p>
+</PageHero>
+
+<MkSection Id="auth" Eyebrow="Authentication" Title="Send your key in the X-Api-Key header" Lead="Create a key in the portal under API keys. Choose what it may do. The key is shown once, so store it in a secret manager and never in your front-end code.">
+    <CodeTabs Id="auth" Label="Check your credits" Samples="@Sample("balance")" />
+    <ul class="mk-facts">
+        <li><strong>Base address:</strong> <code>@ApiDocsContent.BaseUrlPlaceholder</code> (replace with your API address)</li>
+        <li><strong>Photos:</strong> JPEG, PNG or WebP, up to 5 MB, one face.</li>
+        <li><strong>Retries:</strong> send an <code>Idempotency-Key</code> header so a repeated request is not charged twice.</li>
+    </ul>
+</MkSection>
+
+<MkSection Id="enrol" Tone="alt" Eyebrow="Register" Title="Register a person">
+    <p class="mk-prose-p">@Summary("enroll")</p>
+    <CodeTabs Id="enroll" Label="Register a person" Samples="@Sample("enroll")" />
+</MkSection>
+
+<MkSection Id="verify" Eyebrow="Verify" Title="Check one person (1:1)">
+    <p class="mk-prose-p">@Summary("verify")</p>
+    <CodeTabs Id="verify" Label="Verify a person" Samples="@Sample("verify")" />
+</MkSection>
+
+<MkSection Id="identify" Tone="alt" Eyebrow="Identify" Title="Find a person (1:N)">
+    <p class="mk-prose-p">@Summary("identify")</p>
+    <CodeTabs Id="identify" Label="Identify a person" Samples="@Sample("identify")" />
+</MkSection>
+
+<MkSection Id="webhooks" Eyebrow="Webhooks" Title="Verify webhook signatures" Lead="Each webhook carries an X-Signature header. Compute the signature over the timestamp and the raw body with your webhook secret, compare in constant time, and reject old messages.">
+    <CodeTabs Id="webhook" Label="Verify a webhook signature" Samples="ApiDocsContent.WebhookVerification" />
+</MkSection>
+
+<MkSection Id="errors" Tone="alt" Eyebrow="Errors" Title="Predictable errors and limits">
+    <ul class="mk-facts">
+        <li>Errors use a standard problem format with a stable <code>code</code> and a <code>correlationId</code> you can quote to support.</li>
+        <li>When you are rate limited (HTTP 429), wait for the number of seconds in the <code>Retry-After</code> header.</li>
+        <li>The portal's API guide lists every error code and webhook event.</li>
+    </ul>
+</MkSection>
+
+<CtaBand Title="Try it with a free account" Text="Sign up, create a key and make your first call in minutes." />
+
+@code {
+    private static IReadOnlyList<DocSample> Sample(string id) => ApiDocsContent.Endpoints.First(e => e.Id == id).Samples;
+
+    private static string Summary(string id) => ApiDocsContent.Endpoints.First(e => e.Id == id).Summary;
+}

@@ -1,0 +1,22 @@
+@inherits LayoutComponentBase
+@using NexaVerify.Web.Security
+
+@* Public website shell: skip link, header, landmarks, footer. Static server-rendered; the only script is js/site.js (theme, menu, password hint). *@
+<div class="mk">
+    <a class="mk-skip" href="#main-content">Skip to main content</a>
+    <MarketingHeader IsSignedIn="@(DashboardHref is not null)" DashboardHref="@DashboardHref" />
+    <main id="main-content" tabindex="-1" class="mk-main">
+        @Body
+    </main>
+    <MarketingFooter />
+</div>
+
+@code {
+    [CascadingParameter] private HttpContext? Http { get; set; }
+
+    /// <summary>Where "Go to dashboard" leads, when the request comes from a signed-in portal user.</summary>
+    private string? DashboardHref =>
+        Http?.User is { Identity.IsAuthenticated: true } user && user.FindFirst(PortalClaims.Portal)?.Value is { } portal
+            ? ReturnUrl.HomeFor(portal)
+            : null;
+}

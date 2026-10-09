@@ -1,0 +1,29 @@
+<section class="mk-cta" aria-labelledby="cta-title">
+    <div class="mk-container mk-cta-inner">
+        <div>
+            <h2 id="cta-title" class="mk-h2">@Title</h2>
+            <p class="mk-lead">@Text</p>
+        </div>
+        <div class="mk-cta-actions">
+            <a href="@PrimaryHref" class="mk-btn mk-btn-primary mk-btn-lg" data-testid="cta-primary">@PrimaryText</a>
+            @if (!string.IsNullOrEmpty(SecondaryHref))
+            {
+                <a href="@SecondaryHref" class="mk-btn mk-btn-outline mk-btn-lg">@SecondaryText</a>
+            }
+        </div>
+    </div>
+</section>
+
+@code {
+    [Parameter] public string Title { get; set; } = "Start verifying people today";
+
+    [Parameter] public string Text { get; set; } = "Create a free trial account in a few minutes. No card needed.";
+
+    [Parameter] public string PrimaryText { get; set; } = "Start free trial";
+
+    [Parameter] public string PrimaryHref { get; set; } = "/signup";
+
+    [Parameter] public string? SecondaryText { get; set; } = "Talk to us";
+
+    [Parameter] public string? SecondaryHref { get; set; } = "/contact";
+}

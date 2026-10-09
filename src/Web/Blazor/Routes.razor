@@ -1,29 +1,48 @@
 @inject ClientAddress Address
-<ThemeHost>
-    <Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
-        <Found Context="routeData">
-            <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layouts.AuthLayout)">
-                <Authorizing>
-                    <SkeletonCard Lines="3" />
-                </Authorizing>
-                <NotAuthorized Context="auth">
-                    @if (auth.User.Identity?.IsAuthenticated == true)
-                    {
-                        <AccessDenied />
-                    }
-                    else
-                    {
-                        <RedirectToLogin />
-                    }
-                </NotAuthorized>
-            </AuthorizeRouteView>
-            <FocusOnNavigate RouteData="routeData" Selector="h1" />
-        </Found>
-    </Router>
-</ThemeHost>
+
+@* Default title; every page that sets its own PageTitle (initialised later) wins. A static <title> in App.razor would come first and hide it. *@
+<PageTitle>NexaVerify</PageTitle>
+
+@if (IsMarketingRequest)
+{
+    @* The public website carries its own styling and needs none of the portal's MudBlazor providers. *@
+    @Content
+}
+else
+{
+    <ThemeHost>@Content</ThemeHost>
+}
 
 @code {
     [Parameter] public string? ClientIp { get; set; }
+
+    [CascadingParameter] private HttpContext? Http { get; set; }
+
+    private bool IsMarketingRequest => Http is { } http && NexaVerify.Web.Security.PublicRoutes.IsMarketing(http.Request.Path);
+
+    private RenderFragment Content => __builder =>
+    {
+        <Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
+            <Found Context="routeData">
+                <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layouts.AuthLayout)">
+                    <Authorizing>
+                        <SkeletonCard Lines="3" />
+                    </Authorizing>
+                    <NotAuthorized Context="auth">
+                        @if (auth.User.Identity?.IsAuthenticated == true)
+                        {
+                            <AccessDenied />
+                        }
+                        else
+                        {
+                            <RedirectToLogin />
+                        }
+                    </NotAuthorized>
+                </AuthorizeRouteView>
+                <FocusOnNavigate RouteData="routeData" Selector="h1" />
+            </Found>
+        </Router>
+    };
 
     protected override void OnInitialized() => Address.Value = ClientIp;
 }

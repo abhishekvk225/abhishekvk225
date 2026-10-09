@@ -1,0 +1,113 @@
+@page "/contact"
+@layout MarketingLayout
+@inject IPublicApiClient PublicApi
+
+<SeoHead Title="Contact us" Path="/contact" Description="Questions about NexaVerify, plans or security? Send us a message and we will reply by email." />
+
+<PageHero Eyebrow="Contact" Title="Talk to us" Lead="Questions about plans, volumes, security or a trial? Tell us a little and we will reply by email." />
+
+<MkSection Id="contact-form">
+    <div class="mk-form-layout">
+        <div class="mk-prose">
+            <h2 class="mk-h3">What to include</h2>
+            <ul>
+                <li>What you want to use face checks for</li>
+                <li>Roughly how many people and checks per month</li>
+                <li>Any security or legal questions you have</li>
+            </ul>
+            <p class="mk-muted">Please do not send photos, passwords or API keys in this form.</p>
+            <p class="mk-muted">Looking to try it first? <a href="/signup" class="mk-link">Start a free trial</a>.</p>
+        </div>
+
+        <div class="mk-card mk-form-card">
+            @if (_sent)
+            {
+                <FormAlert Kind="success" TestId="contact-sent">
+                    <strong>Thank you. Your message is on its way.</strong>
+                    <p>We will reply to the email address you gave us as soon as we can.</p>
+                </FormAlert>
+                <a href="/" class="mk-btn mk-btn-outline">Back to the home page</a>
+            }
+            else
+            {
+                <h2 class="mk-h3">Send a message</h2>
+                <EditForm EditContext="_context" FormName="contact" OnValidSubmit="SubmitAsync" OnInvalidSubmit="OnInvalid" class="mk-form" data-testid="contact-form">
+                    <DataAnnotationsValidator />
+                    @if (_error is not null)
+                    {
+                        <FormAlert Kind="error" Reference="@_error.CorrelationId" TestId="contact-error">@_error.Message</FormAlert>
+                    }
+                    @foreach (var message in _general)
+                    {
+                        <FormAlert Kind="error" TestId="contact-general-error">@message</FormAlert>
+                    }
+                    <TextField Id="contact-name" Label="Your name" @bind-Value="Model.Name" Required="true" Autocomplete="name" MaxLength="120" />
+                    <TextField Id="contact-email" Label="Email address" Type="email" @bind-Value="Model.Email" Required="true" Autocomplete="email" />
+                    <TextField Id="contact-company" Label="Company (optional)" @bind-Value="Model.Company" Autocomplete="organization" MaxLength="120" />
+                    <div class="mk-field">
+                        <label for="contact-message" class="mk-label">How can we help? <span class="mk-req" aria-hidden="true">*</span></label>
+                        <InputTextArea id="contact-message" class="mk-input mk-textarea" @bind-Value="Model.Message" rows="6" maxlength="4000" required="required" aria-describedby="contact-message-error" />
+                        <div id="contact-message-error" aria-live="polite"><ValidationMessage For="() => Model.Message" class="mk-error" /></div>
+                    </div>
+                    <Honeypot @bind-Value="Model.Website" />
+                    <button type="submit" class="mk-btn mk-btn-primary mk-btn-block" data-testid="contact-submit">Send message</button>
+                </EditForm>
+            }
+        </div>
+    </div>
+</MkSection>
+
+@code {
+    private EditContext _context = default!;
+    private ValidationMessageStore _store = default!;
+    private bool _sent;
+    private ApiError? _error;
+    private List<string> _general = [];
+
+    // Posted values arrive here on a form submit; on a plain page view the form starts empty. The property is called Model because
+    // the inputs are named after the expression "Model.Field".
+    [SupplyParameterFromForm(FormName = "contact")] private ContactModel Model { get; set; } = default!;
+
+    protected override void OnInitialized()
+    {
+        Model ??= new ContactModel();
+        _context = new EditContext(Model);
+        _store = new ValidationMessageStore(_context);
+    }
+
+    private void OnInvalid() => _error = null;
+
+    private async Task SubmitAsync()
+    {
+        _error = null;
+        _general = [];
+        _store.Clear();
+
+        // A filled honeypot is a bot: act as if it worked, send nothing.
+        if (!string.IsNullOrWhiteSpace(Model.Website))
+        {
+            _sent = true;
+            return;
+        }
+
+        var result = await PublicApi.ContactAsync(new ContactRequest(Model.Name.Trim(), Model.Email.Trim(), Model.Company?.Trim(), Model.Message));
+        if (result.IsSuccess)
+        {
+            _sent = true;
+            return;
+        }
+
+        var failure = result.Error!;
+        if (failure.FieldErrors is { Count: > 0 })
+        {
+            _general = FormErrorMapper.Apply(typeof(ContactModel), _context, _store, failure.FieldErrors, out var mapped);
+            _context.NotifyValidationStateChanged();
+            if (mapped || _general.Count > 0)
+            {
+                return;
+            }
+        }
+
+        _error = failure;
+    }
+}

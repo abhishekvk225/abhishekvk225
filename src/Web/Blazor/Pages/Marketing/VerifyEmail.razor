@@ -1,0 +1,92 @@
+@page "/verify-email"
+@layout MarketingLayout
+@inject IPublicApiClient PublicApi
+
+<SeoHead Title="Confirm your email" Path="/verify-email" NoIndex="true" Description="Confirm your email address to finish creating your NexaVerify account." />
+
+<PageHero Title="@HeadingText" />
+
+<MkSection Id="verify-email">
+    <div class="mk-narrow">
+        <div class="mk-card mk-form-card">
+            @if (_state == State.Done)
+            {
+                <div class="mk-state" data-testid="verify-success">
+                    <span class="mk-state-icon mk-state-ok" aria-hidden="true"><MkIcon Name="check" Size="28" /></span>
+                    <p role="status">Thank you. Your email is confirmed and your account is ready.</p>
+                    <a href="/login" class="mk-btn mk-btn-primary mk-btn-lg" data-testid="verify-signin">Sign in</a>
+                </div>
+            }
+            else if (_state == State.Invalid)
+            {
+                <div class="mk-state" role="alert" data-testid="verify-invalid">
+                    <span class="mk-state-icon" aria-hidden="true"><MkIcon Name="alert" Size="28" /></span>
+                    <p>This link is not valid any more. It may have expired or already been used.</p>
+                    <p class="mk-muted">If you have already confirmed your email, you can sign in. Otherwise, start again and we will send you a new link.</p>
+                    <a href="/signup" class="mk-btn mk-btn-primary" data-testid="verify-restart">Start sign-up again</a>
+                    <a href="/login" class="mk-link">Sign in</a>
+                </div>
+            }
+            else
+            {
+                <EditForm EditContext="_context" FormName="verify-email" OnValidSubmit="SubmitAsync" class="mk-form" data-testid="verify-form">
+                    @if (_error is not null)
+                    {
+                        <FormAlert Kind="error" Reference="@_error.CorrelationId" TestId="verify-error">@_error.Message</FormAlert>
+                    }
+                    <p>Press the button to finish creating your account for <strong>@Email</strong>.</p>
+                    <button type="submit" class="mk-btn mk-btn-primary mk-btn-block mk-btn-lg" data-testid="verify-submit">Confirm my email</button>
+                </EditForm>
+            }
+        </div>
+    </div>
+</MkSection>
+
+@code {
+    private enum State { Ready, Done, Invalid }
+
+    private State _state = State.Ready;
+    private ApiError? _error;
+    private EditContext _context = new(new object());
+
+    /// <summary>Both values come from the link in the email. The token is never shown on the page.</summary>
+    [SupplyParameterFromQuery(Name = "email")] public string? Email { get; set; }
+
+    [SupplyParameterFromQuery(Name = "token")] public string? Token { get; set; }
+
+    private string HeadingText => _state switch
+    {
+        State.Done => "Email confirmed",
+        State.Invalid => "We could not confirm your email",
+        _ => "Confirm your email",
+    };
+
+    protected override void OnParametersSet()
+    {
+        // The link must carry both values, of a sensible size, or there is nothing to confirm.
+        if (_state == State.Ready && (string.IsNullOrWhiteSpace(Email) || string.IsNullOrWhiteSpace(Token) || Email.Length > 256 || Token.Length > 2048))
+        {
+            _state = State.Invalid;
+        }
+    }
+
+    // Confirming needs a deliberate button press, not just opening the link: mail scanners and link previews open links
+    // automatically and would otherwise use up the one-time token before the person gets to it.
+    private async Task SubmitAsync()
+    {
+        _error = null;
+        var result = await PublicApi.VerifySignupAsync(new VerifySignupRequest(Email!.Trim(), Token!));
+        if (result.IsSuccess)
+        {
+            _state = State.Done;
+        }
+        else if (result.Error!.Status is 400 or 404 or 410)
+        {
+            _state = State.Invalid;
+        }
+        else
+        {
+            _error = result.Error;
+        }
+    }
+}

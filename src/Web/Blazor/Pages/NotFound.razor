@@ -1,11 +1,12 @@
 @page "/not-found"
-@layout AuthLayout
+@layout MarketingLayout
 
-<PageTitle>Page not found · NexaVerify</PageTitle>
-<EmptyState Icon="@Icons.Material.Outlined.SearchOff" Title="We couldn't find that page" Message="The link may be out of date, or you may not have access to it." ActionText="Go to sign in" OnAction="GoHome" />
+<SeoHead Title="Page not found" Path="/not-found" NoIndex="true" Description="We could not find the page you were looking for." />
 
-@code {
-    [Inject] private NavigationManager Nav { get; set; } = default!;
-
-    private void GoHome() => Nav.NavigateTo("login");
-}
+<PageHero Eyebrow="Error 404" Title="We couldn't find that page" Lead="The link may be out of date, or the page may have moved.">
+    <div class="mk-hero-actions" data-testid="not-found-actions">
+        <a href="/" class="mk-btn mk-btn-primary mk-btn-lg">Go to the home page</a>
+        <a href="/login" class="mk-btn mk-btn-outline mk-btn-lg">Sign in</a>
+        <a href="/contact" class="mk-link">Contact us</a>
+    </div>
+</PageHero>

@@ -1,0 +1,57 @@
+@page "/how-it-works"
+@layout MarketingLayout
+
+<SeoHead Title="How it works" Path="/how-it-works" Description="From sign-up to your first face check in minutes: create an account, register people, check a photo, and see the results and your credits." />
+
+<PageHero Eyebrow="How it works" Title="From sign-up to your first check in minutes"
+          Lead="No installation and no training data. Create an account, add a few people and try a check." />
+
+<MkSection Id="walkthrough">
+    <ol class="mk-timeline" data-testid="walkthrough">
+        <li>
+            <span class="mk-step-no" aria-hidden="true">1</span>
+            <div>
+                <h2 class="mk-h3">Create your account</h2>
+                <p class="mk-muted">Sign up with your work email, confirm it from the link we send, and sign in. Your free trial comes with credits to try everything.</p>
+            </div>
+        </li>
+        <li>
+            <span class="mk-step-no" aria-hidden="true">2</span>
+            <div>
+                <h2 class="mk-h3">Register people</h2>
+                <p class="mk-muted">Add each person with a clear photo, your own reference (such as an employee number) and the consent reference you hold. Photos must be JPEG, PNG or WebP, up to 5 MB, showing one face.</p>
+            </div>
+        </li>
+        <li>
+            <span class="mk-step-no" aria-hidden="true">3</span>
+            <div>
+                <h2 class="mk-h3">Check a photo</h2>
+                <p class="mk-muted">Use the camera or upload a photo. <strong>Verify</strong> answers "is this the person I expect?". <strong>Identify</strong> answers "who is this?" by listing the closest people you registered.</p>
+            </div>
+        </li>
+        <li>
+            <span class="mk-step-no" aria-hidden="true">4</span>
+            <div>
+                <h2 class="mk-h3">Review results and credits</h2>
+                <p class="mk-muted">Every check appears in your history with its result. The dashboard shows how many credits you have used and how many remain.</p>
+            </div>
+        </li>
+        <li>
+            <span class="mk-step-no" aria-hidden="true">5</span>
+            <div>
+                <h2 class="mk-h3">Connect your systems (optional)</h2>
+                <p class="mk-muted">Create an API key and call the same features from your own software. Webhooks tell your systems when something happens.</p>
+            </div>
+        </li>
+    </ol>
+</MkSection>
+
+<MkSection Id="credits" Tone="alt" Eyebrow="Credits" Title="How credits work" Lead="Credits are the simple way we measure use.">
+    <div class="mk-grid mk-grid-3">
+        <FeatureCard Icon="check-person" Title="Each action uses credits">Registering, verifying and identifying each have a cost, which the portal shows.</FeatureCard>
+        <FeatureCard Icon="clock" Title="Credits have a validity period">Your licence has a number of credits and an end date. You are warned before either runs out.</FeatureCard>
+        <FeatureCard Icon="shield" Title="Fair when things go wrong">If our face engine is unavailable and a check cannot run, it is not charged.</FeatureCard>
+    </div>
+</MkSection>
+
+<CtaBand />

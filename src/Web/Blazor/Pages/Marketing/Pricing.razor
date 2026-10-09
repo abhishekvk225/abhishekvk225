@@ -1,0 +1,85 @@
+@page "/pricing"
+@layout MarketingLayout
+@inject IPublicApiClient PublicApi
+
+<SeoHead Title="Pricing" Path="/pricing" Description="Pay for credits, not seats. Start with a free trial, then choose a plan or talk to us about your volume." />
+
+<PageHero Eyebrow="Pricing" Title="Simple plans based on credits"
+          Lead="Each registration, verification or identification uses credits. Pick the number of credits that fits your volume." />
+
+<MkSection Id="plans">
+    @if (_error is not null)
+    {
+        <div class="mk-state" role="alert" data-testid="plans-error">
+            <span class="mk-state-icon" aria-hidden="true"><MkIcon Name="alert" Size="28" /></span>
+            <h2 class="mk-h3">We could not load the plans</h2>
+            <p class="mk-muted">@_error.Message</p>
+            @if (!string.IsNullOrWhiteSpace(_error.CorrelationId))
+            {
+                <p class="mk-alert-ref">Reference: <span data-testid="correlation-id">@_error.CorrelationId</span></p>
+            }
+            <a href="/pricing" class="mk-btn mk-btn-outline" data-testid="retry">Try again</a>
+            <a href="/contact" class="mk-link">Or contact us</a>
+        </div>
+    }
+    else if (_plans is { Count: 0 })
+    {
+        <div class="mk-state" data-testid="plans-empty">
+            <span class="mk-state-icon" aria-hidden="true"><MkIcon Name="info" Size="28" /></span>
+            <h2 class="mk-h3">Plans are being updated</h2>
+            <p class="mk-muted">Tell us what you need and we will send you the options.</p>
+            <a href="/contact" class="mk-btn mk-btn-primary">Contact us</a>
+        </div>
+    }
+    else if (_plans is not null)
+    {
+        <div class="mk-grid mk-grid-3 mk-plans" data-testid="plans">
+            @foreach (var plan in _plans)
+            {
+                <PlanCard Plan="plan" />
+            }
+        </div>
+        <p class="mk-muted mk-center mk-more">Need a different size? <a href="/contact" class="mk-link">Contact us</a> and we will put together a plan for you.</p>
+    }
+</MkSection>
+
+<MkSection Id="credits" Tone="alt" Eyebrow="Credits explained" Title="What is a credit?" Lead="A credit is the unit we use to measure what you do with NexaVerify.">
+    <div class="mk-grid mk-grid-3">
+        <FeatureCard Icon="check-person" Title="Actions use credits">Registering a person, verifying and identifying each cost a set number of credits. You see the cost before you start.</FeatureCard>
+        <FeatureCard Icon="clock" Title="Credits last for a set time">Each plan lists how long its credits are valid for. You are warned before they expire.</FeatureCard>
+        <FeatureCard Icon="chart" Title="Always visible">Your balance and use are on your dashboard, and you can set an alert for low balance.</FeatureCard>
+    </div>
+</MkSection>
+
+<MkSection Id="faq" Eyebrow="Questions" Title="Pricing questions" Center="true">
+    <FaqList Items="Faq" />
+</MkSection>
+
+<CtaBand />
+
+@code {
+    private IReadOnlyList<PublicPlanDto>? _plans;
+    private ApiError? _error;
+
+    private static readonly IReadOnlyList<FaqList.FaqItem> Faq =
+    [
+        new("Is there a free trial?", "Yes. Sign up and you receive trial credits for a limited time so you can try NexaVerify with your own team. No card is needed."),
+        new("What happens when my credits run out?", "Checks stop until you add credits. We warn you before that happens, and your data stays safe."),
+        new("Why do some plans say \"Contact us\"?", "Larger plans are set up with you so that the credits, validity and support match what you need."),
+        new("Can I change plan later?", "Yes. Talk to us and we can add credits or move you to a different plan."),
+        new("Do you charge for failed checks?", "If a check cannot run because our face engine is unavailable, you are not charged."),
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await PublicApi.GetPlansAsync();
+        if (result.IsSuccess)
+        {
+            _plans = result.Value;
+        }
+        else
+        {
+            _error = result.Error;
+        }
+    }
+}

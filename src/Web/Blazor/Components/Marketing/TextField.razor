@@ -1,0 +1,48 @@
+@using System.Linq.Expressions
+@using Microsoft.AspNetCore.Components.Forms
+
+@* One labelled text input with its hint and inline validation message. Server-rendered form field; works without script. *@
+<div class="mk-field">
+    <label for="@Id" class="mk-label">@Label@if (Required){<span class="mk-req" aria-hidden="true"> *</span>}</label>
+    <InputText id="@Id" type="@Type" class="mk-input" Value="@Value" ValueChanged="ValueChanged" ValueExpression="ValueExpression"
+               autocomplete="@Autocomplete" required="@Required" maxlength="@MaxLength" aria-describedby="@Described" aria-invalid="@(Invalid ? "true" : null)"
+               autocapitalize="@AutoCapitalize" spellcheck="false" />
+    @if (!string.IsNullOrEmpty(HintText))
+    {
+        <p id="@Id-hint" class="mk-hint">@HintText</p>
+    }
+    @ChildContent
+    <div id="@Id-error" aria-live="polite"><ValidationMessage For="ValueExpression" class="mk-error" /></div>
+</div>
+
+@code {
+    [CascadingParameter] private EditContext? Context { get; set; }
+
+    [Parameter, EditorRequired] public string Id { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+
+    [Parameter] public string? Value { get; set; }
+
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+
+    [Parameter] public Expression<Func<string?>>? ValueExpression { get; set; }
+
+    [Parameter] public string Type { get; set; } = "text";
+
+    [Parameter] public string? Autocomplete { get; set; }
+
+    [Parameter] public bool Required { get; set; }
+
+    [Parameter] public int MaxLength { get; set; } = 256;
+
+    [Parameter] public string? HintText { get; set; }
+
+    [Parameter] public string? AutoCapitalize { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private bool Invalid => Context is not null && ValueExpression is not null && Context.GetValidationMessages(FieldIdentifier.Create(ValueExpression)).Any();
+
+    private string Described => string.IsNullOrEmpty(HintText) ? $"{Id}-error" : $"{Id}-hint {Id}-error";
+}

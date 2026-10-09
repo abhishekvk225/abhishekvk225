@@ -19,6 +19,12 @@ public sealed class SecurityHeadersOptions
     public string ExtraScriptSrc { get; set; } = string.Empty;
 
     public bool CameraAllowedForSelf { get; set; } = true;
+
+    /// <summary>
+    /// Set to <c>true</c> when the API's sign-up bot check is Cloudflare Turnstile (the API's <c>/public/config</c> says <c>turnstile</c>).
+    /// The CSP then also allows Turnstile's origin, on the sign-up page only. Off by default: the page then allows nothing extra.
+    /// </summary>
+    public bool TurnstileEnabled { get; set; }
 }
 
 /// <summary>Cookie hardening (<c>Security:Cookies</c>).</summary>

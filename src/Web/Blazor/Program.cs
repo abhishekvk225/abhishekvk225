@@ -34,6 +34,8 @@ builder.Services.AddAntiforgery(options =>
 });
 
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.Configure<SiteOptions>(builder.Configuration.GetSection(SiteOptions.Section));
+builder.Services.AddSingleton<SiteUrls>();
 builder.Services.AddScoped<ThemeService>();
 builder.Services.AddScoped<CurrentUserState>();
 builder.Services.AddScoped<DashboardRangeState>();
@@ -81,8 +83,8 @@ app.UseAuthorization();
 app.UseAntiforgery();
 
 app.MapStaticAssets();
-app.MapGet("/", (HttpContext http) =>
-    Results.Redirect(http.User.FindFirst(PortalClaims.Portal)?.Value is { } portal ? ReturnUrl.HomeFor(portal) : "/login"));
+// "/" is the public website's home page (a Razor page). Signed-in users see it too, with a "Go to dashboard" button.
+app.MapPublicSite(); // robots.txt, sitemap.xml
 app.MapPortalAuth();
 app.MapPortalDownloads();
 // Probes for the container orchestrator / load balancer: liveness only (the portal has no database; API reachability is shown to users, not probed here).
