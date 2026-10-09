@@ -36,7 +36,7 @@
 **Scope rule**: every permission has a scope (`Platform`, `Client`, `Both`). Platform permissions can never be granted to Client-scope roles (validated in service and by a DB check on seed). API-key scopes are a subset of the creator's permissions at creation time.
 
 ### Permission catalogue (initial)
-`clients.read|create|update|manage-status|reset-password|settings` · `licenses.read|create|update|manage-status|renew|adjust|cost-rules|verify-ledger` · `plans.manage` · `dashboard.admin` · `dashboard.client` · `reports.read` · `audit.read` · `audit.read.client` · `system.configure` · `roles.manage` · `users.platform-manage` · `users.manage` · `client.profile.read|update` · `license.read` · `usage.read` · `apikeys.read|manage` · `apilogs.read` · `settings.recognition|notifications|security` · `webhooks.manage` · `notifications.read` · `faces.enroll|verify|identify|detect|read|manage|erase|history`
+`clients.read|create|update|manage-status|reset-password|settings` · `licenses.read|create|update|manage-status|renew|adjust|cost-rules|verify-ledger` · `plans.manage` · `dashboard.admin` · `dashboard.client` · `reports.read` · `audit.read` · `audit.read.client` · `system.configure` · `roles.manage` · `users.platform-manage` · `users.manage` · `client.profile.read|update` · `license.read` · `usage.read` · `apikeys.read|manage` · `apilogs.read` · `settings.recognition|notifications|security` · `webhooks.manage` · `notifications.read` · `faces.enroll|verify|identify|detect|read|manage|erase|history` · `billing.read|manage` (client) · `billing.packs.manage|orders.read|refund` (platform)
 
 ### Default role matrix
 | Capability | Super Admin | Client Admin | Client User |
