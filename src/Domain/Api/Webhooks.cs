@@ -23,12 +23,14 @@ public static class WebhookEvents
     public const string LicenseExpired = "license.expired";
     public const string LicenseExhausted = "license.exhausted";
     public const string ApiKeyExpiring = "apikey.expiring";
+    public const string LicenseToppedUp = "license.topped_up";
+    public const string LicenseCreditsRevoked = "license.credits_revoked";
 
     /// <summary>Sent by "send test event"; always deliverable to the endpoint it targets.</summary>
     public const string Test = "webhook.test";
 
     public static IReadOnlyList<string> Subscribable { get; } =
-        [RecognitionCompleted, LicenseLowBalance, LicenseExpiring, LicenseExpired, LicenseExhausted, ApiKeyExpiring];
+        [RecognitionCompleted, LicenseLowBalance, LicenseExpiring, LicenseExpired, LicenseExhausted, ApiKeyExpiring, LicenseToppedUp, LicenseCreditsRevoked];
 }
 
 /// <summary>A URL a client wants events POSTed to. The signing secret is stored encrypted and shown once.</summary>

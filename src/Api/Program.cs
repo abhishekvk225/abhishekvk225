@@ -52,7 +52,7 @@ builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.Replace(ServiceDescriptor.Scoped<ICurrentUser, HttpCurrentUser>());
 builder.Services.Replace(ServiceDescriptor.Scoped<IRequestInfo, HttpRequestInfo>());
 
-builder.Services.AddApiControllers(builder.Configuration);
+builder.Services.AddApiControllers(builder.Configuration, builder.Environment);
 builder.Services.AddApiAuthorization();
 builder.Services.AddApiCors(builder.Configuration, builder.Environment);
 builder.Services.AddApiRateLimiting(builder.Configuration);
@@ -83,6 +83,14 @@ if (app.Environment.IsProduction())
 if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Testing") && app.Configuration.GetValue<bool>("Webhooks:AllowUnsafeTargets"))
 {
     throw new InvalidOperationException("Webhooks:AllowUnsafeTargets is only permitted in the Development and Testing environments.");
+}
+
+// The simulated payment provider grants credits on request: it must never run anywhere but a developer machine or the test host.
+if (app.Configuration.GetValue<string>("Billing:Provider") is { } billingProvider
+    && string.Equals(billingProvider, NexaVerify.Application.Billing.PaymentProviders.Simulated, StringComparison.OrdinalIgnoreCase)
+    && !NexaVerify.Infrastructure.Billing.SimulatedProvider.IsAllowedIn(app.Environment))
+{
+    throw new InvalidOperationException("Billing:Provider=Simulated is only permitted in the Development and Testing environments.");
 }
 
 var forwarded = app.Services.GetRequiredService<IOptions<ForwardedHeadersSettings>>().Value;

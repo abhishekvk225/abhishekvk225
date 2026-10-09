@@ -31,13 +31,17 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    public static IServiceCollection AddApiControllers(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddApiControllers(this IServiceCollection services, IConfiguration configuration, IHostEnvironment environment)
     {
         var limits = configuration.GetSection(RequestLimitsOptions.SectionName).Get<RequestLimitsOptions>() ?? new RequestLimitsOptions();
 
         services.AddSingleton<ProblemDetailsFactory, NexaProblemDetailsFactory>();
         services
-            .AddControllers(options => options.Filters.Add<ValidationFilter>())
+            .AddControllers(options =>
+            {
+                options.Filters.Add<ValidationFilter>();
+                options.Conventions.Add(new DevelopmentOnlyConvention(environment)); // dev-only controllers do not exist elsewhere
+            })
             .AddJsonOptions(options =>
             {
                 options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());

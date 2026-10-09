@@ -126,6 +126,24 @@ public static class Permissions
         public const string Read = "notifications.read";
     }
 
+    public static class Billing
+    {
+        /// <summary>Client: see packs, own orders, invoices and billing profile.</summary>
+        public const string Read = "billing.read";
+
+        /// <summary>Client: start a checkout, cancel an order, edit the billing profile.</summary>
+        public const string Manage = "billing.manage";
+
+        /// <summary>Platform: manage the credit-pack catalogue.</summary>
+        public const string PacksManage = "billing.packs.manage";
+
+        /// <summary>Platform: see every client's orders and the billing configuration.</summary>
+        public const string OrdersRead = "billing.orders.read";
+
+        /// <summary>Platform: refund an order and reconcile it with the payment provider.</summary>
+        public const string Refund = "billing.refund";
+    }
+
     public static class Faces
     {
         public const string Enroll = "faces.enroll";
@@ -167,6 +185,12 @@ public static class Permissions
         new(Users.MfaReset, "Access control", PermissionScopeKind.Platform, "Reset another user's two-factor authentication (lost device)"),
         new(Emergency.RevokeApiAccess, "Emergency", PermissionScopeKind.Platform, "Revoke API keys of a client and switch its API access off"),
 
+        new(Billing.PacksManage, "Billing", PermissionScopeKind.Platform, "Manage the credit packs clients can buy"),
+        new(Billing.OrdersRead, "Billing", PermissionScopeKind.Platform, "View clients' payment orders and the billing configuration"),
+        new(Billing.Refund, "Billing", PermissionScopeKind.Platform, "Refund or reconcile a payment order"),
+
+        new(Billing.Read, "Billing", PermissionScopeKind.Client, "View credit packs, orders, invoices and the billing profile"),
+        new(Billing.Manage, "Billing", PermissionScopeKind.Client, "Buy credit packs and edit the billing profile"),
         new(Dashboard.Client, "Dashboard", PermissionScopeKind.Client, "View the client dashboard"),
         new(ClientProfile.Read, "Account", PermissionScopeKind.Client, "View company profile"),
         new(ClientProfile.Update, "Account", PermissionScopeKind.Client, "Edit company profile"),
