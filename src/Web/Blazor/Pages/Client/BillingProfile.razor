@@ -1,0 +1,138 @@
+@page "/client/billing/profile"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.BillingRead)]
+@implements IDisposable
+@inject IBillingApiClient Api
+@inject IAppSnackbar Snackbar
+@inject CurrentUserState User
+
+<PageTitle>Billing details · NexaVerify</PageTitle>
+
+<PageHeader Title="Billing details" Subtitle="The company name and address we print on your invoices." />
+
+<PageState T="BillingProfileDto" Result="_state.Result" OnRetry="LoadAsync">
+    <Loading><SkeletonCard Lines="5" /></Loading>
+    <ChildContent Context="profile">
+        <MudPaper Class="nv-card nv-card-pad" Elevation="0" data-testid="profile-card">
+            <EditForm EditContext="_context" OnValidSubmit="SaveAsync" novalidate>
+                <DataAnnotationsValidator />
+                @if (_general.Count > 0)
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3" role="alert" data-testid="form-error">
+                        @foreach (var message in _general)
+                        {
+                            <div>@message</div>
+                        }
+                    </MudAlert>
+                }
+                @if (!CanEdit)
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3" data-testid="read-only">You can look at these details but not change them. Ask an administrator of your account.</MudAlert>
+                }
+                <MudGrid Spacing="2">
+                    <MudItem xs="12" sm="8"><MudTextField T="string" @bind-Value="_form.LegalName" For="() => _form.LegalName" Label="Company name (legal name)" Variant="Variant.Outlined" Immediate="true" MaxLength="200" ReadOnly="!CanEdit" Required="true" /></MudItem>
+                    <MudItem xs="12" sm="4"><MudTextField T="string" @bind-Value="_form.Country" For="() => _form.Country" Label="Country code" Variant="Variant.Outlined" Immediate="true" MaxLength="2" HelperText="Two letters, e.g. GB or IN" ReadOnly="!CanEdit" Required="true" /></MudItem>
+                    <MudItem xs="12"><MudTextField T="string" @bind-Value="_form.AddressLine1" For="() => _form.AddressLine1" Label="Address" Variant="Variant.Outlined" Immediate="true" MaxLength="200" ReadOnly="!CanEdit" Required="true" /></MudItem>
+                    <MudItem xs="12"><MudTextField T="string" @bind-Value="_form.AddressLine2" For="() => _form.AddressLine2" Label="Address line 2 (optional)" Variant="Variant.Outlined" Immediate="true" MaxLength="200" ReadOnly="!CanEdit" /></MudItem>
+                    <MudItem xs="12" sm="5"><MudTextField T="string" @bind-Value="_form.City" For="() => _form.City" Label="City" Variant="Variant.Outlined" Immediate="true" MaxLength="100" ReadOnly="!CanEdit" Required="true" /></MudItem>
+                    <MudItem xs="12" sm="4"><MudTextField T="string" @bind-Value="_form.State" For="() => _form.State" Label="State or region (optional)" Variant="Variant.Outlined" Immediate="true" MaxLength="100" ReadOnly="!CanEdit" /></MudItem>
+                    <MudItem xs="12" sm="3"><MudTextField T="string" @bind-Value="_form.PostalCode" For="() => _form.PostalCode" Label="Postcode or ZIP" Variant="Variant.Outlined" Immediate="true" MaxLength="20" ReadOnly="!CanEdit" Required="true" /></MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudTextField T="string" @bind-Value="_form.TaxId" For="() => _form.TaxId" Label="Tax number (optional)" Variant="Variant.Outlined" Immediate="true" MaxLength="40" ReadOnly="!CanEdit"
+                                      HelperText="Your VAT, GST or other tax registration number. If you add it, it is printed on your invoices." />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudTextField T="string" @bind-Value="_form.BillingEmail" For="() => _form.BillingEmail" Label="Invoice email" InputType="InputType.Email" Variant="Variant.Outlined" Immediate="true" MaxLength="256" ReadOnly="!CanEdit"
+                                      HelperText="Where we send your invoices." Required="true" />
+                    </MudItem>
+                </MudGrid>
+                @if (CanEdit)
+                {
+                    <div class="d-flex justify-end mt-4">
+                        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Disabled="_saving" data-testid="save-profile">
+                            @if (_saving)
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                            }
+                            Save details
+                        </MudButton>
+                    </div>
+                }
+            </EditForm>
+        </MudPaper>
+    </ChildContent>
+</PageState>
+
+@code {
+    private readonly LoadState<BillingProfileDto> _state = new();
+    private readonly List<string> _general = [];
+    private BillingProfileForm _form = new();
+    private EditContext _context = default!;
+    private ValidationMessageStore _store = default!;
+    private bool _saving;
+
+    private bool CanEdit => User.Has(WebPermissions.BillingManage);
+
+    public void Dispose() => _state.Dispose();
+
+    protected override async Task OnInitializedAsync()
+    {
+        Rebuild(new BillingProfileForm());
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (await _state.LoadAsync(ct => Api.GetProfileAsync(ct)) && _state.Result is { IsSuccess: true } loaded)
+        {
+            Rebuild(BillingProfileForm.From(loaded.Value));
+        }
+    }
+
+    private void Rebuild(BillingProfileForm form)
+    {
+        _form = form;
+        _context = new EditContext(_form);
+        _store = new ValidationMessageStore(_context);
+        _context.OnFieldChanged += (_, e) => _store.Clear(e.FieldIdentifier);
+        _general.Clear();
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving || !CanEdit)
+        {
+            return;
+        }
+
+        _saving = true;
+        _general.Clear();
+        _store.Clear();
+        try
+        {
+            var result = await Api.SaveProfileAsync(_form.ToRequest());
+            if (result.IsSuccess)
+            {
+                Rebuild(BillingProfileForm.From(result.Value));
+                Snackbar.Success("Your billing details were saved.");
+                return;
+            }
+
+            var error = result.Error!;
+            _general.AddRange(FormErrorMapper.Apply(typeof(BillingProfileForm), _context, _store, error.FieldErrors, out var mapped));
+            if (!mapped || _general.Count > 0 || error.FieldErrors is null)
+            {
+                _general.Insert(0, string.IsNullOrWhiteSpace(error.CorrelationId) ? error.Message : $"{error.Message} (ref {error.CorrelationId})");
+            }
+
+            _context.NotifyValidationStateChanged();
+            if (error.FieldErrors is null)
+            {
+                Snackbar.Error(error); // field problems are already shown next to the fields
+            }
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

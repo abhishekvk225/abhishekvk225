@@ -1,0 +1,103 @@
+@page "/dev/pay/{OrderId:guid}"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.BillingManage)]
+@implements IDisposable
+@inject IServiceProvider Services
+@inject IBillingApiClient Billing
+@inject NavigationManager Navigation
+@inject IAppSnackbar Snackbar
+@inject Microsoft.Extensions.Hosting.IHostEnvironment Environment
+
+<PageTitle>Test payment · NexaVerify</PageTitle>
+
+@if (!CheckoutRedirect.IsDevHost(Environment) || _dev is null)
+{
+    @* Outside Development/Testing this page does not exist: same answer as any unknown address, and nothing is called. *@
+    <PageHeader Title="Page not found" />
+    <EmptyState Icon="@Icons.Material.Outlined.SearchOff" Title="We could not find that page" Message="Check the address, or go back to the start." ActionText="Go to the dashboard" OnAction="@(() => Navigation.NavigateTo("client"))" />
+}
+else
+{
+    <PageHeader Title="Test payment" Subtitle="Development only. This stands in for the payment partner's page, so the whole flow can be tried without a real payment." />
+
+    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4" data-testid="dev-banner">
+        This is a simulation. No card is used and no money moves. It does not exist in production.
+    </MudAlert>
+
+    <PageState T="OrderDto" Result="_order" OnRetry="LoadAsync">
+        <Loading><SkeletonCard Lines="3" /></Loading>
+        <ChildContent Context="order">
+            <MudPaper Class="nv-card nv-card-pad" Elevation="0" data-testid="dev-pay-card">
+                <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">@order.PackName</MudText>
+                <PriceBreakdown SubtotalMinor="order.SubtotalMinor" TaxMinor="order.TaxMinor" TotalMinor="order.TotalMinor" Currency="@order.Currency" TaxLabel="@order.TaxLabel" TaxPercent="order.TaxPercent" />
+                @if (order.Status != OrderStatuses.Pending)
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">This order is already @OrderStatuses.Label(order.Status).ToLowerInvariant().</MudAlert>
+                }
+                <div class="d-flex flex-wrap" style="gap: var(--nv-space-2);">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_busy || order.Status != OrderStatuses.Pending)" OnClick="() => PayAsync(Success)" data-testid="dev-pay-success">Pay successfully</MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Error" Disabled="@(_busy || order.Status != OrderStatuses.Pending)" OnClick="() => PayAsync(Failed)" data-testid="dev-pay-fail">Make the payment fail</MudButton>
+                    <MudButton Variant="Variant.Text" Disabled="@(_busy || order.Status != OrderStatuses.Pending)" OnClick="() => PayAsync(Cancelled)" data-testid="dev-pay-cancel">Cancel and go back</MudButton>
+                </div>
+            </MudPaper>
+        </ChildContent>
+    </PageState>
+}
+
+@code {
+    public const string Success = "success";
+    public const string Failed = "failed";
+    public const string Cancelled = "cancelled";
+
+    private readonly CancellationTokenSource _cts = new();
+    private IDevBillingApiClient? _dev;
+    private ApiResult<OrderDto>? _order;
+    private bool _busy;
+
+    [Parameter] public Guid OrderId { get; set; }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!CheckoutRedirect.IsDevHost(Environment))
+        {
+            return;
+        }
+
+        _dev = Services.GetService<IDevBillingApiClient>();
+        if (_dev is not null)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _order = null;
+        _order = await Billing.GetOrderAsync(OrderId, _cts.Token);
+    }
+
+    private async Task PayAsync(string outcome)
+    {
+        if (_busy || _dev is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        var result = await _dev.SimulateAsync(OrderId, outcome, _cts.Token);
+        if (!result.IsSuccess)
+        {
+            _busy = false;
+            Snackbar.Error(result.Error!);
+            return;
+        }
+
+        // Back to the portal the way a real provider sends people back. The return page asks the API what happened; this value is only a hint.
+        Navigation.NavigateTo($"client/billing/return?order={OrderId}&result={(outcome == Success ? "success" : "cancelled")}");
+    }
+}

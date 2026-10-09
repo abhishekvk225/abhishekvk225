@@ -1,0 +1,67 @@
+@page "/client/billing/orders/{Id:guid}"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.BillingRead)]
+@implements IDisposable
+@inject IBillingApiClient Api
+
+<PageTitle>Order · NexaVerify</PageTitle>
+
+<PageHeader Title="Order details" Subtitle="What you bought and what you paid."
+            Breadcrumbs="@(new List<BreadcrumbItem> { new("Orders and invoices", "client/billing/orders") })">
+    <Actions>
+        @if (_state.Result is { IsSuccess: true } shown && !string.IsNullOrWhiteSpace(shown.Value.InvoiceNumber))
+        {
+            <InvoiceLink OrderId="shown.Value.Id" Number="@shown.Value.InvoiceNumber" />
+        }
+    </Actions>
+</PageHeader>
+
+<PageState T="OrderDto" Result="_state.Result" OnRetry="LoadAsync">
+    <Loading><SkeletonCard Lines="4" /></Loading>
+    <ChildContent Context="order">
+        <MudGrid Spacing="3">
+            <MudItem xs="12" lg="7">
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0" data-testid="order-card">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">@order.PackName</MudText>
+                    <DetailList Items="Details(order)" />
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" lg="5">
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Amount</MudText>
+                    <PriceBreakdown SubtotalMinor="order.SubtotalMinor" TaxMinor="order.TaxMinor" TotalMinor="order.TotalMinor" Currency="@order.Currency"
+                                    TaxLabel="@order.TaxLabel" TaxPercent="order.TaxPercent" />
+                    @if (OrderStatuses.IsPaid(order.Status) && order.LicenseId is { } licenseId)
+                    {
+                        <MudButton Variant="Variant.Outlined" Href="@($"client/license/{licenseId}")" StartIcon="@Icons.Material.Outlined.Toll" data-testid="license-link">See the credits on your license</MudButton>
+                    }
+                    else if (order.Status == OrderStatuses.Pending)
+                    {
+                        <MudText Typo="Typo.body2" Class="nv-muted">We are waiting for the payment partner to confirm this payment. Credits are added as soon as it does.</MudText>
+                    }
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    </ChildContent>
+</PageState>
+
+@code {
+    private readonly LoadState<OrderDto> _state = new();
+
+    [Parameter] public Guid Id { get; set; }
+
+    public void Dispose() => _state.Dispose();
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private Task LoadAsync() => _state.LoadAsync(ct => Api.GetOrderAsync(Id, ct));
+
+    private static IReadOnlyList<DetailItem> Details(OrderDto o) =>
+    [
+        new("Status", Content: @<StatusChip Kind="StatusKind.Order" Value="@o.Status" />),
+        new("Invoice number", o.InvoiceNumber ?? "Issued once the payment is confirmed"),
+        new("Credits", UiText.Number(o.Credits)),
+        new("Credits valid for", UiText.Plural(o.ValidityDays, "day")),
+        new("Ordered", o.CreatedAt.ToString("d MMM yyyy, HH:mm 'UTC'", System.Globalization.CultureInfo.InvariantCulture)),
+        new("Paid", o.PaidAt is { } paid ? paid.ToString("d MMM yyyy, HH:mm 'UTC'", System.Globalization.CultureInfo.InvariantCulture) : "Not paid"),
+    ];
+}

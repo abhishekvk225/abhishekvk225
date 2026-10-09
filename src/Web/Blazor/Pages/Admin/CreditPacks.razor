@@ -1,0 +1,94 @@
+@page "/admin/billing/packs"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.BillingPacksManage)]
+@inject IAdminBillingApiClient Api
+@inject IDialogService Dialogs
+@inject IAppSnackbar Snackbar
+
+<PageTitle>Credit packs · Admin · NexaVerify</PageTitle>
+
+<PageHeader Title="Credit packs" Subtitle="The packs clients can buy online. Prices are before tax; tax is added at checkout.">
+    <Actions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Add" OnClick="CreateAsync" data-testid="new-pack">New pack</MudButton>
+    </Actions>
+</PageHeader>
+
+<MudPaper Class="nv-card" Elevation="0">
+    <DataTable @ref="_table" T="AdminPackDto" Caption="Credit packs" Columns="_columns" LoadPage="LoadAsync" PageSize="50" PageSizeOptions="@(new[] { 50 })"
+               EmptyMessage="No credit packs yet. Create one so clients can buy credits online.">
+        <RowActions Context="pack">
+            <MudIconButton Icon="@Icons.Material.Outlined.Edit" OnClick="() => EditAsync(pack)" aria-label="@($"Edit pack {pack.Name}")" />
+            <MudButton Variant="Variant.Text" Size="Size.Small" OnClick="() => ToggleAsync(pack)" data-testid="toggle-pack"
+                       aria-label="@($"{(pack.IsActive ? "Take off sale" : "Put on sale")}: {pack.Name}")">@(pack.IsActive ? "Take off sale" : "Put on sale")</MudButton>
+        </RowActions>
+    </DataTable>
+</MudPaper>
+
+@code {
+    private DataTable<AdminPackDto>? _table;
+    private IReadOnlyList<DataColumn<AdminPackDto>> _columns = [];
+
+    protected override void OnInitialized() =>
+        _columns =
+        [
+            DataColumn<AdminPackDto>.Text("Pack", p => p.Name),
+            DataColumn<AdminPackDto>.Text("Credits", p => UiText.Number(p.Credits), numeric: true),
+            DataColumn<AdminPackDto>.Text("Valid for", p => UiText.Plural(p.ValidityDays, "day")),
+            DataColumn<AdminPackDto>.Text("Price", p => Money.Format(p.PriceMinor, p.Currency), numeric: true),
+            DataColumn<AdminPackDto>.Text("Position", p => p.DisplayOrder.ToString(System.Globalization.CultureInfo.InvariantCulture), numeric: true),
+            DataColumn<AdminPackDto>.Custom("On sale", p => @<StatusChip Kind="StatusKind.Client" Value="@(p.IsActive ? "Active" : "Inactive")" />),
+            DataColumn<AdminPackDto>.Text("Public page", p => p.IsPublic ? "Shown" : "Hidden"),
+        ];
+
+    private async Task<ApiResult<PagedResult<AdminPackDto>>> LoadAsync(PageRequest page, CancellationToken ct) => (await Api.ListPacksAsync(ct)).AsPage();
+
+    private async Task CreateAsync()
+    {
+        var saved = await Dialogs.SaveAsync(
+            Snackbar, "New credit pack", new PackForm(), m => @<PackFields Model="m" />,
+            async m => (await Api.CreatePackAsync(m.ToRequest())).ToFormError(),
+            "Create pack", m => $"Pack {m.Name} was created.");
+        if (saved is not null)
+        {
+            await ReloadAsync();
+        }
+    }
+
+    private async Task EditAsync(AdminPackDto pack)
+    {
+        var saved = await Dialogs.SaveAsync(
+            Snackbar, $"Edit {pack.Name}", PackForm.From(pack), m => @<PackFields Model="m" />,
+            async m => (await Api.UpdatePackAsync(pack.Id, m.ToRequest())).ToFormError(),
+            "Save changes", m => $"Pack {m.Name} was saved.");
+        if (saved is not null)
+        {
+            await ReloadAsync();
+        }
+    }
+
+    private async Task ToggleAsync(AdminPackDto pack)
+    {
+        var putOnSale = !pack.IsActive;
+        var result = await Dialogs.ConfirmAndApplyAsync(
+            Snackbar,
+            putOnSale ? "Put this pack on sale?" : "Take this pack off sale?",
+            putOnSale
+                ? $"{pack.Name} will show up for clients to buy again."
+                : $"{pack.Name} will no longer be offered to clients. Existing orders and invoices are not affected.",
+            putOnSale ? "Put on sale" : "Take off sale",
+            _ => Api.UpdatePackAsync(pack.Id, WithActive(PackForm.From(pack), putOnSale)),
+            putOnSale ? $"{pack.Name} is on sale." : $"{pack.Name} is off sale.",
+            destructive: !putOnSale);
+        if (result is { IsSuccess: true })
+        {
+            await ReloadAsync();
+        }
+    }
+
+    private static SaveAdminPackRequest WithActive(PackForm form, bool active)
+    {
+        form.IsActive = active;
+        return form.ToRequest();
+    }
+
+    private Task ReloadAsync() => _table is null ? Task.CompletedTask : _table.ReloadAsync();
+}

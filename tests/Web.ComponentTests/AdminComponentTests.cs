@@ -116,6 +116,6 @@ public class AdminComponentTests : PageTestBase
         limited.SelectMany(g => g.Items).Select(i => i.Href).ShouldBe(["admin/clients", "admin/reports"]);
         NavigationCatalog.Trim(NavigationCatalog.Admin, _ => false).ShouldBeEmpty();
         NavigationCatalog.Admin.SelectMany(g => g.Items).Where(i => i.Implemented).Select(i => i.Href)
-            .ShouldBe(["admin", "admin/clients", "admin/licenses", "admin/plans", "admin/cost-rules", "admin/reports", "admin/audit", "admin/roles", "admin/platform-users"], ignoreOrder: true);
+            .ShouldBe(["admin", "admin/clients", "admin/licenses", "admin/plans", "admin/cost-rules", "admin/billing/packs", "admin/billing/orders", "admin/reports", "admin/audit", "admin/roles", "admin/platform-users"], ignoreOrder: true);
     }
 }

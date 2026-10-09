@@ -316,15 +316,15 @@ public static class DownloadEndpoints
 {
     public static void MapPortalDownloads(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/bff/reports/usage.csv", (HttpContext http, IApiGateway api, DownloadThrottle throttle, string? from, string? to) => RelayCsvAsync(http, api, throttle, from, to, "admin/reports/usage.csv"))
+        app.MapGet("/bff/reports/usage.csv", (HttpContext http, IApiGateway api, DownloadThrottle throttle, string? from, string? to) => RelayCsvAsync(http, api, throttle, from, to, "admin/reports/usage.csv", "nexaverify-usage"))
             .RequireAuthorization(Policies.Permission(WebPermissions.ReportsRead), Policies.PlatformPortal);
 
         // The client portal's own usage export: the API derives the client from the credential, the portal only relays the file.
-        app.MapGet("/bff/client/reports/usage.csv", (HttpContext http, IApiGateway api, DownloadThrottle throttle, string? from, string? to) => RelayCsvAsync(http, api, throttle, from, to, "client/reports/usage.csv"))
+        app.MapGet("/bff/client/reports/usage.csv", (HttpContext http, IApiGateway api, DownloadThrottle throttle, string? from, string? to) => RelayCsvAsync(http, api, throttle, from, to, "client/reports/usage.csv", "nexaverify-usage"))
             .RequireAuthorization(Policies.Permission(WebPermissions.UsageRead), Policies.ClientPortal);
     }
 
-    private static async Task RelayCsvAsync(HttpContext http, IApiGateway api, DownloadThrottle throttle, string? from, string? to, string apiPath)
+    internal static async Task RelayCsvAsync(HttpContext http, IApiGateway api, DownloadThrottle throttle, string? from, string? to, string apiPath, string fileNamePrefix)
     {
         // Only the portal's own pages (or the address bar) may start an export: a link on another site cannot make a signed-in
         // browser trigger a heavy report.
@@ -378,7 +378,7 @@ public static class DownloadEndpoints
 
         using var upstream = result.Value;
         http.Response.ContentType = "text/csv; charset=utf-8";
-        http.Response.Headers.ContentDisposition = $"attachment; filename=\"nexaverify-usage-{DateTime.UtcNow:yyyyMMdd}.csv\"";
+        http.Response.Headers.ContentDisposition = $"attachment; filename=\"{fileNamePrefix}-{DateTime.UtcNow:yyyyMMdd}.csv\"";
         http.Response.Headers.CacheControl = "no-store";
         try
         {

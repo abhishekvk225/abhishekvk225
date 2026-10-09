@@ -1,0 +1,212 @@
+@page "/admin/billing/orders/{Id:guid}"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.BillingOrdersRead)]
+@implements IDisposable
+@inject IAdminBillingApiClient Api
+@inject IDialogService Dialogs
+@inject IAppSnackbar Snackbar
+
+<PageTitle>Order · Admin · NexaVerify</PageTitle>
+
+<PageHeader Title="@Title" Subtitle="Payment details, refunds and what the payment partner reported."
+            Breadcrumbs="@(new List<BreadcrumbItem> { new("Orders", "admin/billing/orders") })">
+    <Actions>
+        @if (_state.Result is { IsSuccess: true } shown)
+        {
+            <Can Permission="@WebPermissions.BillingRefund">
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Sync" Disabled="_busy" OnClick="ReconcileAsync" data-testid="reconcile">Check with payment partner</MudButton>
+                @if (CanRefund(shown.Value))
+                {
+                    <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Outlined.Replay" Disabled="_busy" OnClick="RefundAsync" data-testid="refund">Refund</MudButton>
+                }
+            </Can>
+        }
+    </Actions>
+</PageHeader>
+
+<PageState T="AdminOrderDto" Result="_state.Result" OnRetry="LoadAsync">
+    <Loading><SkeletonCard Lines="5" /></Loading>
+    <ChildContent Context="order">
+        <MudGrid Spacing="3">
+            <MudItem xs="12" lg="7">
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0" data-testid="order-card">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">@order.PackName</MudText>
+                    <DetailList Items="Details(order)" />
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" lg="5">
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Amount</MudText>
+                    <PriceBreakdown SubtotalMinor="order.SubtotalMinor" TaxMinor="order.TaxMinor" TotalMinor="order.TotalMinor" Currency="@order.Currency"
+                                    TaxLabel="@order.TaxLabel" TaxPercent="order.TaxPercent" PriceLabel="Price before tax" />
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" lg="7">
+                <MudPaper Class="nv-card" Elevation="0" data-testid="refunds">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="pa-4 pb-0">Refunds</MudText>
+                    @if (order.Refunds is not { Count: > 0 })
+                    {
+                        <MudText Class="nv-muted pa-4" Typo="Typo.body2" data-testid="no-refunds">Nothing has been refunded on this order.</MudText>
+                    }
+                    else
+                    {
+                        <div class="nv-table-wrap">
+                            <table class="nv-table" aria-label="Refunds">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Date</th>
+                                        <th scope="col" style="text-align:right">Amount</th>
+                                        <th scope="col" style="text-align:right">Credits taken back</th>
+                                        <th scope="col">Reason</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var refund in order.Refunds)
+                                    {
+                                        <tr data-testid="refund-row">
+                                            <td>@refund.CreatedAt.ToString("d MMM yyyy, HH:mm", System.Globalization.CultureInfo.InvariantCulture)</td>
+                                            <td style="text-align:right">@Money.Format(refund.AmountMinor, order.Currency)</td>
+                                            <td style="text-align:right">@UiText.Number(refund.CreditsRevoked)</td>
+                                            <td>@refund.Reason</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="nv-cards" role="list" aria-label="Refunds">
+                            @foreach (var refund in order.Refunds)
+                            {
+                                <div class="nv-row-card" role="listitem">
+                                    <dl>
+                                        <dt>Date</dt><dd>@refund.CreatedAt.ToString("d MMM yyyy", System.Globalization.CultureInfo.InvariantCulture)</dd>
+                                        <dt>Amount</dt><dd>@Money.Format(refund.AmountMinor, order.Currency)</dd>
+                                        <dt>Credits taken back</dt><dd>@UiText.Number(refund.CreditsRevoked)</dd>
+                                        <dt>Reason</dt><dd>@refund.Reason</dd>
+                                    </dl>
+                                </div>
+                            }
+                        </div>
+                    }
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" lg="5">
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0" data-testid="events">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Timeline</MudText>
+                    @if (order.Events is not { Count: > 0 })
+                    {
+                        <MudText Class="nv-muted" Typo="Typo.body2">No events recorded yet.</MudText>
+                    }
+                    else
+                    {
+                        <ol class="nv-feed" aria-label="Order timeline">
+                            @foreach (var e in order.Events)
+                            {
+                                <li>
+                                    <div>
+                                        <MudText Typo="Typo.body2">@(e.Summary ?? e.Type)</MudText>
+                                        <MudText Typo="Typo.caption" Class="nv-muted">@e.At.ToString("d MMM yyyy, HH:mm", System.Globalization.CultureInfo.InvariantCulture) UTC</MudText>
+                                    </div>
+                                </li>
+                            }
+                        </ol>
+                    }
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    </ChildContent>
+</PageState>
+
+@code {
+    private readonly LoadState<AdminOrderDto> _state = new();
+    private bool _busy;
+
+    [Parameter] public Guid Id { get; set; }
+
+    private string Title => _state.Result is { IsSuccess: true } r ? $"Order {OrderNumber(r.Value)}" : "Order";
+
+    public void Dispose() => _state.Dispose();
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private Task LoadAsync() => _state.LoadAsync(ct => Api.GetOrderAsync(Id, ct));
+
+    /// <summary>What the person types to confirm a refund: the invoice number, or the short order reference when none was issued.</summary>
+    public static string OrderNumber(AdminOrderDto order) => order.InvoiceNumber ?? order.Id.ToString("N")[..8].ToUpperInvariant();
+
+    private static long Refunded(AdminOrderDto order) => (order.Refunds ?? []).Sum(r => r.AmountMinor);
+
+    private static bool CanRefund(AdminOrderDto order) =>
+        order.Status is OrderStatuses.Paid or OrderStatuses.PartiallyRefunded && Refunded(order) < order.TotalMinor;
+
+    private async Task RefundAsync()
+    {
+        if (_busy || _state.Result is not { IsSuccess: true } current)
+        {
+            return;
+        }
+
+        var order = current.Value;
+        var parameters = new DialogParameters<RefundDialog>
+        {
+            { x => x.OrderNumber, OrderNumber(order) },
+            { x => x.Currency, order.Currency },
+            { x => x.TotalMinor, order.TotalMinor },
+            { x => x.RefundedMinor, Refunded(order) },
+        };
+        var dialog = await Dialogs.ShowAsync<RefundDialog>("Refund order", parameters, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true, BackdropClick = false });
+        var chosen = await dialog.Result;
+        if (chosen is not { Canceled: false, Data: RefundOrderRequest request })
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await Api.RefundAsync(order.Id, request);
+            if (result.Report(Snackbar, request.AmountMinor is { } amount ? $"{Money.Format(amount, order.Currency)} was refunded." : "The rest of the order was refunded."))
+            {
+                _state.Set(result);
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ReconcileAsync()
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await Api.ReconcileAsync(Id);
+            if (result.Report(Snackbar, "The order was checked with the payment partner and is up to date."))
+            {
+                _state.Set(result);
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static IReadOnlyList<DetailItem> Details(AdminOrderDto o) =>
+    [
+        new("Status", Content: @<StatusChip Kind="StatusKind.Order" Value="@o.Status" />),
+        new("Client", o.ClientName),
+        new("Invoice number", o.InvoiceNumber),
+        new("Credits", UiText.Number(o.Credits)),
+        new("Credits valid for", UiText.Plural(o.ValidityDays, "day")),
+        new("Ordered", o.CreatedAt.ToString("d MMM yyyy, HH:mm 'UTC'", System.Globalization.CultureInfo.InvariantCulture)),
+        new("Paid", o.PaidAt is { } paid ? paid.ToString("d MMM yyyy, HH:mm 'UTC'", System.Globalization.CultureInfo.InvariantCulture) : "Not paid"),
+        new("Payment partner", o.Provider),
+        new("Payment reference", o.ProviderPaymentId),
+    ];
+}

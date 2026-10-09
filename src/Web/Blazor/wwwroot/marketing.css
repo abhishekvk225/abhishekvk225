@@ -191,6 +191,8 @@ body:has(.mk) { margin: 0; background: var(--mk-bg); }
 .mk-section-head.mk-center { margin-inline: auto; }
 .mk-section-head.mk-center .mk-lead { margin-inline: auto; }
 .mk-more { margin-top: var(--nv-space-5, 24px); }
+.mk-packs { margin-top: 48px; padding-top: var(--nv-space-6, 32px); border-top: 1px solid var(--mk-line); }
+.mk-packs > .mk-lead { max-width: 60ch; margin-left: auto; margin-right: auto; margin-bottom: var(--nv-space-5, 24px); }
 .mk-page-hero { padding: clamp(40px, 6vw, 72px) 0 clamp(8px, 2vw, 24px); background: radial-gradient(900px 360px at 85% -20%, color-mix(in srgb, var(--mk-primary) 14%, transparent), transparent 70%); }
 .mk-page-hero .mk-lead { margin-bottom: var(--nv-space-4, 16px); }
 

@@ -1,0 +1,30 @@
+@inject TimeProvider Clock
+
+@* "Buy credits" call to action when the balance is low or the license is about to end. Same thresholds as the gauge (LicenseHealth); only for people who may buy. *@
+<Can Permission="@WebPermissions.BillingManage">
+    @if (Level != LicenseHealthLevel.Healthy)
+    {
+        <MudAlert Severity="@(Level == LicenseHealthLevel.Critical ? Severity.Error : Severity.Warning)" Variant="Variant.Outlined" Class="mt-4" data-testid="buy-credits-banner" data-level="@Level">
+            <div class="d-flex flex-wrap align-center justify-space-between" style="gap: var(--nv-space-3);">
+                <span>@Message</span>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="client/billing/buy" StartIcon="@Icons.Material.Outlined.ShoppingCart" data-testid="buy-credits-cta">Buy credits</MudButton>
+            </div>
+        </MudAlert>
+    }
+</Can>
+
+@code {
+    [Parameter, EditorRequired] public long Remaining { get; set; }
+
+    [Parameter, EditorRequired] public long Total { get; set; }
+
+    [Parameter] public DateTimeOffset? ExpiresAt { get; set; }
+
+    [Parameter] public DateTimeOffset? Now { get; set; }
+
+    private LicenseHealthLevel Level => LicenseHealth.Evaluate(Remaining, Total, LicenseHealth.DaysLeft(ExpiresAt, Now ?? Clock.GetUtcNow()));
+
+    private string Message => Level == LicenseHealthLevel.Critical
+        ? "You are almost out of credits or time. Buy more now so face checks do not stop."
+        : "Your credits or time are running lower than usual. You can top up online in a few minutes.";
+}

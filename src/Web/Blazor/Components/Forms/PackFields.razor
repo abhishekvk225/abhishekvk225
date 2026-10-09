@@ -1,0 +1,38 @@
+<MudGrid Spacing="2" data-testid="pack-fields">
+    <MudItem xs="12" sm="8"><MudTextField T="string" @bind-Value="Model.Name" For="() => Model.Name" Label="Pack name" Variant="Variant.Outlined" Immediate="true" MaxLength="100" /></MudItem>
+    <MudItem xs="12" sm="4"><MudNumericField T="int" @bind-Value="Model.DisplayOrder" For="() => Model.DisplayOrder" Label="Position" Variant="Variant.Outlined" Min="0" HelperText="Lowest shows first" /></MudItem>
+    <MudItem xs="12"><MudTextField T="string" @bind-Value="Model.Description" For="() => Model.Description" Label="Description (optional)" Variant="Variant.Outlined" Immediate="true" Lines="2" MaxLength="500" /></MudItem>
+    <MudItem xs="12" sm="6"><MudNumericField T="int" @bind-Value="Model.Credits" For="() => Model.Credits" Label="Credits" Variant="Variant.Outlined" Min="1" /></MudItem>
+    <MudItem xs="12" sm="6"><MudNumericField T="int" @bind-Value="Model.ValidityDays" For="() => Model.ValidityDays" Label="Valid for (days)" Variant="Variant.Outlined" Min="1" /></MudItem>
+    <MudItem xs="12" sm="4">
+        <MudSelect T="string" @bind-Value="Model.Currency" For="() => Model.Currency" Label="Currency" Variant="Variant.Outlined" Disabled="CurrencyLocked" data-testid="pack-currency">
+            @foreach (var iso in Money.SupportedCurrencies)
+            {
+                <MudSelectItem T="string" Value="iso">@iso</MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+    <MudItem xs="12" sm="8">
+        <MudTextField T="string" @bind-Value="Model.PriceText" For="() => Model.PriceText" Label="@($"Price before tax ({Model.Currency})")" Variant="Variant.Outlined" Immediate="true" MaxLength="20"
+                      HelperText="@PriceHelp" data-testid="pack-price" />
+    </MudItem>
+    <MudItem xs="12">
+        <MudTextField T="string" @bind-Value="Model.HighlightsText" For="() => Model.HighlightsText" Label="Highlights (one per line)" Variant="Variant.Outlined" Immediate="true" Lines="4"
+                      HelperText="@($"Short selling points shown on the card. At most {PackForm.MaxHighlights}.")" />
+    </MudItem>
+    <MudItem xs="12" sm="6"><MudSwitch T="bool" @bind-Value="Model.IsActive" Label="On sale to clients" Color="Color.Primary" /></MudItem>
+    <MudItem xs="12" sm="6"><MudSwitch T="bool" @bind-Value="Model.IsPublic" Label="Shown on the public pricing page" Color="Color.Primary" /></MudItem>
+</MudGrid>
+
+@code {
+    [Parameter, EditorRequired] public PackForm Model { get; set; } = default!;
+
+    /// <summary>Changing the currency of a pack that already has orders would be confusing; the API decides, this only avoids the common slip.</summary>
+    [Parameter] public bool CurrencyLocked { get; set; }
+
+    private string PriceHelp => Money.Exponent(Model.Currency) switch
+    {
+        0 => $"Whole {Model.Currency} only, for example {Money.ToInputText(4900, Model.Currency)}. Enter the price in {Model.Currency}, not in smaller units.",
+        var n => $"Up to {n} decimals, for example {Money.ToInputText(4900, Model.Currency)}. Enter the price in {Model.Currency}, not in cents.",
+    };
+}

@@ -1,5 +1,6 @@
 @page "/pricing"
 @layout MarketingLayout
+@using NexaVerify.Web.Security
 @inject IPublicApiClient PublicApi
 
 <SeoHead Title="Pricing" Path="/pricing" Description="Pay for credits, not seats. Start with a free trial, then choose a plan or talk to us about your volume." />
@@ -41,6 +42,21 @@
         </div>
         <p class="mk-muted mk-center mk-more">Need a different size? <a href="/contact" class="mk-link">Contact us</a> and we will put together a plan for you.</p>
     }
+
+    @if (_packs is { Count: > 0 })
+    {
+        <div id="packs" class="mk-packs" data-testid="packs-section">
+            <h2 class="mk-h2 mk-center">Buy credits online</h2>
+            <p class="mk-lead mk-center">Top up whenever you need to. You pay by card on our payment partner's secure page and the credits are added to your account automatically.</p>
+            <div class="mk-grid mk-grid-3 mk-plans" data-testid="packs">
+                @foreach (var pack in _packs)
+                {
+                    <PackCard Pack="pack" BuyHref="@BuyHref" />
+                }
+            </div>
+            <p class="mk-muted mk-center mk-more">Prices are shown before tax. Any tax is added at checkout. We never see or store your card details.</p>
+        </div>
+    }
 </MkSection>
 
 <MkSection Id="credits" Tone="alt" Eyebrow="Credits explained" Title="What is a credit?" Lead="A credit is the unit we use to measure what you do with NexaVerify.">
@@ -59,7 +75,16 @@
 
 @code {
     private IReadOnlyList<PublicPlanDto>? _plans;
+    private IReadOnlyList<PublicPackDto>? _packs;
     private ApiError? _error;
+
+    [CascadingParameter] private HttpContext? Http { get; set; }
+
+    /// <summary>Signed-in clients go straight to the purchase page; everyone else signs in first and is sent there afterwards.</summary>
+    private string BuyHref =>
+        Http?.User is { Identity.IsAuthenticated: true } user && user.FindFirst(PortalClaims.Portal)?.Value == PortalKinds.Client
+            ? "/client/billing/buy"
+            : "/login?returnUrl=/client/billing/buy";
 
     private static readonly IReadOnlyList<FaqList.FaqItem> Faq =
     [
@@ -72,6 +97,10 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // Packs are an extra: if they cannot be loaded the plans still show (the page never fails because of them).
+        var packsResult = await PublicApi.GetPacksAsync();
+        _packs = packsResult.IsSuccess ? packsResult.Value : null;
+
         var result = await PublicApi.GetPlansAsync();
         if (result.IsSuccess)
         {

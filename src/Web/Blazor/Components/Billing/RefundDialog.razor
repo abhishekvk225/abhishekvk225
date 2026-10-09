@@ -1,0 +1,77 @@
+<MudDialog>
+    <TitleContent><MudText Typo="Typo.h5" HtmlTag="h2">Refund order</MudText></TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body2" data-testid="refund-summary">
+            The client paid <strong>@Money.Format(TotalMinor, Currency)</strong>. Already refunded: <strong>@Money.Format(RefundedMinor, Currency)</strong>.
+            You can refund up to <strong data-testid="refund-remaining">@Money.Format(RemainingMinor, Currency)</strong>. The matching credits are taken back from the client's license.
+        </MudText>
+        <MudTextField T="string" @bind-Value="_amount" Immediate="true" Label="@($"Amount to refund ({Currency})")" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-4"
+                      HelperText="@("Leave empty to refund everything that is left (" + Money.Format(RemainingMinor, Currency) + ").")"
+                      Error="@(AmountError is not null)" ErrorText="@AmountError" data-testid="refund-amount" />
+        <MudTextField T="string" @bind-Value="_reason" Immediate="true" Label="Reason (recorded in the audit log)" Variant="Variant.Outlined" Lines="3" Class="mt-3" MaxLength="500" data-testid="refund-reason" />
+        <MudText Typo="Typo.body2" Class="mt-4">
+            To confirm, type the order number <strong data-testid="refund-phrase">@OrderNumber</strong> below.
+        </MudText>
+        <MudTextField T="string" @bind-Value="_typed" Immediate="true" Label="Order number" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2" data-testid="refund-confirm-input" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel" data-testid="refund-cancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Error" Disabled="!CanConfirm" OnClick="Submit" data-testid="refund-ok">Refund</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private string? _amount;
+    private string? _reason;
+    private string? _typed;
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter, EditorRequired] public string OrderNumber { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired] public string Currency { get; set; } = string.Empty;
+
+    [Parameter] public long TotalMinor { get; set; }
+
+    [Parameter] public long RefundedMinor { get; set; }
+
+    private long RemainingMinor => Math.Max(0, TotalMinor - RefundedMinor);
+
+    /// <summary>The typed amount in minor units; null = refund the rest (empty box).</summary>
+    private long? AmountMinor => string.IsNullOrWhiteSpace(_amount) ? null : Money.TryParseMajor(_amount, Currency);
+
+    private string? AmountError
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(_amount))
+            {
+                return null;
+            }
+
+            return Money.TryParseMajor(_amount, Currency) switch
+            {
+                null => Money.Exponent(Currency) == 0 ? $"Enter a whole number of {Currency}." : $"Enter a number with at most {Money.Exponent(Currency)} decimals.",
+                <= 0 => "The amount must be more than zero.",
+                var minor when minor > RemainingMinor => $"That is more than what is left to refund ({Money.Format(RemainingMinor, Currency)}).",
+                _ => null,
+            };
+        }
+    }
+
+    private bool CanConfirm =>
+        RemainingMinor > 0
+        && AmountError is null
+        && !string.IsNullOrWhiteSpace(_reason)
+        && string.Equals(_typed?.Trim(), OrderNumber, StringComparison.Ordinal);
+
+    private void Submit()
+    {
+        if (CanConfirm)
+        {
+            MudDialog.Close(DialogResult.Ok(new RefundOrderRequest(AmountMinor, _reason!.Trim())));
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

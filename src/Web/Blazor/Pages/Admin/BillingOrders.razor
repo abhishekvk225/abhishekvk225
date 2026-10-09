@@ -1,0 +1,86 @@
+@page "/admin/billing/orders"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.BillingOrdersRead)]
+@inject IAdminBillingApiClient Api
+
+<PageTitle>Orders · Admin · NexaVerify</PageTitle>
+
+<PageHeader Title="Orders" Subtitle="Credit purchases from every client. Open an order to refund it or to check it with the payment partner." />
+
+<MudPaper Class="nv-card" Elevation="0">
+    <div class="d-flex flex-wrap align-end pa-3" style="gap: var(--nv-space-3);" role="search" data-testid="order-filters">
+        <div style="min-width: 240px; flex: 1 1 260px; max-width: 360px;">
+            <ClientPicker Value="_client" ValueChanged="ClientChangedAsync" Label="Client" HelperText="All clients" />
+        </div>
+        <MudSelect T="string" Value="_status" ValueChanged="StatusChangedAsync" Label="Status" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width: 200px;" data-testid="status-filter">
+            <MudSelectItem T="string" Value="@string.Empty">All statuses</MudSelectItem>
+            @foreach (var status in OrderStatuses.All)
+            {
+                <MudSelectItem T="string" Value="status">@OrderStatuses.Label(status)</MudSelectItem>
+            }
+        </MudSelect>
+        <MudDatePicker Label="From" Date="_from" DateChanged="FromChangedAsync" Variant="Variant.Outlined" Margin="Margin.Dense" Editable="true" Clearable="true" MaxDate="_to" Style="max-width: 180px;" />
+        <MudDatePicker Label="To" Date="_to" DateChanged="ToChangedAsync" Variant="Variant.Outlined" Margin="Margin.Dense" Editable="true" Clearable="true" MinDate="_from" Style="max-width: 180px;" />
+        @if (FiltersActive)
+        {
+            <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Outlined.FilterAltOff" OnClick="ClearAsync" data-testid="clear-filters">Clear filters</MudButton>
+        }
+    </div>
+    <DataTable @ref="_table" T="AdminOrderListItemDto" Caption="Orders" Columns="_columns" LoadPage="LoadAsync" PageSize="25"
+               EmptyMessage="No orders match. Orders appear here as soon as a client starts a purchase.">
+        <RowActions Context="order">
+            <MudButton Variant="Variant.Text" Size="Size.Small" Href="@($"admin/billing/orders/{order.Id}")" aria-label="@($"Open order {order.InvoiceNumber ?? order.Id.ToString("N")[..8]}")">Open</MudButton>
+        </RowActions>
+    </DataTable>
+</MudPaper>
+
+@code {
+    private DataTable<AdminOrderListItemDto>? _table;
+    private IReadOnlyList<DataColumn<AdminOrderListItemDto>> _columns = [];
+    private ClientListItemDto? _client;
+    private string _status = string.Empty;
+    private DateTime? _from;
+    private DateTime? _to;
+
+    private bool FiltersActive => _client is not null || _status.Length > 0 || _from is not null || _to is not null;
+
+    protected override void OnInitialized() =>
+        _columns =
+        [
+            DataColumn<AdminOrderListItemDto>.Text("Date", o => o.CreatedAt.ToString("d MMM yyyy", System.Globalization.CultureInfo.InvariantCulture)),
+            DataColumn<AdminOrderListItemDto>.Text("Client", o => o.ClientName),
+            DataColumn<AdminOrderListItemDto>.Text("Pack", o => o.PackName),
+            DataColumn<AdminOrderListItemDto>.Text("Credits", o => UiText.Number(o.Credits), numeric: true),
+            DataColumn<AdminOrderListItemDto>.Text("Total", o => Money.Format(o.TotalMinor, o.Currency), numeric: true),
+            DataColumn<AdminOrderListItemDto>.Custom("Status", o => @<StatusChip Kind="StatusKind.Order" Value="@o.Status" />),
+            DataColumn<AdminOrderListItemDto>.Text("Invoice", o => o.InvoiceNumber ?? "—"),
+        ];
+
+    private Task<ApiResult<PagedResult<AdminOrderListItemDto>>> LoadAsync(PageRequest page, CancellationToken ct) =>
+        Api.ListOrdersAsync(new AdminOrderQuery
+        {
+            ClientId = _client?.Id,
+            Status = string.IsNullOrEmpty(_status) ? null : _status,
+            From = _from is { } f ? DateOnly.FromDateTime(f) : null,
+            To = _to is { } t ? DateOnly.FromDateTime(t) : null,
+            Page = page.Page,
+            PageSize = page.PageSize,
+        }, ct);
+
+    private Task ClientChangedAsync(ClientListItemDto? client) { _client = client; return ReloadAsync(); }
+
+    private Task StatusChangedAsync(string? status) { _status = status ?? string.Empty; return ReloadAsync(); }
+
+    private Task FromChangedAsync(DateTime? date) { _from = date; return ReloadAsync(); }
+
+    private Task ToChangedAsync(DateTime? date) { _to = date; return ReloadAsync(); }
+
+    private Task ClearAsync()
+    {
+        _client = null;
+        _status = string.Empty;
+        _from = _to = null;
+        return ReloadAsync();
+    }
+
+    private Task ReloadAsync() => _table is null ? Task.CompletedTask : _table.ReloadAsync();
+}

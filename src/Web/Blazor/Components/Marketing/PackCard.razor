@@ -1,0 +1,34 @@
+@using NexaVerify.Web.Services
+
+<article class="mk-card mk-plan" data-testid="pack-card" aria-labelledby="@NameId">
+    <h3 id="@NameId" class="mk-h3">@Pack.Name</h3>
+    <p class="mk-plan-price" data-testid="pack-price">@Price</p>
+    @if (!string.IsNullOrWhiteSpace(Pack.Description))
+    {
+        <p class="mk-muted">@Pack.Description</p>
+    }
+    <p class="mk-plan-credits"><strong>@Pack.Credits.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</strong> credits <span class="mk-muted">&middot; valid for @PlanCard.ValidityText(Pack.ValidityDays)</span></p>
+    @if (Pack.Highlights is { Count: > 0 })
+    {
+        <ul class="mk-checks">
+            @foreach (var highlight in Pack.Highlights)
+            {
+                <li><MkIcon Name="check" Size="18" /><span>@highlight</span></li>
+            }
+        </ul>
+    }
+    <div class="mk-plan-cta">
+        <a href="@BuyHref" class="mk-btn mk-btn-primary" data-testid="pack-buy" aria-label="@($"Buy credits: {Pack.Name}")">Buy credits</a>
+    </div>
+</article>
+
+@code {
+    [Parameter, EditorRequired] public PublicPackDto Pack { get; set; } = default!;
+
+    [Parameter, EditorRequired] public string BuyHref { get; set; } = "/login?returnUrl=/client/billing/buy";
+
+    private string NameId => $"pack-{Pack.Id:N}";
+
+    /// <summary>The real price from the API (integer minor units, formatted exactly). The optional display text is only a fallback for a free-form price.</summary>
+    private string Price => Pack.PriceMinor > 0 ? Money.Format(Pack.PriceMinor, Pack.Currency) : Pack.DisplayPrice ?? "Contact us";
+}
