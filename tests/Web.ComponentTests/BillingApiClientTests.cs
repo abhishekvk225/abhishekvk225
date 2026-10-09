@@ -173,11 +173,15 @@ public class BillingApiClientTests
 
         h.Api.Seen.Single().Path.ShouldBe($"/api/v1/admin/billing/orders?clientId={clientId}&status=Paid&from=2026-06-01&to=2026-06-30&page=3&pageSize=25");
 
-        h.Api.Respond = _ => ScriptedApi.Json(HttpStatusCode.OK, "{\"id\":\"00000000-0000-0000-0000-00000000d001\",\"invoiceNumber\":\"NV-1\",\"clientId\":\"00000000-0000-0000-0000-00000000c001\",\"clientName\":\"Acme\",\"packName\":\"S\",\"credits\":1,\"validityDays\":1,\"subtotalMinor\":1,\"taxMinor\":0,\"totalMinor\":1,\"taxPercent\":0,\"taxLabel\":null,\"currency\":\"USD\",\"status\":\"Paid\",\"createdAt\":\"2026-06-15T09:00:00Z\",\"paidAt\":null,\"licenseId\":null,\"provider\":\"stripe\",\"providerPaymentId\":\"pi_1\",\"refunds\":[{\"id\":\"00000000-0000-0000-0000-000000000001\",\"amountMinor\":1,\"creditsRevoked\":1,\"reason\":\"dup\",\"createdAt\":\"2026-06-16T09:00:00Z\"}],\"events\":[]}");
+        h.Api.Respond = _ => ScriptedApi.Json(HttpStatusCode.OK, "{\"order\":{\"id\":\"00000000-0000-0000-0000-00000000d001\",\"invoiceNumber\":\"NV-1\",\"packName\":\"S\",\"credits\":1,\"validityDays\":1,\"subtotalMinor\":1,\"taxMinor\":0,\"totalMinor\":1,\"taxPercent\":0,\"taxLabel\":null,\"currency\":\"USD\",\"status\":\"Paid\",\"createdAt\":\"2026-06-15T09:00:00Z\",\"paidAt\":null,\"licenseId\":null},\"clientId\":\"00000000-0000-0000-0000-00000000c001\",\"clientName\":\"Acme\",\"provider\":\"stripe\",\"providerSessionId\":null,\"providerPaymentId\":\"pi_1\",\"creditsRevoked\":1,\"failureReason\":null,\"refunds\":[{\"id\":\"00000000-0000-0000-0000-000000000001\",\"amountMinor\":1,\"creditsRevoked\":1,\"reason\":\"dup\",\"status\":\"Succeeded\",\"providerRefundId\":null,\"createdBy\":null,\"createdAt\":\"2026-06-16T09:00:00Z\"}]}");
         var order = await admin.RefundAsync(BillingSample.OrderId, new RefundOrderRequest(1, "dup"));
         await admin.ReconcileAsync(BillingSample.OrderId);
 
         order.Value.Refunds!.Single().Reason.ShouldBe("dup");
+        order.Value.ClientName.ShouldBe("Acme");
+        order.Value.PackName.ShouldBe("S");
+        order.Value.Provider.ShouldBe("stripe");
+        order.Value.Status.ShouldBe("Paid");
         h.Api.Seen[1].Path.ShouldBe($"/api/v1/admin/billing/orders/{BillingSample.OrderId}/refund");
         h.Api.Seen[1].Body.ShouldBe("{\"amountMinor\":1,\"reason\":\"dup\"}");
         h.Api.Seen[2].Path.ShouldBe($"/api/v1/admin/billing/orders/{BillingSample.OrderId}/reconcile");
