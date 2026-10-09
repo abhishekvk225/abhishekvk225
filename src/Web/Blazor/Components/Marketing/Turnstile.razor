@@ -1,0 +1,21 @@
+@using NexaVerify.Web.Security
+
+@* Cloudflare Turnstile widget. Rendered only when the API's public config asks for it; the script origin is allowed in the CSP for
+   the sign-up page only (Security:Headers:TurnstileEnabled). The widget adds the hidden field "cf-turnstile-response" to the form. *@
+<div class="mk-field" data-testid="turnstile">
+    <div class="cf-turnstile" data-sitekey="@SiteKey" data-theme="auto" data-appearance="always"></div>
+    <script nonce="@Nonce" src="@ScriptUrl" async defer></script>
+    <noscript><p class="mk-hint">Please turn on JavaScript to complete the security check.</p></noscript>
+</div>
+
+@code {
+    public const string ScriptUrl = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+
+    public const string ResponseField = "cf-turnstile-response";
+
+    [CascadingParameter] private HttpContext? Http { get; set; }
+
+    [Parameter, EditorRequired] public string SiteKey { get; set; } = string.Empty;
+
+    private string Nonce => Http.GetCspNonce();
+}

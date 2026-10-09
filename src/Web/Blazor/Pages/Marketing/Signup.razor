@@ -1,0 +1,213 @@
+@page "/signup"
+@layout MarketingLayout
+@inject IPublicApiClient PublicApi
+
+<SeoHead Title="Start your free trial" Path="/signup" Description="Create a NexaVerify account in a few minutes. Confirm your email, sign in and try face verification with trial credits. No card needed." />
+
+<PageHero Eyebrow="Free trial" Title="Create your account" Lead="@Lead" />
+
+<MkSection Id="signup">
+    <div class="mk-form-layout">
+        <div class="mk-prose" data-testid="signup-benefits">
+            <h2 class="mk-h3">What happens next</h2>
+            <ol class="mk-numbered">
+                <li>You create the account here.</li>
+                <li>We email you a link to confirm your address.</li>
+                <li>You sign in and register your first people.</li>
+            </ol>
+            <p class="mk-muted">No card is needed. Your data is protected as described on the <a href="/security" class="mk-link">security page</a>.</p>
+            <p class="mk-muted">Already have an account? <a href="/login" class="mk-link">Sign in</a>.</p>
+        </div>
+
+        <div class="mk-card mk-form-card">
+            @if (_configError is not null)
+            {
+                <div class="mk-state" role="alert" data-testid="signup-config-error">
+                    <span class="mk-state-icon" aria-hidden="true"><MkIcon Name="alert" Size="28" /></span>
+                    <h2 class="mk-h3">Sign-up is not available right now</h2>
+                    <p class="mk-muted">@_configError.Message</p>
+                    @if (!string.IsNullOrWhiteSpace(_configError.CorrelationId))
+                    {
+                        <p class="mk-alert-ref">Reference: <span data-testid="correlation-id">@_configError.CorrelationId</span></p>
+                    }
+                    <a href="/signup" class="mk-btn mk-btn-outline" data-testid="retry">Try again</a>
+                </div>
+            }
+            else if (_config is { SignupEnabled: false })
+            {
+                <div class="mk-state" role="status" data-testid="signup-closed">
+                    <span class="mk-state-icon" aria-hidden="true"><MkIcon Name="info" Size="28" /></span>
+                    <h2 class="mk-h3">Sign-ups are currently closed</h2>
+                    <p class="mk-muted">We are not taking new accounts at the moment. Contact us and we will help you get started.</p>
+                    <a href="/contact" class="mk-btn mk-btn-primary" data-testid="closed-contact">Contact us</a>
+                </div>
+            }
+            else if (_sent)
+            {
+                <div class="mk-state mk-state-left" data-testid="signup-sent">
+                    <span class="mk-state-icon mk-state-ok" aria-hidden="true"><MkIcon Name="mail" Size="28" /></span>
+                    <h2 class="mk-h3" id="sent-title" tabindex="-1">Check your email</h2>
+                    <p role="status">If we can create an account for <strong>@_sentTo</strong>, we have sent a message with a link to confirm it. The link works for a limited time.</p>
+                    <ul class="mk-facts">
+                        <li>It can take a few minutes. Look in your spam folder too.</li>
+                        <li>If nothing arrives, you can try again after a minute.</li>
+                    </ul>
+                    <a href="@RestartHref" class="mk-btn mk-btn-outline" data-mk-delay="60" data-testid="resend">Send it again</a>
+                    <a href="/contact" class="mk-link">Need help? Contact us</a>
+                </div>
+            }
+            else if (_config is not null)
+            {
+                <h2 class="mk-h3">Your details</h2>
+                <EditForm EditContext="_context" FormName="signup" OnValidSubmit="SubmitAsync" OnInvalidSubmit="OnInvalid" class="mk-form" data-testid="signup-form">
+                    <DataAnnotationsValidator />
+                    @if (_error is not null)
+                    {
+                        <FormAlert Kind="error" Reference="@_error.CorrelationId" TestId="signup-error">@_error.Message</FormAlert>
+                    }
+                    @foreach (var message in _general)
+                    {
+                        <FormAlert Kind="error" TestId="signup-general-error">@message</FormAlert>
+                    }
+                    <TextField Id="signup-company" Label="Company name" @bind-Value="Model.CompanyName" Required="true" Autocomplete="organization" MaxLength="120" />
+                    <TextField Id="signup-name" Label="Your full name" @bind-Value="Model.FullName" Required="true" Autocomplete="name" MaxLength="120" />
+                    <TextField Id="signup-email" Label="Work email" Type="email" @bind-Value="Model.Email" Required="true" Autocomplete="email"
+                               HintText="We send a confirmation link to this address." AutoCapitalize="none" />
+                    <PasswordField Id="signup-password" Label="Password" @bind-Value="Model.Password" ShowStrength="true"
+                                   HintText="@($"At least {PasswordRules.MinLength} characters. A few unrelated words make a strong, easy-to-remember password.")" />
+                    <PasswordField Id="signup-confirm" Label="Confirm password" @bind-Value="Model.ConfirmPassword" />
+                    <CheckField Id="signup-terms" @bind-Value="Model.AcceptTerms" Required="true">
+                        I agree to the <a href="/terms" class="mk-link" target="_blank" rel="noopener">terms of service</a> and the
+                        <a href="/privacy" class="mk-link" target="_blank" rel="noopener">privacy notice</a>, and I will only register people who have given the consent that the law requires.
+                    </CheckField>
+                    <Honeypot @bind-Value="Model.Website" />
+                    @if (_config.Captcha.IsTurnstile)
+                    {
+                        <Turnstile SiteKey="@(_config.Captcha.SiteKey ?? string.Empty)" />
+                    }
+                    <button type="submit" class="mk-btn mk-btn-primary mk-btn-block mk-btn-lg" data-testid="signup-submit">Create account</button>
+                </EditForm>
+            }
+        </div>
+    </div>
+</MkSection>
+
+@code {
+    private EditContext _context = default!;
+    private ValidationMessageStore _store = default!;
+    private PublicConfigDto? _config;
+    private ApiError? _configError;
+    private ApiError? _error;
+    private List<string> _general = [];
+    private bool _sent;
+    private string _sentTo = string.Empty;
+
+    [CascadingParameter] private HttpContext? Http { get; set; }
+
+    // Posted values arrive here on a form submit. The property is called Model because the inputs are named after "Model.Field".
+    [SupplyParameterFromForm(FormName = "signup")] private SignupModel Model { get; set; } = default!;
+
+    /// <summary>Lets the confirmation page's "send it again" link bring the address back.</summary>
+    [SupplyParameterFromQuery(Name = "email")] public string? EmailQuery { get; set; }
+
+    private string Lead => _config is { SignupEnabled: true, TrialCredits: > 0, TrialDays: > 0 }
+        ? $"Start with {_config.TrialCredits:N0} free credits for {_config.TrialDays} days. It takes a few minutes."
+        : "It takes a few minutes. No card needed.";
+
+    private string RestartHref => $"/signup?email={Uri.EscapeDataString(_sentTo)}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Model is null)
+        {
+            Model = new SignupModel();
+            if (!string.IsNullOrWhiteSpace(EmailQuery) && EmailQuery.Length <= 256)
+            {
+                Model.Email = EmailQuery.Trim();
+            }
+        }
+
+        _context = new EditContext(Model);
+        _store = new ValidationMessageStore(_context);
+
+        var config = await PublicApi.GetConfigAsync();
+        if (config.IsSuccess)
+        {
+            _config = config.Value;
+        }
+        else
+        {
+            _configError = config.Error;
+        }
+    }
+
+    private void OnInvalid()
+    {
+        _error = null;
+        ClearSecrets();
+    }
+
+    private async Task SubmitAsync()
+    {
+        _error = null;
+        _general = [];
+        _store.Clear();
+
+        // A filled honeypot is a bot: show the normal confirmation, send nothing.
+        if (!string.IsNullOrWhiteSpace(Model.Website))
+        {
+            Finish();
+            return;
+        }
+
+        string? captchaToken = null;
+        if (_config is { Captcha.IsTurnstile: true })
+        {
+            captchaToken = Http?.Request.HasFormContentType == true ? Http.Request.Form[Turnstile.ResponseField].ToString() : null;
+            if (string.IsNullOrWhiteSpace(captchaToken))
+            {
+                _general = ["Please complete the security check, then try again."];
+                ClearSecrets();
+                return;
+            }
+        }
+
+        var result = await PublicApi.SignupAsync(new SignupRequest(
+            Model.CompanyName.Trim(), Model.FullName.Trim(), Model.Email.Trim(), Model.Password, Model.AcceptTerms, captchaToken, Model.Website));
+        ClearSecrets();
+
+        if (result.IsSuccess)
+        {
+            // The same page whether or not the address was already known: the API answers 202 either way.
+            Finish();
+            return;
+        }
+
+        var failure = result.Error!;
+        if (failure.FieldErrors is { Count: > 0 })
+        {
+            _general = FormErrorMapper.Apply(typeof(SignupModel), _context, _store, failure.FieldErrors, out var mapped);
+            _context.NotifyValidationStateChanged();
+            if (mapped || _general.Count > 0)
+            {
+                return;
+            }
+        }
+
+        _error = failure;
+    }
+
+    private void Finish()
+    {
+        _sentTo = Model.Email.Trim();
+        _sent = true;
+        ClearSecrets();
+    }
+
+    /// <summary>Passwords are never sent back to the browser, even when the form is shown again.</summary>
+    private void ClearSecrets()
+    {
+        Model.Password = string.Empty;
+        Model.ConfirmPassword = string.Empty;
+    }
+}

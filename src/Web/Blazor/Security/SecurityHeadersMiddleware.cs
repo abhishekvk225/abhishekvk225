@@ -11,6 +11,12 @@ public sealed class SecurityHeadersMiddleware(RequestDelegate next, IOptions<Sec
 {
     public const string NonceItemKey = "nv.csp-nonce";
 
+    /// <summary>The only page that embeds the sign-up bot check.</summary>
+    public const string SignupPath = "/signup";
+
+    /// <summary>The bot-check provider's origin, allowed (scripts, frames, connections) on the sign-up page only and only when enabled.</summary>
+    public const string TurnstileOrigin = "https://challenges.cloudflare.com";
+
     private readonly SecurityHeadersOptions _options = options.Value;
 
     public Task InvokeAsync(HttpContext context)
@@ -28,7 +34,7 @@ public sealed class SecurityHeadersMiddleware(RequestDelegate next, IOptions<Sec
             var headers = context.Response.Headers;
             if (_options.ContentSecurityPolicyEnabled)
             {
-                headers["Content-Security-Policy"] = BuildCsp(_options, nonce);
+                headers["Content-Security-Policy"] = BuildCsp(_options, nonce, _options.TurnstileEnabled && context.Request.Path.StartsWithSegments(SignupPath, StringComparison.OrdinalIgnoreCase));
             }
 
             headers["X-Content-Type-Options"] = "nosniff";
@@ -49,7 +55,7 @@ public sealed class SecurityHeadersMiddleware(RequestDelegate next, IOptions<Sec
         return next(context);
     }
 
-    public static string BuildCsp(SecurityHeadersOptions options, string nonce)
+    public static string BuildCsp(SecurityHeadersOptions options, string nonce, bool allowCaptcha = false)
     {
         var connect = new List<string> { "'self'", options.AllowInsecureWebSockets ? "ws: wss:" : "wss:" };
         if (!string.IsNullOrWhiteSpace(options.ApiOrigin))
@@ -57,20 +63,28 @@ public sealed class SecurityHeadersMiddleware(RequestDelegate next, IOptions<Sec
             connect.Add(options.ApiOrigin.Trim());
         }
 
-        var script = $"'self' 'nonce-{nonce}'" + (string.IsNullOrWhiteSpace(options.ExtraScriptSrc) ? string.Empty : " " + options.ExtraScriptSrc.Trim());
+        if (allowCaptcha)
+        {
+            connect.Add(TurnstileOrigin);
+        }
 
-        return string.Join("; ",
+        var script = $"'self' 'nonce-{nonce}'" + (string.IsNullOrWhiteSpace(options.ExtraScriptSrc) ? string.Empty : " " + options.ExtraScriptSrc.Trim())
+                     + (allowCaptcha ? " " + TurnstileOrigin : string.Empty);
+        var frame = allowCaptcha ? $"frame-src {TurnstileOrigin}" : null;
+
+        return string.Join("; ", new[] {
             "default-src 'self'",
             $"script-src {script}",
             "style-src 'self' 'unsafe-inline'",
             "img-src 'self' data: blob:",
             "font-src 'self' data:",
             "media-src 'self' blob:",
+            frame,
             $"connect-src {string.Join(' ', connect)}",
             "frame-ancestors 'none'",
             "base-uri 'self'",
             "form-action 'self'",
-            "object-src 'none'");
+            "object-src 'none'" }.Where(d => d is not null));
     }
 }
 

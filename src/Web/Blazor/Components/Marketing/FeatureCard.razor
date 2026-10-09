@@ -1,0 +1,13 @@
+<article class="mk-card mk-feature">
+    <span class="mk-feature-icon" aria-hidden="true"><MkIcon Name="@Icon" /></span>
+    <h3 class="mk-h3">@Title</h3>
+    <p class="mk-muted">@ChildContent</p>
+</article>
+
+@code {
+    [Parameter, EditorRequired] public string Icon { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

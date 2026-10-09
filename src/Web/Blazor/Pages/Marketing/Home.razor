@@ -1,0 +1,159 @@
+@page "/"
+@layout MarketingLayout
+@inject IPublicApiClient PublicApi
+
+<SeoHead Description="NexaVerify checks who is in front of your camera. Register people, verify one person or find someone among many, with a simple web portal and an API. Start with a free trial." Path="/" Organization="true" />
+
+<section class="mk-hero" aria-labelledby="page-title">
+    <div class="mk-container mk-hero-grid">
+        <div class="mk-hero-copy">
+            <p class="mk-eyebrow">Face verification for businesses</p>
+            <h1 id="page-title" class="mk-h1">Know who is in front of you, in a second.</h1>
+            <p class="mk-lead">NexaVerify compares a photo with the people you have registered. Confirm that someone is who they say they are, or find them among thousands. Use the web portal, or connect it to your own systems.</p>
+            <div class="mk-hero-actions">
+                <a href="/signup" class="mk-btn mk-btn-primary mk-btn-lg" data-testid="hero-signup">Start free trial</a>
+                <a href="/how-it-works" class="mk-btn mk-btn-outline mk-btn-lg">See how it works</a>
+            </div>
+            <p class="mk-hero-note mk-muted" data-testid="trial-note">@TrialNote</p>
+        </div>
+        <div class="mk-hero-visual">
+            <HeroIllustration />
+        </div>
+    </div>
+</section>
+
+<MkSection Id="value" Eyebrow="Why NexaVerify" Title="Simple to start, built to be trusted" Lead="You do not need a data science team. Register people, check photos, and see exactly what happened and what it cost." Center="true">
+    <div class="mk-grid mk-grid-3">
+        <FeatureCard Icon="check-person" Title="Accurate checks you can explain">Every check returns a clear match or no-match answer and a similarity score, and it is kept in your history.</FeatureCard>
+        <FeatureCard Icon="clock" Title="Fast to roll out">Try it in the portal on day one. When you are ready, the same features are available through a documented API.</FeatureCard>
+        <FeatureCard Icon="shield" Title="Privacy and control first">Your data is kept apart from every other customer's, face data is encrypted, and you can erase a person at any time.</FeatureCard>
+    </div>
+</MkSection>
+
+<MkSection Id="steps" Tone="alt" Eyebrow="How it works" Title="Three steps from sign-up to your first check" Center="true">
+    <ol class="mk-steps" data-testid="steps">
+        <li class="mk-card mk-step">
+            <span class="mk-step-no" aria-hidden="true">1</span>
+            <h3 class="mk-h3">Register people</h3>
+            <p class="mk-muted">Add a photo of each person, together with your own reference and the consent you hold for them.</p>
+        </li>
+        <li class="mk-card mk-step">
+            <span class="mk-step-no" aria-hidden="true">2</span>
+            <h3 class="mk-h3">Check a photo</h3>
+            <p class="mk-muted">Take a photo with the camera or upload one. Ask "is this Ada?" or "who is this?".</p>
+        </li>
+        <li class="mk-card mk-step">
+            <span class="mk-step-no" aria-hidden="true">3</span>
+            <h3 class="mk-h3">Act on the answer</h3>
+            <p class="mk-muted">Open the door, record attendance or flag a case. Your history, usage and credits are always visible.</p>
+        </li>
+    </ol>
+    <p class="mk-center mk-more"><a href="/how-it-works" class="mk-link">Read the full walk-through <MkIcon Name="arrow-right" Size="16" /></a></p>
+</MkSection>
+
+<MkSection Id="product" Eyebrow="The portal" Title="Everything in one clear place" Lead="Your team sees checks, people, credits and API activity in a dashboard made for non-technical users as well as developers.">
+    <div class="mk-split">
+        <ProductMock />
+        <ul class="mk-checks mk-checks-lg">
+            <li><MkIcon Name="check" Size="20" /><span>Register people and check photos straight from the browser</span></li>
+            <li><MkIcon Name="check" Size="20" /><span>Credit balance, expiry and low-balance alerts</span></li>
+            <li><MkIcon Name="check" Size="20" /><span>Usage charts and CSV exports for your own reports</span></li>
+            <li><MkIcon Name="check" Size="20" /><span>Team accounts with roles, and two-step sign-in</span></li>
+        </ul>
+    </div>
+</MkSection>
+
+<MkSection Id="features" Tone="alt" Eyebrow="Features" Title="What you get" Center="true">
+    <div class="mk-grid mk-grid-3" data-testid="feature-grid">
+        <FeatureCard Icon="check-person" Title="Verify one person (1:1)">Confirm that a photo matches one registered person.</FeatureCard>
+        <FeatureCard Icon="search-person" Title="Find a person (1:N)">Search everyone you registered for the closest matches.</FeatureCard>
+        <FeatureCard Icon="user-plus" Title="Register people">Add people with your own reference and a consent record.</FeatureCard>
+        <FeatureCard Icon="key" Title="API keys">Create keys with limited permissions, rotate them and switch them off.</FeatureCard>
+        <FeatureCard Icon="webhook" Title="Webhooks">Get signed notifications when something happens in your account.</FeatureCard>
+        <FeatureCard Icon="chart" Title="Usage dashboards">See checks, results and credits over time.</FeatureCard>
+    </div>
+    <p class="mk-center mk-more"><a href="/features" class="mk-link">See all features <MkIcon Name="arrow-right" Size="16" /></a></p>
+</MkSection>
+
+<MkSection Id="use-cases" Eyebrow="Use cases" Title="Made for everyday identity checks" Center="true">
+    <div class="mk-grid mk-grid-4" data-testid="use-cases">
+        <article class="mk-card mk-usecase"><span class="mk-feature-icon" aria-hidden="true"><MkIcon Name="clock" /></span><h3 class="mk-h3">Attendance</h3><p class="mk-muted">Record who arrived and when, without badges to share or lose.</p></article>
+        <article class="mk-card mk-usecase"><span class="mk-feature-icon" aria-hidden="true"><MkIcon Name="door" /></span><h3 class="mk-h3">Access control</h3><p class="mk-muted">Check a person before a door, gate or service is unlocked.</p></article>
+        <article class="mk-card mk-usecase"><span class="mk-feature-icon" aria-hidden="true"><MkIcon Name="id-card" /></span><h3 class="mk-h3">Customer onboarding</h3><p class="mk-muted">Compare a customer's selfie with the photo on their ID as one step of your KYC process.</p></article>
+        <article class="mk-card mk-usecase"><span class="mk-feature-icon" aria-hidden="true"><MkIcon Name="visitor" /></span><h3 class="mk-h3">Visitors</h3><p class="mk-muted">Recognise returning visitors and keep a simple record of visits.</p></article>
+    </div>
+</MkSection>
+
+<section class="mk-section mk-section-band" aria-labelledby="home-security-title" data-testid="security-band">
+    <div class="mk-container mk-band-grid">
+        <div>
+            <p class="mk-eyebrow">Security and privacy</p>
+            <h2 id="home-security-title" class="mk-h2">Face data deserves extra care</h2>
+            <p class="mk-lead">We built NexaVerify so that your people's data stays yours, and so that you can show what happened.</p>
+            <a href="/security" class="mk-btn mk-btn-light">How we protect your data</a>
+        </div>
+        <ul class="mk-checks mk-checks-on-band">
+            <li><MkIcon Name="lock" Size="20" /><span>Each customer's data is kept apart from all others</span></li>
+            <li><MkIcon Name="shield" Size="20" /><span>Face data is encrypted; photos are not kept by default</span></li>
+            <li><MkIcon Name="list" Size="20" /><span>An audit trail records who did what</span></li>
+            <li><MkIcon Name="trash" Size="20" /><span>Erase a person whenever you need to</span></li>
+        </ul>
+    </div>
+</section>
+
+<MkSection Id="plans" Eyebrow="Plans" Title="Start free, grow when you are ready" Lead="You pay for credits. Each check or registration uses credits, and you can see the balance at any time." Center="true">
+    @if (_plans is { Count: > 0 })
+    {
+        <div class="mk-grid mk-grid-3" data-testid="plans-teaser">
+            @foreach (var plan in _plans.Take(3))
+            {
+                <PlanCard Plan="plan" />
+            }
+        </div>
+    }
+    else
+    {
+        <div class="mk-card mk-plan-fallback" data-testid="plans-fallback">
+            <p>Plans and prices are on the pricing page. You can start with a free trial and talk to us when you need more credits.</p>
+        </div>
+    }
+    <p class="mk-center mk-more"><a href="/pricing" class="mk-link">Compare plans <MkIcon Name="arrow-right" Size="16" /></a></p>
+</MkSection>
+
+<MkSection Id="faq" Tone="alt" Eyebrow="Questions" Title="Frequently asked questions" Center="true">
+    <FaqList Items="Faq" />
+</MkSection>
+
+<CtaBand Text="@CtaText" />
+
+@code {
+    private IReadOnlyList<PublicPlanDto>? _plans;
+    private PublicConfigDto? _config;
+
+    private static readonly IReadOnlyList<FaqList.FaqItem> Faq =
+    [
+        new("Do I need special hardware?", "No. Any camera that takes a clear photo will do, including a laptop or phone camera. You can also upload a photo."),
+        new("What does a check cost?", "Each operation uses credits. The portal shows the cost of every action and your balance before you run out. See the pricing page for plans."),
+        new("Does it detect fake faces, such as a photo of a photo?", "NexaVerify compares faces. It does not include liveness (anti-spoofing) detection today, so for high-risk decisions combine it with other checks."),
+        new("What happens to the photos I upload?", "Photos are used to create a face template and are not kept by default. You choose how long registered people are kept and can erase anyone at any time."),
+        new("Do I need consent from the people I register?", "Yes. You are responsible for lawful use and for the consent that the law in your area requires. NexaVerify records the consent reference you give for each person."),
+        new("Can my developers connect it to our systems?", "Yes. Everything in the portal is also available through an API, with examples on the developers page."),
+    ];
+
+    private string TrialNote => _config is { SignupEnabled: true, TrialCredits: > 0, TrialDays: > 0 }
+        ? $"Free trial: {_config.TrialCredits:N0} credits for {_config.TrialDays} days. No card needed."
+        : "Free trial available. No card needed.";
+
+    private string CtaText => _config is { SignupEnabled: true }
+        ? "Create a free trial account in a few minutes. No card needed."
+        : "Tell us about your needs and we will help you get started.";
+
+    protected override async Task OnInitializedAsync()
+    {
+        // The home page must work even if the API is down: failures just hide the plan cards and use generic wording.
+        var plans = await PublicApi.GetPlansAsync();
+        _plans = plans.IsSuccess ? plans.Value : null;
+        var config = await PublicApi.GetConfigAsync();
+        _config = config.IsSuccess ? config.Value : null;
+    }
+}

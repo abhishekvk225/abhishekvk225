@@ -1,0 +1,47 @@
+@using NexaVerify.Web.Security
+@inject SiteUrls Urls
+@inject NavigationManager Nav
+
+@* Title, description, canonical and social tags for one public page. Everything here is plain attribute text (encoded by Blazor). *@
+<PageTitle>@FullTitle</PageTitle>
+<HeadContent>
+    <meta name="description" content="@Description" />
+    <link rel="canonical" href="@Canonical" />
+    @if (NoIndex)
+    {
+        <meta name="robots" content="noindex,nofollow" />
+    }
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="NexaVerify" />
+    <meta property="og:title" content="@FullTitle" />
+    <meta property="og:description" content="@Description" />
+    <meta property="og:url" content="@Canonical" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="@FullTitle" />
+    <meta name="twitter:description" content="@Description" />
+    @if (Organization)
+    {
+        <OrganizationJsonLd />
+    }
+</HeadContent>
+
+@code {
+    public const string DefaultTitle = "NexaVerify - Face recognition to verify and identify people";
+
+    /// <summary>Page title without the brand suffix; empty for the home page.</summary>
+    [Parameter] public string? Title { get; set; }
+
+    [Parameter, EditorRequired] public string Description { get; set; } = string.Empty;
+
+    /// <summary>The page's own path, for the canonical link ("/pricing").</summary>
+    [Parameter] public string Path { get; set; } = "/";
+
+    [Parameter] public bool NoIndex { get; set; }
+
+    /// <summary>Adds the JSON-LD Organization description (home page).</summary>
+    [Parameter] public bool Organization { get; set; }
+
+    private string FullTitle => string.IsNullOrWhiteSpace(Title) ? DefaultTitle : $"{Title} · NexaVerify";
+
+    private string Canonical => Urls.Absolute(Path, Nav.BaseUri);
+}

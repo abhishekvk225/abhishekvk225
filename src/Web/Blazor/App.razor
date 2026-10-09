@@ -9,9 +9,10 @@
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#4338CA" />
     <base href="/" />
-    <title>NexaVerify</title>
     <link rel="stylesheet" href="_content/MudBlazor/MudBlazor.min.css" />
     <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="@Assets["marketing.css"]" />
+    <script nonce="@Nonce" src="@Assets["js/site.js"]"></script>
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <HeadOutlet @rendermode="PageRenderMode" />
 </head>
@@ -34,16 +35,12 @@
     // Interactive Server without prerendering: the shell needs browser APIs (theme, storage) before it can render correctly.
     private static readonly IComponentRenderMode InteractiveMode = new InteractiveServerRenderMode(prerender: false);
 
-    // The sign-in page is static server-rendered: it is a plain HTML form posting to /auth/login, because only a normal HTTP
-    // response can set the session cookie (a SignalR circuit cannot). Everything else is interactive.
-    private static readonly string[] StaticPaths = ["/login"];
-
     [CascadingParameter] private HttpContext? HttpContext { get; set; }
 
+    // The marketing pages and the sign-in page are static server-rendered (no SignalR circuit). The sign-in page is a plain HTML form
+    // posting to /auth/login, because only a normal HTTP response can set the session cookie. Everything else is interactive.
     private IComponentRenderMode? PageRenderMode =>
-        HttpContext is { } http && StaticPaths.Any(p => http.Request.Path.StartsWithSegments(p, StringComparison.OrdinalIgnoreCase))
-            ? null
-            : InteractiveMode;
+        HttpContext is { } http && PublicRoutes.IsStatic(http.Request.Path) ? null : InteractiveMode;
 
     // The person's address (after trusted-proxy processing), handed to the circuit so its API calls can be attributed and limited per person.
     private string? ClientIp => HttpContext?.Connection.RemoteIpAddress?.ToString();

@@ -1,0 +1,40 @@
+@* A page section with an optional eyebrow, a heading (h2) and a lead paragraph. Tone: "" (plain), "alt" (tinted) or "band" (dark). *@
+<section class="@CssClass" aria-labelledby="@HeadingId" id="@Id">
+    <div class="mk-container">
+        @if (!string.IsNullOrEmpty(Title))
+        {
+            <div class="mk-section-head @(Center ? "mk-center" : null)">
+                @if (!string.IsNullOrEmpty(Eyebrow))
+                {
+                    <p class="mk-eyebrow">@Eyebrow</p>
+                }
+                <h2 id="@HeadingId" class="mk-h2">@Title</h2>
+                @if (!string.IsNullOrEmpty(Lead))
+                {
+                    <p class="mk-lead">@Lead</p>
+                }
+            </div>
+        }
+        @ChildContent
+    </div>
+</section>
+
+@code {
+    [Parameter] public string? Id { get; set; }
+
+    [Parameter] public string? Eyebrow { get; set; }
+
+    [Parameter] public string? Title { get; set; }
+
+    [Parameter] public string? Lead { get; set; }
+
+    [Parameter] public string Tone { get; set; } = string.Empty;
+
+    [Parameter] public bool Center { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private string HeadingId => string.IsNullOrEmpty(Id) ? $"sec-{(uint)(Title ?? string.Empty).GetHashCode()}" : $"{Id}-title";
+
+    private string CssClass => string.IsNullOrEmpty(Tone) ? "mk-section" : $"mk-section mk-section-{Tone}";
+}

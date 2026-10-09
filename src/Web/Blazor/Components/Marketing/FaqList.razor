@@ -1,0 +1,16 @@
+@* Questions and answers as native disclosure widgets: keyboard and screen-reader friendly, no script. *@
+<div class="mk-faq" data-testid="faq">
+    @foreach (var item in Items)
+    {
+        <details class="mk-faq-item">
+            <summary>@item.Question</summary>
+            <div class="mk-faq-answer"><p>@item.Answer</p></div>
+        </details>
+    }
+</div>
+
+@code {
+    public sealed record FaqItem(string Question, string Answer);
+
+    [Parameter, EditorRequired] public IReadOnlyList<FaqItem> Items { get; set; } = [];
+}

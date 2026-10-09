@@ -1,0 +1,69 @@
+@page "/terms"
+@layout MarketingLayout
+@using Microsoft.Extensions.Options
+@using NexaVerify.Web.Security
+@inject IOptions<SiteOptions> Site
+
+<SeoHead Title="Terms of service (draft)" Path="/terms" Description="Draft terms of service for NexaVerify. This is a template that has not yet been reviewed by counsel." />
+
+<PageHero Eyebrow="Legal" Title="Terms of service" Lead="Draft. Last updated: [date]." />
+
+<MkSection Id="terms">
+    <div class="mk-prose mk-legal" data-testid="terms-body">
+        <DraftNotice />
+
+        <h2 class="mk-h3">1. Who we are and what these terms cover</h2>
+        <p>These terms are an agreement between @Site.Value.LegalEntityName ("we", "us") and the business that creates an account ("you"). They cover your use of the NexaVerify website, web portal and API (the "Service"). By creating an account or using the Service you accept these terms. If you accept on behalf of a company, you confirm that you may bind it.</p>
+
+        <h2 class="mk-h3">2. The Service</h2>
+        <p>The Service lets you register people by face photo, verify a photo against one registered person, and search registered people for matches. Results are a similarity score and a match decision. They are an aid, not a guarantee, and may be wrong.</p>
+        <p>The Service does not include liveness (anti-spoofing) detection. Do not use it as the only basis for a decision that significantly affects a person.</p>
+
+        <h2 class="mk-h3">3. Accounts and security</h2>
+        <ul>
+            <li>You must give accurate details and keep them up to date.</li>
+            <li>You are responsible for everything done with your accounts and API keys. Keep keys and passwords secret and turn on two-step sign-in for your team.</li>
+            <li>Tell us promptly if you think an account or key has been compromised.</li>
+        </ul>
+
+        <h2 class="mk-h3">4. Your responsibilities for face data (biometric consent)</h2>
+        <p>Face images and templates are biometric data and are subject to strict rules in many places. As between you and us, <strong>you decide why and how face recognition is used, and you are responsible for using it lawfully</strong>. In particular you must:</p>
+        <ul>
+            <li>have a valid legal basis for every person you register, and where the law requires it, obtain their <strong>informed, explicit and recorded consent</strong> before you register them;</li>
+            <li>give people a clear notice that says what is collected, why, how long it is kept, and how to withdraw consent or ask for erasure;</li>
+            <li>record a real consent reference for each person you register, and keep the underlying consent records yourself;</li>
+            <li>not register children or other people who cannot validly consent unless the law allows it and you have the right permissions;</li>
+            <li>honour withdrawal of consent and erasure requests promptly, using the erase function of the Service;</li>
+            <li>keep the retention period as short as your purpose allows;</li>
+            <li>carry out any assessments that the law requires of you (for example a data protection impact assessment) and comply with local biometric privacy laws;</li>
+            <li>not use the Service for covert surveillance, to discriminate against people, or in any way that breaks the law.</li>
+        </ul>
+
+        <h2 class="mk-h3">5. Credits and fees</h2>
+        <p>Use of the Service is measured in credits. Plans, prices, credit amounts and validity periods are shown on the pricing page or agreed with you in writing. Credits expire at the end of their validity period. [Payment terms, taxes, refunds and renewal to be completed.]</p>
+
+        <h2 class="mk-h3">6. Acceptable use</h2>
+        <p>You must not attack, overload or probe the Service, try to reach another customer's data, resell access without our permission, upload unlawful content, or use the Service to build a competing product by copying it.</p>
+
+        <h2 class="mk-h3">7. Data protection</h2>
+        <p>For the face data and other personal data of the people you register, you are the controller and we are your processor. We process that data only to provide the Service, following your instructions. A data processing agreement will apply: [link or attach DPA]. Our own use of your account details is described in the <a href="/privacy" class="mk-link">privacy notice</a>.</p>
+
+        <h2 class="mk-h3">8. Availability and changes</h2>
+        <p>We work to keep the Service available but do not promise it will be uninterrupted or error-free. We may change or improve the Service. [Service levels, if any, to be completed.]</p>
+
+        <h2 class="mk-h3">9. Liability</h2>
+        <p>[Limitation and exclusion of liability, indemnities and insurance to be drafted by counsel.]</p>
+
+        <h2 class="mk-h3">10. Ending the agreement</h2>
+        <p>You can stop using the Service at any time. We may suspend or end your access if you break these terms or the law. After the account ends, your data is deleted or made unreadable according to our retention rules. [Periods to be completed.]</p>
+
+        <h2 class="mk-h3">11. Changes to these terms</h2>
+        <p>We may update these terms. We will tell you about material changes in advance. [Notice period to be completed.]</p>
+
+        <h2 class="mk-h3">12. Law and disputes</h2>
+        <p>[Governing law, courts and dispute process to be completed.]</p>
+
+        <h2 class="mk-h3">13. Contact</h2>
+        <p>Questions about these terms: <a href="/contact" class="mk-link">contact us</a>. [Registered address and company number to be added.]</p>
+    </div>
+</MkSection>

@@ -1,0 +1,58 @@
+@page "/privacy"
+@layout MarketingLayout
+@using Microsoft.Extensions.Options
+@using NexaVerify.Web.Security
+@inject IOptions<SiteOptions> Site
+
+<SeoHead Title="Privacy notice (draft)" Path="/privacy" Description="Draft privacy notice for NexaVerify. This is a template that has not yet been reviewed by counsel." />
+
+<PageHero Eyebrow="Legal" Title="Privacy notice" Lead="Draft. Last updated: [date]." />
+
+<MkSection Id="privacy">
+    <div class="mk-prose mk-legal" data-testid="privacy-body">
+        <DraftNotice />
+
+        <h2 class="mk-h3">1. Who is responsible</h2>
+        <p>@Site.Value.LegalEntityName ("we") is responsible for the personal data described in sections 2 to 4 below. [Registered address, company number and data protection contact to be added.]</p>
+
+        <h2 class="mk-h3">2. What we collect about you and your team</h2>
+        <ul>
+            <li><strong>Account details:</strong> company name, your name, work email, and the roles of team members.</li>
+            <li><strong>Sign-in and security records:</strong> sign-in times, addresses and devices used, password and two-step events.</li>
+            <li><strong>Usage records:</strong> which actions were run, when, with which key, the result and the credits used. These records do not contain photos.</li>
+            <li><strong>Messages you send us</strong> through the contact form.</li>
+            <li><strong>Technical logs</strong> kept for security and reliability.</li>
+        </ul>
+        <p>We use this to provide and secure the Service, bill and report usage, answer you, and meet legal duties. [Legal bases to be confirmed for each purpose.]</p>
+
+        <h2 class="mk-h3">3. Face data of the people you register</h2>
+        <p>When you register or check a person, you send us a photo. We turn it into an encrypted face template and use it only to provide the Service to you. <strong>You are the controller of this data and we are your processor.</strong> Photos are not kept by default; templates are kept until you erase the person, the retention period you set ends, or your account is closed. Templates are encrypted with a key specific to your account and are never returned through the API.</p>
+        <p>You are responsible for telling the people you register what you do with their face data, and for obtaining their consent where the law requires it. See section 4 of the <a href="/terms" class="mk-link">terms of service</a>. People who want to exercise their rights over their face data should contact the business that registered them.</p>
+
+        <h2 class="mk-h3">4. Who we share data with</h2>
+        <p>We use service providers to run the Service (for example hosting, email delivery and monitoring) and they may only act on our instructions. [List of providers and locations to be completed.] We do not sell personal data. We may disclose data if the law requires it.</p>
+
+        <h2 class="mk-h3">5. Where data is processed</h2>
+        <p>[Hosting regions and any international transfers, with the safeguards used, to be completed.]</p>
+
+        <h2 class="mk-h3">6. How long we keep data</h2>
+        <ul>
+            <li>Account details: while your account is open and for [period] afterwards.</li>
+            <li>Sign-in and audit records: [period].</li>
+            <li>Usage and credit records: [period], as needed for billing and accounting.</li>
+            <li>Face templates: as described in section 3.</li>
+        </ul>
+
+        <h2 class="mk-h3">7. Your rights</h2>
+        <p>Depending on where you live, you may have the right to access, correct, erase or restrict your data, to object to its use, to move it, and to complain to your data protection authority. Contact us to use these rights: <a href="/contact" class="mk-link">contact form</a>.</p>
+
+        <h2 class="mk-h3">8. Cookies and similar technologies</h2>
+        <p>This website uses only what it needs to work: a session cookie when you sign in and a security cookie that protects forms. Your colour theme choice is saved in your browser's local storage. We do not use advertising or analytics trackers, and we load nothing from other companies' servers (the sign-up form may load a bot check from its provider when that is switched on).</p>
+
+        <h2 class="mk-h3">9. Security</h2>
+        <p>We protect data as described on the <a href="/security" class="mk-link">security page</a>. No system is perfectly secure; we will notify you of a breach as the law requires.</p>
+
+        <h2 class="mk-h3">10. Changes</h2>
+        <p>We will update this notice when our practices change and show the date at the top. [Notification approach to be completed.]</p>
+    </div>
+</MkSection>

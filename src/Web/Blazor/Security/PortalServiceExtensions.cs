@@ -47,6 +47,7 @@ public static class PortalServiceExtensions
             dataProtection.PersistKeysToFileSystem(new DirectoryInfo(keyPath));
         }
 
+        services.AddMemoryCache();
         services.AddPortalCache(configuration);
         services.AddSingleton<ISessionStore, DistributedSessionStore>();
         services.AddSingleton<IMfaPendingStore, DistributedMfaPendingStore>();
@@ -69,11 +70,15 @@ public static class PortalServiceExtensions
         if (useStubs)
         {
             services.AddScoped<IAuthApiClient, StubAuthApiClient>();
+            services.AddScoped<IPublicApiClient, StubPublicApiClient>();
             services.AddScoped<IDashboardApiClient, StubDashboardApiClient>();
         }
         else
         {
             services.AddScoped<IAuthApiClient, AuthApiClient>();
+            services.AddScoped<PublicApiClient>();
+            services.AddScoped<IPublicApiClient>(sp => new CachingPublicApiClient(
+                sp.GetRequiredService<PublicApiClient>(), sp.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>()));
             services.AddScoped<IDashboardApiClient, DashboardApiClient>();
         }
 

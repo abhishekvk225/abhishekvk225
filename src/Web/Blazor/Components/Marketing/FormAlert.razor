@@ -1,0 +1,22 @@
+@* A message above a form. Errors are announced at once (role=alert), other kinds politely (role=status). *@
+<div class="mk-alert mk-alert-@Kind" role="@(Kind == "error" ? "alert" : "status")" data-testid="@TestId">
+    <span class="mk-alert-icon"><MkIcon Name="@(Kind == "error" ? "alert" : Kind == "success" ? "check" : "info")" Size="20" /></span>
+    <div>
+        @ChildContent
+        @if (!string.IsNullOrWhiteSpace(Reference))
+        {
+            <p class="mk-alert-ref">Reference: <span data-testid="correlation-id">@Reference</span></p>
+        }
+    </div>
+</div>
+
+@code {
+    /// <summary>"error", "info" or "success".</summary>
+    [Parameter] public string Kind { get; set; } = "info";
+
+    [Parameter] public string? Reference { get; set; }
+
+    [Parameter] public string TestId { get; set; } = "form-alert";
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

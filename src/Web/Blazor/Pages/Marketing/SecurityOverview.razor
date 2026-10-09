@@ -1,0 +1,40 @@
+@page "/security"
+@layout MarketingLayout
+
+<SeoHead Title="Security and privacy" Path="/security" Description="How NexaVerify protects face data: separate customer data, encrypted face templates, hashed API keys, two-step sign-in, an audit trail and a checked credit history." />
+
+<PageHero Eyebrow="Security and privacy" Title="How we protect your data"
+          Lead="Face data is sensitive. This page explains, in plain words, what we do. It describes how the product is built; it is not a certification." />
+
+<MkSection Id="controls" Title="What we do">
+    <div class="mk-grid mk-grid-2" data-testid="controls">
+        <FeatureCard Icon="lock" Title="Your data is kept apart">Each customer's data is separated from every other customer's. The account you belong to comes from your sign-in or API key, never from something a caller can type in, and the database enforces the separation as well.</FeatureCard>
+        <FeatureCard Icon="shield" Title="Face data is encrypted">Face templates are encrypted with a separate key for each customer. Templates are never returned by the API. Photos are not kept by default.</FeatureCard>
+        <FeatureCard Icon="key" Title="API keys are protected">Keys are long random values, stored only as one-way hashes, and shown to you once. You can limit what a key can do, set an expiry, restrict it to certain addresses and revoke it instantly.</FeatureCard>
+        <FeatureCard Icon="phone-lock" Title="Safer sign-in">Passwords are stored with a slow one-way hash, repeated failures are limited, and you can turn on two-step sign-in with an authenticator app and recovery codes.</FeatureCard>
+        <FeatureCard Icon="list" Title="An audit trail">Sign-ins, changes to users, keys and licences, and every credit movement are recorded so that you can see who did what.</FeatureCard>
+        <FeatureCard Icon="check-person" Title="A credit history that is checked">Credit movements are written to a history that cannot be edited, and the history is checked regularly for tampering.</FeatureCard>
+        <FeatureCard Icon="globe" Title="A careful web portal">The portal keeps your session on the server. Your browser never holds the tokens that call the API, and the site sends strict browser security headers.</FeatureCard>
+        <FeatureCard Icon="trash" Title="Erasure and retention">You can erase a person at any time and set how long registered people are kept. When an account is closed its face data can be made unreadable.</FeatureCard>
+    </div>
+</MkSection>
+
+<MkSection Id="responsibilities" Tone="alt" Eyebrow="Shared responsibility" Title="What stays with you">
+    <div class="mk-prose">
+        <p>You decide why and how you use face recognition, so you are the one responsible for using it lawfully. In data protection terms you are the controller of the people you register, and NexaVerify processes that data on your behalf.</p>
+        <ul>
+            <li>Tell people how their face data is used and get the consent the law requires before you register them. NexaVerify asks you for a consent reference for each person.</li>
+            <li>Keep your API keys secret and your team's accounts protected (turn on two-step sign-in).</li>
+            <li>Remove people you no longer need to keep.</li>
+        </ul>
+        <p>Face matching is not perfect and does not include liveness (anti-spoofing) detection today. Do not use it as the only basis for decisions that seriously affect a person.</p>
+    </div>
+</MkSection>
+
+<MkSection Id="honesty" Eyebrow="Straight answers" Title="What we do not claim">
+    <div class="mk-prose">
+        <p>We do not claim any security or privacy certification on this website. If your procurement process needs documents or answers, <a href="/contact" class="mk-link">contact us</a> and ask. To report a vulnerability, use the same contact form and mark it as security.</p>
+    </div>
+</MkSection>
+
+<CtaBand Title="Questions about security?" Text="Ask us. We will answer plainly." PrimaryText="Contact us" PrimaryHref="/contact" SecondaryText="Read the privacy notice" SecondaryHref="/privacy" />

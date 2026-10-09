@@ -1,0 +1,61 @@
+<header class="mk-header" data-testid="mk-header">
+    <div class="mk-container mk-header-inner">
+        <a href="/" class="mk-brand" aria-label="NexaVerify home">
+            <span class="mk-brand-mark" aria-hidden="true"><MkIcon Name="scan" Size="20" /></span>
+            <span class="mk-brand-name">NexaVerify</span>
+        </a>
+
+        <nav id="mk-nav" class="mk-nav" aria-label="Main">
+            <ul class="mk-nav-list">
+                @foreach (var (href, text) in Links)
+                {
+                    <li><a href="@href" class="mk-nav-link" aria-current="@(IsCurrent(href) ? "page" : null)">@text</a></li>
+                }
+            </ul>
+            <div class="mk-nav-actions">
+                @if (IsSignedIn)
+                {
+                    <a href="@(DashboardHref ?? "/client")" class="mk-btn mk-btn-primary" data-testid="go-dashboard">Go to dashboard</a>
+                }
+                else
+                {
+                    <a href="/login" class="mk-btn mk-btn-ghost" data-testid="nav-signin">Sign in</a>
+                    <a href="/signup" class="mk-btn mk-btn-primary" data-testid="nav-signup">Start free trial</a>
+                }
+            </div>
+        </nav>
+
+        <div class="mk-header-tools">
+            <button type="button" class="mk-icon-btn" data-mk-theme-toggle aria-label="Switch colour theme" data-testid="theme-toggle">
+                <span class="mk-when-light"><MkIcon Name="moon" Size="20" /></span>
+                <span class="mk-when-dark"><MkIcon Name="sun" Size="20" /></span>
+            </button>
+            <button type="button" class="mk-icon-btn mk-menu-btn" data-mk-menu-toggle aria-controls="mk-nav" aria-expanded="false" aria-label="Open menu" data-testid="menu-toggle">
+                <span class="mk-when-closed"><MkIcon Name="menu" Size="22" /></span>
+                <span class="mk-when-open"><MkIcon Name="close" Size="22" /></span>
+            </button>
+        </div>
+    </div>
+</header>
+
+@code {
+    private static readonly (string Href, string Text)[] Links =
+    [
+        ("/features", "Features"),
+        ("/how-it-works", "How it works"),
+        ("/pricing", "Pricing"),
+        ("/developers", "Developers"),
+        ("/security", "Security"),
+        ("/contact", "Contact"),
+    ];
+
+    [Inject] private NavigationManager Nav { get; set; } = default!;
+
+    /// <summary>A signed-in person sees "Go to dashboard" instead of the sign-in buttons.</summary>
+    [Parameter] public bool IsSignedIn { get; set; }
+
+    [Parameter] public string? DashboardHref { get; set; }
+
+    private bool IsCurrent(string href) =>
+        string.Equals("/" + Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].TrimEnd('/'), href, StringComparison.OrdinalIgnoreCase);
+}

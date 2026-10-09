@@ -1,0 +1,54 @@
+@page "/features"
+@layout MarketingLayout
+
+<SeoHead Title="Features" Path="/features" Description="Verify one person, find someone among many, register people, and run it all with API keys, webhooks, usage dashboards, CSV exports, team roles, two-step sign-in and an audit trail." />
+
+<PageHero Eyebrow="Features" Title="Everything you need to check faces with confidence"
+          Lead="From the first registered person to a busy API integration, these are the tools you get with every account.">
+    <div class="mk-hero-actions">
+        <a href="/signup" class="mk-btn mk-btn-primary mk-btn-lg">Start free trial</a>
+        <a href="/developers" class="mk-btn mk-btn-outline mk-btn-lg">For developers</a>
+    </div>
+</PageHero>
+
+<MkSection Id="recognition" Eyebrow="Recognition" Title="Three things you can do with a face">
+    <div class="mk-grid mk-grid-3">
+        <FeatureCard Icon="check-person" Title="Verify one person (1:1)">Compare a photo with one registered person. You get a match or no-match answer and the similarity score.</FeatureCard>
+        <FeatureCard Icon="search-person" Title="Identify among many (1:N)">Search all registered people and get the closest candidates, so you can answer "who is this?".</FeatureCard>
+        <FeatureCard Icon="user-plus" Title="Register people (enrol)">Add a person with your own reference and the consent reference you hold. Add more photos later.</FeatureCard>
+    </div>
+    <aside class="mk-note" aria-label="Good to know" data-testid="liveness-note">
+        <MkIcon Name="info" Size="20" />
+        <p><strong>Good to know:</strong> NexaVerify compares faces. It does not include liveness (anti-spoofing) detection today, so a high-quality photo of a person could be accepted as that person. For high-risk decisions, combine it with other checks.</p>
+    </aside>
+</MkSection>
+
+<MkSection Id="integration" Tone="alt" Eyebrow="Integration" Title="Connect it to your own systems">
+    <div class="mk-grid mk-grid-3">
+        <FeatureCard Icon="key" Title="API keys">Create keys that can only do what you allow, optionally limited to certain addresses. Replace a key with a grace period, or switch it off at once.</FeatureCard>
+        <FeatureCard Icon="webhook" Title="Webhooks">Receive signed messages when checks finish or your credits run low, with delivery history and a test button.</FeatureCard>
+        <FeatureCard Icon="list" Title="API logs">See every call made with your keys, with its result and a reference you can quote to support.</FeatureCard>
+    </div>
+</MkSection>
+
+<MkSection Id="insight" Eyebrow="Insight" Title="See what is happening and what it costs">
+    <div class="mk-grid mk-grid-3">
+        <FeatureCard Icon="chart" Title="Usage dashboards">Checks, matches and credits over the period you choose.</FeatureCard>
+        <FeatureCard Icon="download" Title="CSV exports">Download usage and history to share with finance or your own tools.</FeatureCard>
+        <FeatureCard Icon="clock" Title="Credit alerts">Be told before credits or a licence run out.</FeatureCard>
+    </div>
+</MkSection>
+
+<MkSection Id="control" Tone="alt" Eyebrow="Control and protection" Title="Built for teams that answer for their data">
+    <div class="mk-grid mk-grid-3">
+        <FeatureCard Icon="users" Title="Team roles">Give each person only the access they need.</FeatureCard>
+        <FeatureCard Icon="phone-lock" Title="Two-step sign-in (MFA)">Protect accounts with an authenticator app and recovery codes.</FeatureCard>
+        <FeatureCard Icon="list" Title="Audit trail">A record of sign-ins, changes to users, keys and licences, and credit movements.</FeatureCard>
+        <FeatureCard Icon="trash" Title="Erasure and retention">Erase a person at any time and set how long registered people are kept.</FeatureCard>
+        <FeatureCard Icon="lock" Title="Encrypted face data">Face templates are encrypted, and photos are not kept by default.</FeatureCard>
+        <FeatureCard Icon="shield" Title="Tamper-evident credit history">Every credit movement is written to a history that is checked for tampering.</FeatureCard>
+    </div>
+    <p class="mk-muted mk-center mk-more">Where your data is hosted depends on how your account is set up. <a href="/contact" class="mk-link">Ask us</a> about your needs.</p>
+</MkSection>
+
+<CtaBand />

@@ -1,0 +1,46 @@
+<footer class="mk-footer" data-testid="mk-footer">
+    <div class="mk-container">
+        <div class="mk-footer-grid">
+            <div class="mk-footer-about">
+                <a href="/" class="mk-brand" aria-label="NexaVerify home">
+                    <span class="mk-brand-mark" aria-hidden="true"><MkIcon Name="scan" Size="20" /></span>
+                    <span class="mk-brand-name">NexaVerify</span>
+                </a>
+                <p class="mk-muted">Face verification and identification for businesses, with an API and a web portal.</p>
+            </div>
+            <nav aria-label="Product">
+                <h2 class="mk-footer-title">Product</h2>
+                <ul class="mk-footer-list">
+                    <li><a href="/features">Features</a></li>
+                    <li><a href="/how-it-works">How it works</a></li>
+                    <li><a href="/pricing">Pricing</a></li>
+                    <li><a href="/developers">Developers</a></li>
+                </ul>
+            </nav>
+            <nav aria-label="Company">
+                <h2 class="mk-footer-title">Company</h2>
+                <ul class="mk-footer-list">
+                    <li><a href="/security">Security and privacy</a></li>
+                    <li><a href="/contact">Contact us</a></li>
+                    <li><a href="/terms">Terms of service</a></li>
+                    <li><a href="/privacy">Privacy notice</a></li>
+                </ul>
+            </nav>
+            <nav aria-label="Account">
+                <h2 class="mk-footer-title">Account</h2>
+                <ul class="mk-footer-list">
+                    <li><a href="/login">Sign in</a></li>
+                    <li><a href="/signup">Start free trial</a></li>
+                    <li><a href="/forgot-password">Forgot your password?</a></li>
+                </ul>
+            </nav>
+        </div>
+        <p class="mk-footer-legal mk-muted">&copy; @Year NexaVerify. All rights reserved.</p>
+    </div>
+</footer>
+
+@code {
+    [Inject] private TimeProvider Clock { get; set; } = default!;
+
+    private int Year => Clock.GetUtcNow().Year;
+}

@@ -1,0 +1,25 @@
+@* The top of an inner page: the page's single h1, a lead and optional actions. *@
+<section class="mk-page-hero" aria-labelledby="page-title">
+    <div class="mk-container">
+        @if (!string.IsNullOrEmpty(Eyebrow))
+        {
+            <p class="mk-eyebrow">@Eyebrow</p>
+        }
+        <h1 id="page-title" class="mk-h1 mk-h1-page">@Title</h1>
+        @if (!string.IsNullOrEmpty(Lead))
+        {
+            <p class="mk-lead">@Lead</p>
+        }
+        @ChildContent
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    [Parameter] public string? Eyebrow { get; set; }
+
+    [Parameter] public string? Lead { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

@@ -1,0 +1,18 @@
+@using System.Linq.Expressions
+@using Microsoft.AspNetCore.Components.Forms
+
+@* Bot trap. People never see or reach it (off-screen, not focusable, hidden from screen readers); a script that fills every field reveals itself. *@
+<div class="mk-hp" aria-hidden="true" data-testid="honeypot">
+    <label for="@Id">Leave this field empty</label>
+    <InputText id="@Id" Value="@Value" ValueChanged="ValueChanged" ValueExpression="ValueExpression" tabindex="-1" autocomplete="off" />
+</div>
+
+@code {
+    [Parameter] public string Id { get; set; } = "website";
+
+    [Parameter] public string? Value { get; set; }
+
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+
+    [Parameter] public Expression<Func<string?>>? ValueExpression { get; set; }
+}
