@@ -11,6 +11,9 @@ public sealed class SecurityHeadersMiddleware(RequestDelegate next, IOptions<Sec
 {
     public const string NonceItemKey = "nv.csp-nonce";
 
+    /// <summary>An endpoint that serves foreign content (the invoice relay) puts its own, stricter policy here; it replaces the page policy.</summary>
+    public const string CspOverrideItemKey = "nv.csp-override";
+
     /// <summary>The only page that embeds the sign-up bot check.</summary>
     public const string SignupPath = "/signup";
 
@@ -34,7 +37,7 @@ public sealed class SecurityHeadersMiddleware(RequestDelegate next, IOptions<Sec
             var headers = context.Response.Headers;
             if (_options.ContentSecurityPolicyEnabled)
             {
-                headers["Content-Security-Policy"] = BuildCsp(_options, nonce, _options.TurnstileEnabled && context.Request.Path.StartsWithSegments(SignupPath, StringComparison.OrdinalIgnoreCase));
+                headers["Content-Security-Policy"] = context.Items[CspOverrideItemKey] as string ?? BuildCsp(_options, nonce, _options.TurnstileEnabled && context.Request.Path.StartsWithSegments(SignupPath, StringComparison.OrdinalIgnoreCase));
             }
 
             headers["X-Content-Type-Options"] = "nosniff";

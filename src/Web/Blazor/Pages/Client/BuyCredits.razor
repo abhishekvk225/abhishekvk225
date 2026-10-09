@@ -1,0 +1,189 @@
+@page "/client/billing/buy"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.BillingRead)]
+@implements IDisposable
+@inject IBillingApiClient Api
+@inject IDialogService Dialogs
+@inject IAppSnackbar Snackbar
+@inject NavigationManager Navigation
+@inject Microsoft.Extensions.Hosting.IHostEnvironment Environment
+@inject CurrentUserState User
+
+<PageTitle>Buy credits · NexaVerify</PageTitle>
+
+<PageHeader Title="Buy credits" Subtitle="Top up your balance online. Pick a pack, pay on a secure page and your credits are added automatically." />
+
+@if (_disabled)
+{
+    <BillingDisabled />
+}
+else
+{
+    <MudGrid Spacing="3">
+        @if (_profileProblem is not null)
+        {
+            <MudItem xs="12">
+                <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" role="alert" data-testid="profile-prompt">
+                    <div class="d-flex flex-wrap align-center justify-space-between" style="gap: var(--nv-space-3);">
+                        <span>@_profileProblem</span>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="client/billing/profile" data-testid="profile-link">Fill in billing details</MudButton>
+                    </div>
+                </MudAlert>
+            </MudItem>
+        }
+
+        <MudItem xs="12">
+            <PageState T="IReadOnlyList<CreditPackDto>" Result="_state.Result" OnRetry="LoadAsync" IsEmpty="p => p.Count == 0"
+                       EmptyTitle="No credit packs are on sale right now" EmptyMessage="Please check again later, or contact us and we will top up your account for you.">
+                <Loading>
+                    <MudGrid Spacing="3" data-testid="packs-loading">
+                        <MudItem xs="12" md="6" lg="4"><MudPaper Class="nv-card nv-card-pad" Elevation="0"><SkeletonCard Lines="4" /></MudPaper></MudItem>
+                        <MudItem xs="12" md="6" lg="4"><MudPaper Class="nv-card nv-card-pad" Elevation="0"><SkeletonCard Lines="4" /></MudPaper></MudItem>
+                        <MudItem xs="12" md="6" lg="4"><MudPaper Class="nv-card nv-card-pad" Elevation="0"><SkeletonCard Lines="4" /></MudPaper></MudItem>
+                    </MudGrid>
+                </Loading>
+                <ErrorContent Context="error">
+                    @if (BillingErrors.IsDisabled(error))
+                    {
+                        <BillingDisabled />
+                    }
+                    else
+                    {
+                        <ErrorState Error="error" OnRetry="EventCallback.Factory.Create(this, LoadAsync)" />
+                    }
+                </ErrorContent>
+                <ChildContent Context="packs">
+                    @{ var best = PurchasePackCard.BestValueId(packs); }
+                    <MudGrid Spacing="3" data-testid="packs">
+                        @foreach (var pack in packs)
+                        {
+                            <MudItem xs="12" md="6" lg="4">
+                                <PurchasePackCard Pack="pack" BestValue="@(pack.Id == best)" CanBuy="User.Has(WebPermissions.BillingManage)" Busy="_busy" OnBuy="BuyAsync" />
+                            </MudItem>
+                        }
+                    </MudGrid>
+                </ChildContent>
+            </PageState>
+        </MudItem>
+
+        <MudItem xs="12" lg="8"><PaymentExplainer /></MudItem>
+    </MudGrid>
+}
+
+@code {
+    private readonly LoadState<IReadOnlyList<CreditPackDto>> _state = new();
+    private readonly CheckoutAttempt _attempt = new();
+    private readonly CancellationTokenSource _cts = new();
+    private bool _busy;
+    private bool _disabled;
+    private string? _profileProblem;
+
+    public void Dispose()
+    {
+        _state.Dispose();
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Task.WhenAll(LoadAsync(), CheckProfileAsync());
+    }
+
+    private async Task LoadAsync()
+    {
+        await _state.LoadAsync(ct => Api.GetPacksAsync(ct));
+        if (_state.Result is { IsSuccess: false } failed && BillingErrors.IsDisabled(failed.Error!))
+        {
+            _disabled = true;
+        }
+    }
+
+    /// <summary>A gentle early hint only; the API decides at checkout whether the details are enough.</summary>
+    private async Task CheckProfileAsync()
+    {
+        var profile = await Api.GetProfileAsync(_cts.Token);
+        if (profile.IsSuccess && BillingProfileForm.LooksIncomplete(profile.Value))
+        {
+            _profileProblem = "Your billing details are not complete yet. We need them to put the right company name and address on your invoice.";
+        }
+    }
+
+    private async Task BuyAsync(CreditPackDto pack)
+    {
+        if (_busy)
+        {
+            return; // double click or second pack while the first is starting
+        }
+
+        _busy = true;
+        try
+        {
+            var total = Money.Format(pack.TotalMinor, pack.Currency);
+            var confirmed = await Dialogs.ConfirmAsync(
+                "Go to the secure payment page?",
+                $"You are about to pay {total} for {pack.Name} ({UiText.Number(pack.Credits)} credits). "
+                + "We will take you to our payment partner's secure page to pay. Your credits are added automatically, usually within a minute. We never see your card details.",
+                "Continue to payment");
+            if (confirmed is null)
+            {
+                _busy = false;
+                return;
+            }
+
+            var result = await Api.CheckoutAsync(pack.Id, _attempt.KeyFor(pack.Id), _cts.Token);
+            if (!result.IsSuccess)
+            {
+                HandleCheckoutError(result.Error!);
+                _busy = false;
+                return;
+            }
+
+            var target = CheckoutRedirect.Validate(result.Value.CheckoutUrl, CheckoutRedirect.IsDevHost(Environment), new Uri(Navigation.BaseUri));
+            if (target is null)
+            {
+                // Never follow an address we cannot trust. The order exists and the same key is kept, so trying again gives the same order.
+                Snackbar.Error("We could not open the payment page. Please try again in a moment, or contact us if it keeps happening.");
+                _busy = false;
+                return;
+            }
+
+            _attempt.Reset();
+            Navigation.NavigateTo(target.AbsoluteUri, forceLoad: true);
+            // _busy stays on: the browser is leaving this page and no second order may start from it.
+        }
+        catch (OperationCanceledException)
+        {
+            // The page was closed.
+        }
+        catch
+        {
+            _busy = false;
+            throw;
+        }
+    }
+
+    private void HandleCheckoutError(ApiError error)
+    {
+        if (BillingErrors.IsDisabled(error))
+        {
+            _disabled = true;
+            return;
+        }
+
+        if (error.FieldErrors is { Count: > 0 } || error.Status == 422)
+        {
+            _profileProblem = "We need a few more billing details before you can pay: " + (error.FieldErrors is { Count: > 0 }
+                ? string.Join(' ', error.FieldErrors.Values.SelectMany(v => v).Take(3))
+                : error.Message);
+        }
+        else
+        {
+            Snackbar.Error(error);
+        }
+
+        if (!PhotoGuard.IsRetryable(error))
+        {
+            _attempt.Reset(); // a definite "no": the next try is a new purchase
+        }
+    }
+}

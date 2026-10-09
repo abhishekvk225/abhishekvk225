@@ -19,6 +19,17 @@ public sealed class StubPublicApiClient : IPublicApiClient
     public Task<ApiResult<IReadOnlyList<PublicPlanDto>>> GetPlansAsync(CancellationToken ct = default) =>
         Task.FromResult(ApiResult<IReadOnlyList<PublicPlanDto>>.Ok(SamplePlans));
 
+    public static IReadOnlyList<PublicPackDto> SamplePacks { get; } =
+    [
+        new(Guid.Parse("00000000-0000-0000-0000-0000000000b1"), "Starter pack", "For one site or a small team.", 5000, 365, 4900, "USD", null,
+            ["5,000 credits", "Valid for 12 months", "Email support"]),
+        new(Guid.Parse("00000000-0000-0000-0000-0000000000b2"), "Growth pack", "For busy teams and API traffic.", 25000, 365, 19900, "USD", null,
+            ["25,000 credits", "Valid for 12 months", "Priority support"]),
+    ];
+
+    public Task<ApiResult<IReadOnlyList<PublicPackDto>>> GetPacksAsync(CancellationToken ct = default) =>
+        Task.FromResult(ApiResult<IReadOnlyList<PublicPackDto>>.Ok(SamplePacks));
+
     public Task<ApiResult<PublicConfigDto>> GetConfigAsync(CancellationToken ct = default) =>
         Task.FromResult(ApiResult<PublicConfigDto>.Ok(new PublicConfigDto(true, 200, 14, new CaptchaConfigDto("none", null))));
 

@@ -1,0 +1,83 @@
+<MudPaper Class="@("nv-card nv-card-pad nv-pack" + (BestValue ? " nv-pack-best" : string.Empty))" Elevation="0" data-testid="pack-card" role="group" aria-labelledby="@NameId">
+    @if (BestValue)
+    {
+        <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Filled" Icon="@Icons.Material.Filled.Star" Class="nv-pack-flag" data-testid="best-value" tabindex="-1">Best value</MudChip>
+    }
+    <MudText Typo="Typo.h4" HtmlTag="h2" id="@NameId">@Pack.Name</MudText>
+    @if (!string.IsNullOrWhiteSpace(Pack.Description))
+    {
+        <MudText Typo="Typo.body2" Class="nv-muted">@Pack.Description</MudText>
+    }
+    <p class="nv-pack-credits"><strong data-testid="pack-credits">@UiText.Number(Pack.Credits)</strong> credits</p>
+    <MudText Typo="Typo.body2" Class="nv-muted" data-testid="pack-validity">Valid for @ValidityText</MudText>
+    @if (Pack.Highlights is { Count: > 0 })
+    {
+        <ul class="nv-pack-list">
+            @foreach (var highlight in Pack.Highlights)
+            {
+                <li><MudIcon Icon="@Icons.Material.Outlined.Check" Size="Size.Small" Color="Color.Success" aria-hidden="true" /><span>@highlight</span></li>
+            }
+        </ul>
+    }
+    <div class="nv-pack-price">
+        <PriceBreakdown SubtotalMinor="Pack.PriceMinor" TaxMinor="Money.Difference(Pack.TotalMinor, Pack.PriceMinor)" TotalMinor="Pack.TotalMinor"
+                        Currency="@Pack.Currency" TaxLabel="@Pack.TaxLabel" TaxPercent="Pack.TaxPercent" />
+    </div>
+    @if (CanBuy)
+    {
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Size="Size.Large" Disabled="Busy" OnClick="() => OnBuy.InvokeAsync(Pack)"
+                   StartIcon="@Icons.Material.Outlined.ShoppingCart" aria-label="@($"Buy {Pack.Name} for {Money.Format(Pack.TotalMinor, Pack.Currency)}")" data-testid="buy-pack">
+            Buy
+        </MudButton>
+    }
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public CreditPackDto Pack { get; set; } = default!;
+
+    [Parameter] public bool BestValue { get; set; }
+
+    /// <summary>Hidden for people who may look at billing but not buy (the API refuses them too).</summary>
+    [Parameter] public bool CanBuy { get; set; }
+
+    /// <summary>A purchase is already being started: all Buy buttons are off so a double click cannot start two.</summary>
+    [Parameter] public bool Busy { get; set; }
+
+    [Parameter] public EventCallback<CreditPackDto> OnBuy { get; set; }
+
+    private string NameId => $"pack-{Pack.Id:N}";
+
+    private string ValidityText => Pack.ValidityDays switch
+    {
+        365 => "1 year",
+        1 => "1 day",
+        _ => $"{Pack.ValidityDays} days",
+    };
+
+    /// <summary>The pack with the lowest price per credit (exact integer comparison); null unless there are at least two packs in one currency and they differ.</summary>
+    public static Guid? BestValueId(IReadOnlyList<CreditPackDto> packs)
+    {
+        if (packs.Count < 2)
+        {
+            return null;
+        }
+
+        var sameCurrency = packs.Where(p => string.Equals(p.Currency, packs[0].Currency, StringComparison.OrdinalIgnoreCase) && p.Credits > 0).ToList();
+        if (sameCurrency.Count < 2)
+        {
+            return null;
+        }
+
+        var best = sameCurrency[0];
+        foreach (var pack in sameCurrency.Skip(1))
+        {
+            if (Money.CheaperPerCredit(pack.PriceMinor, pack.Credits, best.PriceMinor, best.Credits))
+            {
+                best = pack;
+            }
+        }
+
+        var allEqual = sameCurrency.All(p => !Money.CheaperPerCredit(best.PriceMinor, best.Credits, p.PriceMinor, p.Credits));
+        return allEqual ? null : best.Id;
+    }
+}

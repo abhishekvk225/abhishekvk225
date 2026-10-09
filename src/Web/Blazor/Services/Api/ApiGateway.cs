@@ -51,6 +51,14 @@ public sealed record ApiCallOptions
     /// </summary>
     public IReadOnlyDictionary<string, string>? Headers { get; init; }
 
+    /// <summary>
+    /// What the portal asks the API for when relaying a file (<c>text/csv</c>, <c>text/html</c>). Anything else is a programming error.
+    /// Null = the client's default (JSON).
+    /// </summary>
+    public string? Accept { get; init; }
+
+    public static IReadOnlySet<string> AllowedAccept { get; } = new HashSet<string>(["text/csv", "text/html"], StringComparer.OrdinalIgnoreCase);
+
     /// <summary>Header names a page may add to an API call.</summary>
     public static IReadOnlySet<string> AllowedHeaderNames { get; } = new HashSet<string>(["Idempotency-Key"], StringComparer.OrdinalIgnoreCase);
 
@@ -199,6 +207,17 @@ public sealed class ApiGateway(
 
                 request.Headers.TryAddWithoutValidation(name, value);
             }
+        }
+
+        if (options.Accept is { } accept)
+        {
+            if (!ApiCallOptions.AllowedAccept.Contains(accept))
+            {
+                throw new ArgumentException($"The media type '{accept}' may not be requested.", nameof(options));
+            }
+
+            request.Headers.Accept.Clear();
+            request.Headers.Accept.ParseAdd(accept);
         }
 
         if (!string.IsNullOrEmpty(effectiveIp))

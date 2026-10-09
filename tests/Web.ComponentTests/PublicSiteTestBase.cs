@@ -20,6 +20,10 @@ public sealed class FakePublicApi : IPublicApiClient
 
     public Func<ContactRequest, ApiResult<bool>> Contact { get; set; } = _ => ApiResult<bool>.Ok(true);
 
+    public Func<ApiResult<IReadOnlyList<PublicPackDto>>> Packs { get; set; } = () => ApiResult<IReadOnlyList<PublicPackDto>>.Ok([]);
+
+    public Task<ApiResult<IReadOnlyList<PublicPackDto>>> GetPacksAsync(CancellationToken ct = default) => Task.FromResult(Packs());
+
     public List<SignupRequest> Signups { get; } = [];
 
     public List<VerifySignupRequest> Verifications { get; } = [];

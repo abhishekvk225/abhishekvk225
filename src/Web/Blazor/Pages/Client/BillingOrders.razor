@@ -1,0 +1,74 @@
+@page "/client/billing/orders"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.BillingRead)]
+@inject IBillingApiClient Api
+
+<PageTitle>Orders and invoices · NexaVerify</PageTitle>
+
+<PageHeader Title="Orders and invoices" Subtitle="Everything you have bought, with a downloadable invoice for each paid order.">
+    <Actions>
+        <Can Permission="@WebPermissions.BillingManage">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.ShoppingCart" Href="client/billing/buy" data-testid="buy-credits">Buy credits</MudButton>
+        </Can>
+    </Actions>
+</PageHeader>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <MudPaper Class="nv-card" Elevation="0">
+            <div class="pa-3 pb-0">
+                <MudSelect T="string" Value="_status" ValueChanged="StatusChangedAsync" Label="Show" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width: 280px;" data-testid="status-filter">
+                    <MudSelectItem T="string" Value="@string.Empty">All orders</MudSelectItem>
+                    @foreach (var status in OrderStatuses.All)
+                    {
+                        <MudSelectItem T="string" Value="status">@OrderStatuses.Label(status)</MudSelectItem>
+                    }
+                </MudSelect>
+            </div>
+            <DataTable @ref="_table" T="OrderListItemDto" Caption="Your orders" Columns="_columns" LoadPage="LoadAsync" PageSize="10" PageSizeOptions="@(new[] { 10, 25, 50 })"
+                       EmptyMessage="You have not bought any credits yet. When you do, your orders and invoices will show up here.">
+                <RowActions Context="order">
+                    <MudButton Variant="Variant.Text" Size="Size.Small" Href="@($"client/billing/orders/{order.Id}")" aria-label="@($"Details of order {Describe(order)}")">Details</MudButton>
+                    @if (!string.IsNullOrWhiteSpace(order.InvoiceNumber))
+                    {
+                        <InvoiceLink OrderId="order.Id" Number="@order.InvoiceNumber" />
+                    }
+                </RowActions>
+            </DataTable>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" lg="6">
+        <UsageCsvCard DownloadPath="bff/client/billing/orders/export.csv" Title="Export orders (CSV)" Description="Your orders as a spreadsheet, for your accounts team." MaxDays="366" />
+    </MudItem>
+</MudGrid>
+
+@code {
+    private DataTable<OrderListItemDto>? _table;
+    private IReadOnlyList<DataColumn<OrderListItemDto>> _columns = [];
+    private string _status = string.Empty;
+
+    protected override void OnInitialized() =>
+        _columns =
+        [
+            DataColumn<OrderListItemDto>.Text("Date", o => o.CreatedAt.ToString("d MMM yyyy", System.Globalization.CultureInfo.InvariantCulture)),
+            DataColumn<OrderListItemDto>.Text("Pack", o => o.PackName),
+            DataColumn<OrderListItemDto>.Text("Credits", o => UiText.Number(o.Credits), numeric: true),
+            DataColumn<OrderListItemDto>.Text("Total", o => Money.Format(o.TotalMinor, o.Currency), numeric: true),
+            DataColumn<OrderListItemDto>.Custom("Status", o => @<StatusChip Kind="StatusKind.Order" Value="@o.Status" />),
+            DataColumn<OrderListItemDto>.Text("Invoice", o => o.InvoiceNumber ?? "—"),
+        ];
+
+    private Task<ApiResult<PagedResult<OrderListItemDto>>> LoadAsync(PageRequest page, CancellationToken ct) =>
+        Api.ListOrdersAsync(page, string.IsNullOrEmpty(_status) ? null : _status, ct);
+
+    private async Task StatusChangedAsync(string? value)
+    {
+        _status = value ?? string.Empty;
+        if (_table is not null)
+        {
+            await _table.ReloadAsync();
+        }
+    }
+
+    private static string Describe(OrderListItemDto order) => order.InvoiceNumber ?? order.CreatedAt.ToString("d MMM yyyy", System.Globalization.CultureInfo.InvariantCulture);
+}

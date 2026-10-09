@@ -138,6 +138,31 @@ body { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; 
 .nv-muted { color: var(--mud-palette-text-secondary); }
 h1:focus { outline: none; }
 
+/* Billing (M12): credit packs, price lines, payment explainer, payment result panel */
+.nv-pack { display: flex; flex-direction: column; gap: var(--nv-space-2); height: 100%; position: relative; }
+.nv-pack-best.mud-paper { border-color: var(--mud-palette-primary); box-shadow: 0 0 0 1px var(--mud-palette-primary); }
+.nv-pack-flag { position: absolute; top: calc(-1 * var(--nv-space-3)); left: var(--nv-space-5); margin: 0; }
+.nv-pack-credits { margin: var(--nv-space-1) 0 0; font-size: 1.125rem; }
+.nv-pack-credits strong { font-size: 2rem; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.nv-pack-list { list-style: none; margin: var(--nv-space-2) 0; padding: 0; display: grid; gap: var(--nv-space-1); }
+.nv-pack-list li { display: flex; align-items: flex-start; gap: var(--nv-space-2); }
+.nv-pack-price { margin-top: auto; padding-top: var(--nv-space-3); }
+.nv-price-lines { margin: 0 0 var(--nv-space-3); display: grid; gap: var(--nv-space-1); }
+.nv-price-lines > div { display: flex; justify-content: space-between; gap: var(--nv-space-3); }
+.nv-price-lines dt { color: var(--mud-palette-text-secondary); }
+.nv-price-lines dd { margin: 0; font-variant-numeric: tabular-nums; }
+.nv-price-lines .nv-price-total { border-top: 1px solid var(--mud-palette-lines-default); padding-top: var(--nv-space-2); font-weight: 700; }
+.nv-price-lines .nv-price-total dt { color: var(--mud-palette-text-primary); }
+.nv-price-lines .nv-price-total dd { font-size: 1.25rem; }
+.nv-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--nv-space-3); counter-reset: nvstep; }
+.nv-steps li { display: flex; gap: var(--nv-space-3); align-items: flex-start; counter-increment: nvstep; }
+.nv-steps li::before {
+  content: counter(nvstep); flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+  font-weight: 700; font-size: 0.875rem; background: color-mix(in srgb, var(--mud-palette-primary) 14%, transparent); color: var(--mud-palette-primary);
+}
+.nv-status-panel { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--nv-space-3); padding: var(--nv-space-6) var(--nv-space-4); }
+.nv-status-icon { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; }
+
 /* Horizontal bar list (crisp, accessible alternative to a bar chart for ranked data) */
 .nv-bars { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--nv-space-3); }
 .nv-bars li { display: grid; grid-template-columns: minmax(80px, 30%) 1fr auto; align-items: center; gap: var(--nv-space-3); }

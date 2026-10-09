@@ -32,7 +32,10 @@ public sealed class StubAuthApiClient : IAuthApiClient
             Guid.NewGuid(), admin ? "priya@nexaverify.example" : "alex@acme.example", admin ? "Priya Raman" : "Alex Morgan", admin,
             admin ? null : Guid.NewGuid(), [role]);
         var client = admin ? null : new NexaVerify.Contracts.Tenancy.ClientSummary(user.ClientId!.Value, "ACME", "Acme Corp", "Active", "UTC");
-        return Task.FromResult(ApiResult<MeResponse>.Ok(new MeResponse(user, SystemRoles.PermissionsFor(role), false, client)));
+        string[] billing = admin
+            ? [BillingPermissions.PacksManage, BillingPermissions.OrdersRead, BillingPermissions.Refund]
+            : [BillingPermissions.Read, BillingPermissions.Manage];
+        return Task.FromResult(ApiResult<MeResponse>.Ok(new MeResponse(user, SystemRoles.PermissionsFor(role).Concat(billing).Distinct().ToList(), false, client)));
     }
 
     public Task<ApiResult<bool>> LogoutAsync(string accessToken, string refreshToken, CancellationToken ct = default) =>

@@ -1,0 +1,7 @@
+@* Shown instead of a scary error when online payments are switched off. *@
+<div data-testid="billing-disabled">
+    <EmptyState Icon="@Icons.Material.Outlined.CreditCardOff" Title="Online payments are not available yet"
+                Message="@BillingErrors.DisabledMessage">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/contact" data-enhance-nav="false" data-testid="contact-us">Contact us</MudButton>
+    </EmptyState>
+</div>

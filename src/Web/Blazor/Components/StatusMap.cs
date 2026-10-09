@@ -12,6 +12,7 @@ public enum StatusKind
     Webhook,
     Delivery,
     Notification,
+    Order,
 }
 
 /// <summary>Visual treatment of a status: colour AND icon AND text, so colour is never the only signal.</summary>
@@ -100,6 +101,14 @@ public static class StatusMap
         Add(StatusKind.Notification, "warning", "Warning", Color.Warning, warn);
         Add(StatusKind.Notification, "critical", "Urgent", Color.Error, err);
         Add(StatusKind.Notification, "error", "Urgent", Color.Error, err);
+
+        Add(StatusKind.Order, "pending", "Waiting for payment", Color.Info, time);
+        Add(StatusKind.Order, "paid", "Paid", Color.Success, ok);
+        Add(StatusKind.Order, "failed", "Payment failed", Color.Error, err);
+        Add(StatusKind.Order, "expired", "Expired", Color.Default, time);
+        Add(StatusKind.Order, "cancelled", "Cancelled", Color.Default, block);
+        Add(StatusKind.Order, "refunded", "Refunded", Color.Info, Icons.Material.Outlined.Replay);
+        Add(StatusKind.Order, "partiallyrefunded", "Partly refunded", Color.Warning, Icons.Material.Outlined.Replay);
 
         Add(StatusKind.Outcome, "enrolled", "Enrolled", Color.Success, Icons.Material.Outlined.PersonAdd);
         Add(StatusKind.Outcome, "matched", "Match", Color.Success, ok);

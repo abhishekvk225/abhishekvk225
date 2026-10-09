@@ -11,8 +11,9 @@ public enum LicenseHealthLevel
 /// Colour state of the licence gauge (docs/06 §2), defined precisely:
 /// <list type="bullet">
 /// <item>Critical (red): credits left &lt; 10 % of total, OR fewer than 7 days to expiry (or already expired / nothing granted).</item>
-/// <item>Warning (amber): not critical, and credits left between 10 % and 30 % inclusive, OR 7 to 30 days to expiry inclusive.</item>
-/// <item>Healthy (green): more than 30 % credits left and more than 30 days left (or no expiry).</item>
+/// <item>Warning (amber): not critical, and credits left between 10 % and 30 % inclusive, OR 7 to 30 days to expiry inclusive -
+/// except that time alone never turns an untouched balance (100 % left, such as a fresh trial) amber: nothing has been used yet.</item>
+/// <item>Healthy (green): more than 30 % credits left and more than 30 days left (or no expiry), or an untouched balance with 7 or more days left.</item>
 /// </list>
 /// Credits left are clamped to [0, total]. Days are fractional (<c>(expiry - now).TotalDays</c>).
 /// </summary>
@@ -35,7 +36,8 @@ public static class LicenseHealth
             return LicenseHealthLevel.Critical;
         }
 
-        if (percent <= WarningPercent || daysLeft is <= WarningDays)
+        var untouched = total > 0 && remaining >= total;
+        if (percent <= WarningPercent || (daysLeft is <= WarningDays && !untouched))
         {
             return LicenseHealthLevel.Warning;
         }

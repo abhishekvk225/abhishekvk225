@@ -72,6 +72,10 @@ public static class PortalServiceExtensions
             services.AddScoped<IAuthApiClient, StubAuthApiClient>();
             services.AddScoped<IPublicApiClient, StubPublicApiClient>();
             services.AddScoped<IDashboardApiClient, StubDashboardApiClient>();
+            services.AddSingleton<StubBillingStore>();
+            services.AddScoped<IBillingApiClient, StubBillingApiClient>();
+            services.AddScoped<IAdminBillingApiClient, StubAdminBillingApiClient>();
+            services.AddScoped<IDevBillingApiClient, StubDevBillingApiClient>();
         }
         else
         {
@@ -80,6 +84,13 @@ public static class PortalServiceExtensions
             services.AddScoped<IPublicApiClient>(sp => new CachingPublicApiClient(
                 sp.GetRequiredService<PublicApiClient>(), sp.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>()));
             services.AddScoped<IDashboardApiClient, DashboardApiClient>();
+            services.AddScoped<IBillingApiClient, BillingApiClient>();
+            services.AddScoped<IAdminBillingApiClient, AdminBillingApiClient>();
+            if (PortalStartupGuards.AllowsInsecureApi(environment))
+            {
+                // The payment simulator exists only where the API also has it (Development/Testing); elsewhere the page has no client to call.
+                services.AddScoped<IDevBillingApiClient, DevBillingApiClient>();
+            }
         }
 
         services.AddScoped<IClientsApiClient, ClientsApiClient>();
@@ -90,7 +101,15 @@ public static class PortalServiceExtensions
         services.AddScoped<IApiKeysApiClient, ApiKeysApiClient>();
         services.AddScoped<IWebhooksApiClient, WebhooksApiClient>();
         services.AddScoped<IClientAccountApiClient, ClientAccountApiClient>();
-        services.AddScoped<INotificationsApiClient, NotificationsApiClient>();
+        if (useStubs)
+        {
+            // The bell polls the API; with stub sign-in the tokens are fake, so the real call would end the demo session.
+            services.AddScoped<INotificationsApiClient, StubNotificationsApiClient>();
+        }
+        else
+        {
+            services.AddScoped<INotificationsApiClient, NotificationsApiClient>();
+        }
 
         var cookieName = sessionOptions.EffectiveCookieName(cookieSecurity.RequireSecure);
         services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)

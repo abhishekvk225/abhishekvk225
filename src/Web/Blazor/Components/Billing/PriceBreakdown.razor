@@ -1,0 +1,31 @@
+@* Price, tax and total on three plain lines. Every number comes from the API (integer minor units); nothing is calculated here except the
+   difference total - price when the API sends no separate tax amount. *@
+<dl class="nv-price-lines" data-testid="price-breakdown">
+    <div><dt>@PriceLabel</dt><dd data-testid="price-subtotal">@Money.Format(SubtotalMinor, Currency)</dd></div>
+    <div>
+        <dt>@TaxText</dt>
+        <dd data-testid="price-tax">@(TaxMinor == 0 ? "None" : Money.Format(TaxMinor, Currency))</dd>
+    </div>
+    <div class="nv-price-total"><dt>Total to pay</dt><dd data-testid="price-total">@Money.Format(TotalMinor, Currency)</dd></div>
+</dl>
+
+@code {
+    [Parameter, EditorRequired] public long SubtotalMinor { get; set; }
+
+    [Parameter, EditorRequired] public long TaxMinor { get; set; }
+
+    [Parameter, EditorRequired] public long TotalMinor { get; set; }
+
+    [Parameter, EditorRequired] public string Currency { get; set; } = string.Empty;
+
+    [Parameter] public string? TaxLabel { get; set; }
+
+    [Parameter] public decimal TaxPercent { get; set; }
+
+    [Parameter] public string PriceLabel { get; set; } = "Price";
+
+    private string TaxText =>
+        TaxMinor == 0 && TaxPercent == 0 ? "Tax"
+        : TaxPercent > 0 ? $"{(string.IsNullOrWhiteSpace(TaxLabel) ? "Tax" : TaxLabel)} ({TaxPercent.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}%)"
+        : string.IsNullOrWhiteSpace(TaxLabel) ? "Tax" : TaxLabel!;
+}

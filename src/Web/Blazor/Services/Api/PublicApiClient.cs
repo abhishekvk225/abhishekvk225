@@ -36,6 +36,9 @@ public interface IPublicApiClient
 
     Task<ApiResult<PublicConfigDto>> GetConfigAsync(CancellationToken ct = default);
 
+    /// <summary>Credit packs with real prices for the pricing page (<c>GET /public/packs</c>). Empty = no pack is on sale.</summary>
+    Task<ApiResult<IReadOnlyList<PublicPackDto>>> GetPacksAsync(CancellationToken ct = default);
+
     /// <summary>202 on success. The answer never says whether the address already exists.</summary>
     Task<ApiResult<bool>> SignupAsync(SignupRequest request, CancellationToken ct = default);
 
@@ -51,6 +54,9 @@ public sealed class PublicApiClient(IApiGateway api) : IPublicApiClient
 
     public Task<ApiResult<PublicConfigDto>> GetConfigAsync(CancellationToken ct = default) =>
         api.GetAsync<PublicConfigDto>("public/config", ct, ApiCallOptions.None);
+
+    public Task<ApiResult<IReadOnlyList<PublicPackDto>>> GetPacksAsync(CancellationToken ct = default) =>
+        api.GetAsync<IReadOnlyList<PublicPackDto>>("public/packs", ct, ApiCallOptions.None);
 
     public Task<ApiResult<bool>> SignupAsync(SignupRequest request, CancellationToken ct = default) =>
         api.SendAsync(HttpMethod.Post, "public/signup", request, ct, ApiCallOptions.None);
@@ -77,6 +83,9 @@ public sealed class CachingPublicApiClient(IPublicApiClient inner, IMemoryCache 
 
     public Task<ApiResult<PublicConfigDto>> GetConfigAsync(CancellationToken ct = default) =>
         CachedAsync("public:config", ConfigTtl, () => inner.GetConfigAsync(ct));
+
+    public Task<ApiResult<IReadOnlyList<PublicPackDto>>> GetPacksAsync(CancellationToken ct = default) =>
+        CachedAsync("public:packs", PlansTtl, () => inner.GetPacksAsync(ct));
 
     public Task<ApiResult<bool>> SignupAsync(SignupRequest request, CancellationToken ct = default) => inner.SignupAsync(request, ct);
 

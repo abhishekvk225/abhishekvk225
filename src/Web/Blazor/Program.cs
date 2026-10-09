@@ -77,6 +77,7 @@ app.UseCookiePolicy(new CookiePolicyOptions
 });
 
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+app.UseBillingReturnHop(); // arrivals from the payment partner's site (SameSite=Strict would drop the sign-in cookie)
 app.UseAuthentication();
 app.UseMiddleware<ForcePasswordChangeMiddleware>();
 app.UseAuthorization();
@@ -87,6 +88,7 @@ app.MapStaticAssets();
 app.MapPublicSite(); // robots.txt, sitemap.xml
 app.MapPortalAuth();
 app.MapPortalDownloads();
+app.MapPortalBilling();
 // Probes for the container orchestrator / load balancer: liveness only (the portal has no database; API reachability is shown to users, not probed here).
 app.MapHealthChecks("/health/live").AllowAnonymous();
 app.MapGet("/error", () => Results.Problem(title: "Something went wrong", statusCode: 500));

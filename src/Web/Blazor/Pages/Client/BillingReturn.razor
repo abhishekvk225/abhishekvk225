@@ -1,0 +1,208 @@
+@page "/client/billing/return"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.BillingRead)]
+@implements IDisposable
+@inject IBillingApiClient Api
+@inject TimeProvider Clock
+
+<PageTitle>Your payment · NexaVerify</PageTitle>
+
+<PageHeader Title="Your payment" Subtitle="We check with our payment partner so you can be sure your credits are on the way." />
+
+<MudPaper Class="nv-card" Elevation="0" data-testid="return-panel" data-state="@StateName">
+    @if (OrderId is null)
+    {
+        <EmptyState Icon="@Icons.Material.Outlined.SearchOff" Title="We could not tell which payment this is"
+                    Message="Open Orders and invoices to see all your payments, or start a new purchase.">
+            <div class="d-flex flex-wrap justify-center" style="gap: var(--nv-space-2);">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="client/billing/orders">Orders and invoices</MudButton>
+                <MudButton Variant="Variant.Outlined" Href="client/billing/buy">Buy credits</MudButton>
+            </div>
+        </EmptyState>
+    }
+    else if (_failure is not null)
+    {
+        <ErrorState Error="_failure" Title="We could not check your payment" OnRetry="EventCallback.Factory.Create(this, StartAsync)" />
+    }
+    else if (_order is null)
+    {
+        <div class="nv-status-panel" role="status" aria-live="polite" data-testid="return-checking">
+            <MudProgressCircular Indeterminate="true" Size="Size.Large" aria-label="Checking your payment" />
+            <MudText Typo="Typo.h4" HtmlTag="h2">Confirming your payment…</MudText>
+            <MudText Class="nv-muted" Style="max-width: 48ch;">Please keep this page open. This usually takes less than a minute.</MudText>
+        </div>
+    }
+    else if (OrderStatuses.IsPaid(_order.Status))
+    {
+        <div class="nv-status-panel" role="status" aria-live="polite" data-testid="return-paid">
+            <div class="nv-status-icon" style="background: color-mix(in srgb, var(--mud-palette-success) 16%, transparent); color: var(--mud-palette-success);" aria-hidden="true"><MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Large" /></div>
+            <MudText Typo="Typo.h4" HtmlTag="h2">Payment received. Your credits were added.</MudText>
+            <MudText Class="nv-muted" Style="max-width: 52ch;">
+                We added <strong>@UiText.Number(_order.Credits) credits</strong> to your account, valid for @UiText.Plural(_order.ValidityDays, "day").
+                You paid @Money.Format(_order.TotalMinor, _order.Currency).
+            </MudText>
+            <div class="d-flex flex-wrap justify-center align-center" style="gap: var(--nv-space-3);">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="@(_order.LicenseId is { } id ? $"client/license/{id}" : "client/license")" data-testid="see-credits">See your credits</MudButton>
+                @if (!string.IsNullOrWhiteSpace(_order.InvoiceNumber))
+                {
+                    <InvoiceLink OrderId="_order.Id" Number="@_order.InvoiceNumber" />
+                }
+                <MudButton Variant="Variant.Text" Href="@($"client/billing/orders/{_order.Id}")">Order details</MudButton>
+            </div>
+        </div>
+    }
+    else if (OrderStatuses.IsFailed(_order.Status))
+    {
+        <div class="nv-status-panel" role="alert" data-testid="return-failed">
+            <div class="nv-status-icon" style="background: color-mix(in srgb, var(--mud-palette-error) 14%, transparent); color: var(--mud-palette-error);" aria-hidden="true"><MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Size="Size.Large" /></div>
+            <MudText Typo="Typo.h4" HtmlTag="h2">@FailedTitle</MudText>
+            <MudText Class="nv-muted" Style="max-width: 52ch;">@FailedHelp</MudText>
+            <div class="d-flex flex-wrap justify-center" style="gap: var(--nv-space-2);">
+                <Can Permission="@WebPermissions.BillingManage">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="client/billing/buy" data-testid="try-again">Try again</MudButton>
+                </Can>
+                <MudButton Variant="Variant.Outlined" Href="/contact" data-enhance-nav="false">Contact us</MudButton>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="nv-status-panel" role="status" aria-live="polite" data-testid="return-pending">
+            @if (_timedOut)
+            {
+                <div class="nv-status-icon" style="background: color-mix(in srgb, var(--mud-palette-info) 16%, transparent); color: var(--mud-palette-info);" aria-hidden="true"><MudIcon Icon="@Icons.Material.Outlined.Schedule" Size="Size.Large" /></div>
+                <MudText Typo="Typo.h4" HtmlTag="h2">Still waiting for confirmation</MudText>
+                <MudText Class="nv-muted" Style="max-width: 52ch;">
+                    Your bank or our payment partner is taking longer than usual. If you paid, your credits will be added automatically. You do not need to pay again.
+                    Check Orders and invoices in a few minutes.
+                </MudText>
+                <div class="d-flex flex-wrap justify-center" style="gap: var(--nv-space-2);">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="StartAsync" data-testid="check-again">Check again</MudButton>
+                    <MudButton Variant="Variant.Outlined" Href="client/billing/orders">Orders and invoices</MudButton>
+                </div>
+            }
+            else
+            {
+                <MudProgressCircular Indeterminate="true" Size="Size.Large" aria-label="Checking your payment" />
+                <MudText Typo="Typo.h4" HtmlTag="h2">Confirming your payment…</MudText>
+                <MudText Class="nv-muted" Style="max-width: 52ch;">
+                    @if (string.Equals(Result, "cancelled", StringComparison.OrdinalIgnoreCase))
+                    {
+                        <span data-testid="cancel-hint">It looks like you left the payment page before finishing. If you did not pay, nothing is charged and you can simply try again. We are still checking.</span>
+                    }
+                    else
+                    {
+                        <span>We are waiting for our payment partner to confirm. Please keep this page open. This usually takes less than a minute.</span>
+                    }
+                </MudText>
+            }
+        </div>
+    }
+</MudPaper>
+
+@code {
+    private CancellationTokenSource? _cts;
+    private OrderDto? _order;
+    private ApiError? _failure;
+    private bool _timedOut;
+    private Guid? _polling;
+
+    /// <summary>Only used to pick which order to look at. Whether it was paid is decided by the API's answer, never by this value.</summary>
+    [SupplyParameterFromQuery(Name = "order")] public Guid? OrderId { get; set; }
+
+    /// <summary>What the browser was told on the way back (<c>success</c> or <c>cancelled</c>). A hint for wording only, never proof.</summary>
+    [SupplyParameterFromQuery(Name = "result")] public string? Result { get; set; }
+
+    private string StateName =>
+        OrderId is null ? "unknown" : _failure is not null ? "error" : _order is null ? "checking"
+        : OrderStatuses.IsPaid(_order.Status) ? "paid" : OrderStatuses.IsFailed(_order.Status) ? "failed" : _timedOut ? "timeout" : "pending";
+
+    private string FailedTitle => _order?.Status switch
+    {
+        OrderStatuses.Cancelled => "The payment was cancelled",
+        OrderStatuses.Expired => "The payment page expired",
+        _ => "The payment did not go through",
+    };
+
+    private string FailedHelp => _order?.Status switch
+    {
+        OrderStatuses.Cancelled => "Nothing was charged. You can start again whenever you are ready.",
+        OrderStatuses.Expired => "The payment page was open for too long, so nothing was charged. Start again to get a new one.",
+        _ => "Your bank or card did not accept it, so no credits were added. If money left your account it will be returned automatically. You can try again or use another card.",
+    };
+
+    protected override Task OnParametersSetAsync()
+    {
+        if (OrderId is { } id && _polling != id)
+        {
+            _polling = id;
+            return StartAsync();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+    }
+
+    private async Task StartAsync()
+    {
+        if (OrderId is not { } id)
+        {
+            return;
+        }
+
+        _cts?.Cancel();
+        _cts?.Dispose();
+        var cts = _cts = new CancellationTokenSource();
+        _failure = null;
+        _timedOut = false;
+        _order = null;
+
+        try
+        {
+            // Background polling: it must not keep the sign-in session alive, so a forgotten tab still times out.
+            var outcome = await new OrderPoller(Clock).RunAsync(
+                ct => Api.GetOrderAsync(id, ct, passive: true),
+                async answer =>
+                {
+                    if (cts.IsCancellationRequested)
+                    {
+                        return;
+                    }
+
+                    if (answer.IsSuccess)
+                    {
+                        _order = answer.Value;
+                        _failure = null;
+                    }
+                    else if (!OrderPoller.IsTransient(answer.Error!))
+                    {
+                        _failure = answer.Error;
+                    }
+
+                    await InvokeAsync(StateHasChanged);
+                },
+                cts.Token);
+
+            if (cts.IsCancellationRequested)
+            {
+                return;
+            }
+
+            if (!outcome.Last.IsSuccess)
+            {
+                _failure = outcome.Last.Error; // still unreachable at the end of the wait
+            }
+
+            _timedOut = outcome.TimedOut;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException)
+        {
+            // Left the page or started a new check.
+        }
+    }
+}

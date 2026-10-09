@@ -1,0 +1,13 @@
+@* The invoice is fetched by the portal on the server and sent back as a locked-down page (no scripts). It opens in its own tab and can be printed from there. *@
+<MudLink Class="d-inline-flex align-center" Href="@InvoiceHref(OrderId)" Target="_blank" rel="noopener noreferrer" data-enhance-nav="false" Underline="Underline.Hover" data-testid="invoice-link"
+         aria-label="@($"Open invoice {Number} in a new tab")">
+    <MudIcon Icon="@Icons.Material.Outlined.Receipt" Size="Size.Small" Class="mr-1" aria-hidden="true" />Invoice<span class="nv-sr"> @Number (opens in a new tab)</span>
+</MudLink>
+
+@code {
+    [Parameter, EditorRequired] public Guid OrderId { get; set; }
+
+    [Parameter] public string? Number { get; set; }
+
+    public static string InvoiceHref(Guid orderId) => $"bff/client/billing/orders/{orderId}/invoice";
+}

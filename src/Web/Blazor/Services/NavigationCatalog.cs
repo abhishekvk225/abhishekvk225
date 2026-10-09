@@ -21,6 +21,11 @@ public static class NavigationCatalog
             new("Plans", "admin/plans", Icons.Material.Outlined.Inventory2, WebPermissions.LicensesRead),
             new("Cost rules", "admin/cost-rules", Icons.Material.Outlined.Toll, WebPermissions.LicensesRead),
         ]),
+        new("Billing",
+        [
+            new("Credit packs", "admin/billing/packs", Icons.Material.Outlined.Sell, WebPermissions.BillingPacksManage),
+            new("Orders", "admin/billing/orders", Icons.Material.Outlined.ReceiptLong, WebPermissions.BillingOrdersRead),
+        ]),
         new("Insights",
         [
             new("Reports", "admin/reports", Icons.Material.Outlined.Assessment, WebPermissions.ReportsRead),
@@ -55,6 +60,12 @@ public static class NavigationCatalog
             new("API logs", "client/api-logs", Icons.Material.Outlined.Api, WebPermissions.ApiKeysRead),
             new("Webhooks", "client/webhooks", Icons.Material.Outlined.Webhook, WebPermissions.WebhooksManage),
             new("API guide", "client/api-docs", Icons.Material.Outlined.MenuBook, null),
+        ]),
+        new("Billing",
+        [
+            new("Buy credits", "client/billing/buy", Icons.Material.Outlined.ShoppingCart, WebPermissions.BillingManage),
+            new("Orders & invoices", "client/billing/orders", Icons.Material.Outlined.ReceiptLong, WebPermissions.BillingRead),
+            new("Billing details", "client/billing/profile", Icons.Material.Outlined.Business, WebPermissions.BillingRead),
         ]),
         new("Account",
         [

@@ -57,6 +57,13 @@ public static class WebPermissions
     public const string FacesErase = Permissions.Faces.Erase;
     public const string FacesHistory = Permissions.Faces.History;
 
+    // Billing (M12). Not in Contracts.Identity.Permissions yet; the keys are the API's.
+    public const string BillingRead = BillingPermissions.Read;
+    public const string BillingManage = BillingPermissions.Manage;
+    public const string BillingPacksManage = BillingPermissions.PacksManage;
+    public const string BillingOrdersRead = BillingPermissions.OrdersRead;
+    public const string BillingRefund = BillingPermissions.Refund;
+
     /// <summary>Permissions of the default Super Admin role (used by tests and the design stubs).</summary>
     public static IReadOnlyList<string> SuperAdminDefaults => SystemRoles.PermissionsFor(SystemRoles.SuperAdmin);
 
