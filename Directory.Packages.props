@@ -22,7 +22,7 @@
     <PackageVersion Include="FluentValidation" Version="12.1.1" />
     <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
     <PackageVersion Include="SkiaSharp" Version="3.119.2" />
-    <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.2" />
+    <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.153.1" />
     <PackageVersion Include="MudBlazor" Version="9.11.0" />
     <!-- QR code module matrix for the MFA enrolment page (MIT licence; only the matrix is used, rendering is done by a Blazor component). -->
     <PackageVersion Include="QRCoder" Version="1.6.0" />
