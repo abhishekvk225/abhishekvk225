@@ -76,16 +76,20 @@ public sealed class PasswordResetService : IPasswordResetService
         await _email.SendAsync(request, cancellationToken);
     }
 
-    /// <summary>Splits <c>https://host/reset-password?email={email}&amp;token={token}</c> into its path and query with the placeholders filled in.</summary>
-    internal static (string Path, (string Key, string Value)[] Query) LinkShape(string template, string email, string rawToken)
+    /// <summary>Splits <c>https://host/reset-password?email={email}&amp;token={token}</c> into its path and query with the placeholders filled in (wherever they appear).</summary>
+    public static (string Path, (string Key, string Value)[] Query) LinkShape(string template, string email, string rawToken)
     {
-        var uri = new Uri(template.Replace("{email}", "e", StringComparison.Ordinal).Replace("{token}", "t", StringComparison.Ordinal), UriKind.Absolute);
+        const string emailMarker = "NVEMAILMARKER";
+        const string tokenMarker = "NVTOKENMARKER";
+        string Fill(string text) => text.Replace(emailMarker, email, StringComparison.Ordinal).Replace(tokenMarker, rawToken, StringComparison.Ordinal);
+
+        var uri = new Uri(template.Replace("{email}", emailMarker, StringComparison.Ordinal).Replace("{token}", tokenMarker, StringComparison.Ordinal), UriKind.Absolute);
+        var path = string.Join('/', uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries).Select(segment => Fill(Uri.UnescapeDataString(segment))));
         var query = uri.Query.TrimStart('?')
             .Split('&', StringSplitOptions.RemoveEmptyEntries)
             .Select(pair => pair.Split('=', 2))
-            .Select(parts => (Key: Uri.UnescapeDataString(parts[0]), Value: parts.Length > 1 ? Uri.UnescapeDataString(parts[1]) : string.Empty))
-            .Select(q => (q.Key, Value: q.Value == "e" ? email : q.Value == "t" ? rawToken : q.Value))
+            .Select(parts => (Key: Uri.UnescapeDataString(parts[0]), Value: Fill(parts.Length > 1 ? Uri.UnescapeDataString(parts[1]) : string.Empty)))
             .ToArray();
-        return (uri.AbsolutePath, query);
+        return (path, query);
     }
 }

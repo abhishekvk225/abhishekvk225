@@ -49,7 +49,7 @@ public sealed class EmailLinkBuilder
     public string Build(EmailLink link)
     {
         var path = link.Path;
-        if (string.IsNullOrWhiteSpace(path) || path.Any(c => char.IsControl(c) || c is '\\' or '?' or '#' or '%' or ' ') || path.Contains("://", StringComparison.Ordinal) || path.StartsWith("//", StringComparison.Ordinal))
+        if (string.IsNullOrWhiteSpace(path) || path.Any(c => char.IsControl(c) || c is '\\' or '?' or '#' or '%' or ' ' or ':') || path.Contains("://", StringComparison.Ordinal) || path.StartsWith("//", StringComparison.Ordinal))
         {
             throw new EmailLinkException("An email link path must be a plain relative path.");
         }

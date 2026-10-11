@@ -46,6 +46,12 @@ public sealed class SmtpOptions
     /// <summary>Name announced in EHLO. Empty = the machine name.</summary>
     public string? LocalDomain { get; set; }
 
+    /// <summary>
+    /// Optional PEM file with the certificate authority that signed the mail server's certificate (a private relay with an internal CA).
+    /// The chain is still validated up to that authority, and the host name still has to match: this adds a trusted root, it never switches validation off.
+    /// </summary>
+    public string? CaCertificateFile { get; set; }
+
     /// <summary>Permits <see cref="SmtpSecurity.None"/> towards a non-loopback host (a private relay on a trusted network). Credentials would travel in clear text.</summary>
     public bool AllowPlaintext { get; set; }
 }
@@ -213,6 +219,11 @@ public sealed class EmailOptionsValidator : IValidateOptions<EmailOptions>
             else if (s.Security == SmtpSecurity.None && !s.AllowPlaintext && !IsLoopback(s.Host))
             {
                 errors.Add("Email:Smtp:Security=None sends mail (and the password) unencrypted. Use StartTls or SslOnConnect, or set Email:Smtp:AllowPlaintext=true for a trusted private relay.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(s.CaCertificateFile) && !File.Exists(s.CaCertificateFile))
+            {
+                errors.Add("Email:Smtp:CaCertificateFile does not point to an existing file.");
             }
 
             if (string.IsNullOrEmpty(s.Username) != string.IsNullOrEmpty(s.Password))

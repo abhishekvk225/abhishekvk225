@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace NexaVerify.Infrastructure.Messaging;
 
@@ -7,7 +8,7 @@ namespace NexaVerify.Infrastructure.Messaging;
 /// Text hygiene for everything that ends up in a mail. Header values (subject, display names) can never carry a line break, so a
 /// user-supplied name cannot add headers or recipients; body values lose control characters; error texts lose secrets.
 /// </summary>
-public static class EmailText
+public static partial class EmailText
 {
     public const int MaxSubjectLength = 200;
 
@@ -87,7 +88,7 @@ public static class EmailText
     /// </summary>
     public static string Error(string? text, int maxLength, IEnumerable<string?>? secrets = null)
     {
-        var line = SingleLine(text);
+        var line = MailboxPattern().Replace(SingleLine(text), "***@***"); // server replies often echo the recipient; stored errors are shown to people who may not see addresses
         foreach (var secret in secrets ?? [])
         {
             if (!string.IsNullOrEmpty(secret) && secret.Length >= 3)
@@ -135,4 +136,7 @@ public static class EmailText
 
         return sb.ToString();
     }
+
+    [GeneratedRegex(@"[^\s<>@,;:""']+@[^\s<>@,;:""']+", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 200)]
+    private static partial Regex MailboxPattern();
 }

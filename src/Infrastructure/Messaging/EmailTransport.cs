@@ -1,4 +1,6 @@
+using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Cryptography.X509Certificates;
 using MailKit;
 using MailKit.Net.Smtp;
 using MailKit.Security;
@@ -111,10 +113,12 @@ public static class EmailMime
 public sealed class SmtpEmailTransport : IEmailTransport
 {
     private readonly EmailOptions _options;
+    private readonly Lazy<X509Certificate2Collection?> _privateRoots;
 
     public SmtpEmailTransport(IOptions<EmailOptions> options)
     {
         _options = options.Value;
+        _privateRoots = new Lazy<X509Certificate2Collection?>(LoadPrivateRoots);
     }
 
     public async Task SendAsync(OutgoingEmail message, CancellationToken cancellationToken)
@@ -143,7 +147,13 @@ public sealed class SmtpEmailTransport : IEmailTransport
                 CheckCertificateRevocation = true,
             };
 
-            // Deliberately no ServerCertificateValidationCallback: the platform's default chain, host name and revocation checks apply.
+            // No "accept anything" callback exists. By default the platform's chain, host name and revocation checks apply; a configured private
+            // CA only adds a trusted root (the chain must still lead to it and the host name must still match).
+            if (_privateRoots.Value is { } roots)
+            {
+                client.ServerCertificateValidationCallback = (_, certificate, chain, errors) => ValidateAgainstPrivateRoots(roots, certificate, chain, errors);
+            }
+
             if (!string.IsNullOrWhiteSpace(smtp.LocalDomain))
             {
                 client.LocalDomain = smtp.LocalDomain;
@@ -166,6 +176,47 @@ public sealed class SmtpEmailTransport : IEmailTransport
         {
             throw SmtpFailureClassifier.Classify(ex, _options);
         }
+    }
+
+    private X509Certificate2Collection? LoadPrivateRoots()
+    {
+        if (string.IsNullOrWhiteSpace(_options.Smtp.CaCertificateFile))
+        {
+            return null;
+        }
+
+        var roots = new X509Certificate2Collection();
+        roots.ImportFromPemFile(_options.Smtp.CaCertificateFile);
+        return roots;
+    }
+
+    internal static bool ValidateAgainstPrivateRoots(X509Certificate2Collection roots, X509Certificate? certificate, X509Chain? chain, SslPolicyErrors errors)
+    {
+        if (errors == SslPolicyErrors.None)
+        {
+            return true;
+        }
+
+        // A wrong or missing name, or no certificate at all, is never excused by a private CA.
+        if (certificate is null || (errors & (SslPolicyErrors.RemoteCertificateNameMismatch | SslPolicyErrors.RemoteCertificateNotAvailable)) != 0)
+        {
+            return false;
+        }
+
+        using var leaf = new X509Certificate2(certificate);
+        using var custom = new X509Chain();
+        custom.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+        custom.ChainPolicy.CustomTrustStore.AddRange(roots);
+        custom.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck; // a private CA seldom publishes revocation data
+        if (chain is not null)
+        {
+            foreach (var element in chain.ChainElements.Skip(1))
+            {
+                custom.ChainPolicy.ExtraStore.Add(element.Certificate);
+            }
+        }
+
+        return custom.Build(leaf);
     }
 
     private static SecureSocketOptions ToMailKit(SmtpSecurity security) => security switch
