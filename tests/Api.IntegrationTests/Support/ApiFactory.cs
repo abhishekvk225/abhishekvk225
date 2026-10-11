@@ -31,13 +31,17 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
             using var signing = System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
             builder.UseSetting("Jwt:SigningKeyPem", signing.ExportPkcs8PrivateKeyPem());
             builder.UseSetting("FaceEngine:AllowMockInProduction", "true"); // the guard itself is unit-tested
-            builder.UseSetting("Email:AllowLoggingProvider", "true"); // the guard itself is tested in EmailAdminTests
             builder.UseSetting("Encryption:MasterKeyBase64", Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)));
         }
         else
         {
             builder.UseSetting("Jwt:AllowEphemeralKey", "true");
             builder.UseSetting("Encryption:AllowEphemeralKey", "true");
+        }
+
+        if (Environment is not ("Development" or "Testing"))
+        {
+            builder.UseSetting("Email:AllowLoggingProvider", "true"); // the guard itself is tested in EmailAdminTests
         }
 
         builder.UseSetting("Email:Dispatcher:Enabled", "false"); // mail stays in the outbox where tests read it; the dispatcher is tested on its own
