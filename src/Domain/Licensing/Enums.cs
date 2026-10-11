@@ -22,13 +22,20 @@ public enum LedgerEntryType
     Revocation,
 }
 
-/// <summary>Billable operations. Mirrors the face-recognition operations.</summary>
+/// <summary>Billable operations: the face-recognition operations and the document verification stages.</summary>
 public enum MeteredOperation
 {
     Enroll = 0,
     Verify,
     Identify,
     Detect,
+
+    // M14 document verification: one operation per billable stage (docs/07 §8.2). Upcoming modules have none, so they cannot be charged.
+    BankStatementExtraction,
+    PanExtraction,
+    PanProviderCheck,
+    PassportExtraction,
+    PassportProviderCheck,
 }
 
 /// <summary>When a metered operation is charged.</summary>

@@ -59,6 +59,30 @@ public static class ErrorCodes
     public const string UnsupportedMediaType = "UNSUPPORTED_MEDIA_TYPE";
     public const string RequestTimeout = "REQUEST_TIMEOUT";
 
+    // M14 document verification (docs/07 §10.5)
+    public const string DocumentRequired = "DOCUMENT_REQUIRED";
+    public const string DocumentInvalid = "DOCUMENT_INVALID";
+    public const string DocumentUnsupportedType = "DOCUMENT_UNSUPPORTED_TYPE";
+    public const string DocumentTooLarge = "DOCUMENT_TOO_LARGE";
+    public const string DocumentTooManyPages = "DOCUMENT_TOO_MANY_PAGES";
+    public const string DocumentEncrypted = "DOCUMENT_ENCRYPTED";
+    public const string DocumentActiveContent = "DOCUMENT_ACTIVE_CONTENT";
+    public const string VerificationModuleDisabled = "VERIFICATION_MODULE_DISABLED";
+    public const string VerificationNotCancellable = "VERIFICATION_NOT_CANCELLABLE";
+    public const string VerificationNotRetryable = "VERIFICATION_NOT_RETRYABLE";
+    public const string VerificationQueueFull = "VERIFICATION_QUEUE_FULL";
+    public const string DownloadLinkExpired = "DOWNLOAD_LINK_EXPIRED";
+    public const string ProcessingUnavailable = "PROCESSING_UNAVAILABLE";
+
+    // Request-level failure codes stored on a verification (not HTTP errors)
+    public const string DocumentUnreadable = "DOCUMENT_UNREADABLE";
+    public const string OcrUnavailable = "OCR_UNAVAILABLE";
+    public const string ProcessingFailed = "PROCESSING_FAILED";
+    public const string ProcessingTimeout = "PROCESSING_TIMEOUT";
+    public const string CreditsUnavailable = "CREDITS_UNAVAILABLE";
+    public const string Cancelled = "CANCELLED";
+    public const string Expired = "EXPIRED";
+
     public const string InternalError = "INTERNAL_ERROR";
     public const string FaceProviderUnavailable = "FACE_PROVIDER_UNAVAILABLE";
 }

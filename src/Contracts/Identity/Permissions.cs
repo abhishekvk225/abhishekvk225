@@ -165,6 +165,32 @@ public static class Permissions
         public const string History = "faces.history";
     }
 
+    /// <summary>M14 document verification, client scope (docs/07 §10.1). Client User gets none by default (identity and financial documents).</summary>
+    public static class Verification
+    {
+        public const string BankStatementSubmit = "verification.bank-statement.submit";
+        public const string PanSubmit = "verification.pan.submit";
+        public const string PassportSubmit = "verification.passport.submit";
+
+        /// <summary>Module catalogue, list, status, result, transactions.</summary>
+        public const string Read = "verification.read";
+
+        /// <summary>Report and transactions CSV download links.</summary>
+        public const string ReportDownload = "verification.report.download";
+
+        /// <summary>Original document download (additionally gated by <c>Verification:Download:AllowOriginalDownload</c>).</summary>
+        public const string DocumentDownload = "verification.document.download";
+
+        public const string Erase = "verification.erase";
+    }
+
+    /// <summary>M14 document verification, platform scope. Metadata only: never documents or extracted data.</summary>
+    public static class VerificationAdmin
+    {
+        public const string Read = "verification.admin.read";
+        public const string Configure = "verification.admin.configure";
+    }
+
     public static IReadOnlyList<PermissionDefinition> All { get; } =
     [
         new(Clients.Read, "Clients", PermissionScopeKind.Platform, "View clients"),
@@ -224,6 +250,17 @@ public static class Permissions
         new(Faces.Manage, "Face recognition", PermissionScopeKind.Client, "Edit face profiles"),
         new(Faces.Erase, "Face recognition", PermissionScopeKind.Client, "Erase face profiles"),
         new(Faces.History, "Face recognition", PermissionScopeKind.Client, "View recognition history"),
+
+        new(VerificationAdmin.Read, "Document verification", PermissionScopeKind.Platform, "View verification module status, statistics and tenant request metadata"),
+        new(VerificationAdmin.Configure, "Document verification", PermissionScopeKind.Platform, "Switch verification modules on or off"),
+
+        new(Verification.BankStatementSubmit, "Document verification", PermissionScopeKind.Client, "Submit bank statements for verification"),
+        new(Verification.PanSubmit, "Document verification", PermissionScopeKind.Client, "Submit PAN details or documents for verification"),
+        new(Verification.PassportSubmit, "Document verification", PermissionScopeKind.Client, "Submit passports for verification"),
+        new(Verification.Read, "Document verification", PermissionScopeKind.Client, "View verification modules, history and results"),
+        new(Verification.ReportDownload, "Document verification", PermissionScopeKind.Client, "Download verification reports and transaction exports"),
+        new(Verification.DocumentDownload, "Document verification", PermissionScopeKind.Client, "Download the original uploaded document"),
+        new(Verification.Erase, "Document verification", PermissionScopeKind.Client, "Erase a verification's document and extracted data"),
 
         new(Usage.Read, "Usage", PermissionScopeKind.Both, "View usage statistics"),
         new(Notifications.Read, "Notifications", PermissionScopeKind.Both, "View notifications"),

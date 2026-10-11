@@ -10,6 +10,7 @@ using NexaVerify.Application.Identity;
 using NexaVerify.Application.Licensing;
 using NexaVerify.Application.Public;
 using NexaVerify.Application.Tenancy;
+using NexaVerify.Application.Verification;
 
 namespace NexaVerify.Application;
 
@@ -74,6 +75,7 @@ public static class DependencyInjection
         services.AddScoped<ILedgerVerificationService, LedgerVerificationService>();
         services.AddScoped<ILicenseAlertService, LicenseAlertService>();
         services.AddScoped<INotificationService, NotificationService>();
+        services.AddVerificationApplication();
         return services;
     }
 }

@@ -26,11 +26,14 @@ public static class WebhookEvents
     public const string LicenseToppedUp = "license.topped_up";
     public const string LicenseCreditsRevoked = "license.credits_revoked";
 
+    /// <summary>A document verification finished processing (any terminal state). Payload carries ids, status and credits only, no personal data.</summary>
+    public const string VerificationCompleted = "verification.completed";
+
     /// <summary>Sent by "send test event"; always deliverable to the endpoint it targets.</summary>
     public const string Test = "webhook.test";
 
     public static IReadOnlyList<string> Subscribable { get; } =
-        [RecognitionCompleted, LicenseLowBalance, LicenseExpiring, LicenseExpired, LicenseExhausted, ApiKeyExpiring, LicenseToppedUp, LicenseCreditsRevoked];
+        [RecognitionCompleted, LicenseLowBalance, LicenseExpiring, LicenseExpired, LicenseExhausted, ApiKeyExpiring, LicenseToppedUp, LicenseCreditsRevoked, VerificationCompleted];
 }
 
 /// <summary>A URL a client wants events POSTed to. The signing secret is stored encrypted and shown once.</summary>

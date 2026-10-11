@@ -31,6 +31,7 @@ using NexaVerify.Infrastructure.Persistence;
 using NexaVerify.Infrastructure.Persistence.Interceptors;
 using NexaVerify.Infrastructure.Persistence.Rls;
 using NexaVerify.Infrastructure.Tenancy;
+using NexaVerify.Infrastructure.Verification;
 
 namespace NexaVerify.Infrastructure;
 
@@ -96,6 +97,7 @@ public static class DependencyInjection
         services.AddOptions<EmailOptions>().Bind(configuration.GetSection(EmailOptions.SectionName)).ValidateOnStart();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<EmailOptions>, EmailOptionsValidator>());
         services.AddOptions<SeedOptions>().Bind(configuration.GetSection(SeedOptions.SectionName));
+        services.AddVerificationInfrastructure(configuration);
 
         // Repositories and identity services
         services.AddScoped<IUserRepository, UserRepository>();
