@@ -76,6 +76,7 @@ internal sealed class KeyRotationHarness : IAsyncDisposable
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<IConfiguration>(configuration);
+        services.AddSingleton<Microsoft.Extensions.Hosting.IHostApplicationLifetime, StubLifetime>();
         services.AddApplication();
         services.AddInfrastructure(configuration);
         return new KeyRotationHarness(db, services.BuildServiceProvider());
@@ -232,7 +233,7 @@ internal sealed class KeyRotationHarness : IAsyncDisposable
             try
             {
                 var entryId = await db.LicenseTransactions.AsNoTracking().Where(t => t.LicenseId == licenseId && t.Type == LedgerEntryType.Consume).OrderBy(t => t.Id).Select(t => t.Id).FirstAsync();
-                await db.Database.ExecuteSqlRawAsync("UPDATE licensing.LicenseTransactions SET Credits = Credits - 7 WHERE Id = {0}", entryId);
+                await db.Database.ExecuteSqlRawAsync("UPDATE licensing.LicenseTransactions SET Reason = N'forged' WHERE Id = {0}", entryId);
             }
             finally
             {
@@ -251,3 +252,16 @@ internal sealed class KeyRotationHarness : IAsyncDisposable
 }
 
 internal sealed record LedgerRunSummary(int Licenses, int Broken);
+
+internal sealed class StubLifetime : Microsoft.Extensions.Hosting.IHostApplicationLifetime
+{
+    public CancellationToken ApplicationStarted => CancellationToken.None;
+
+    public CancellationToken ApplicationStopping => CancellationToken.None;
+
+    public CancellationToken ApplicationStopped => CancellationToken.None;
+
+    public void StopApplication()
+    {
+    }
+}

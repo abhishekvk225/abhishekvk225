@@ -36,7 +36,11 @@ public class MasterKeyRotationTests : IAsyncLifetime
         _fixture = fixture;
     }
 
-    public async Task InitializeAsync() => _db = await TestDb.CreateAsync(_fixture);
+    public async Task InitializeAsync()
+    {
+        _db = await TestDb.CreateAsync(_fixture);
+        await _db.EnsureClientAsync(NexaVerify.Domain.Common.PlatformTenant.ClientId); // platform-level audit rows hang off the platform tenant (seeded in real deployments)
+    }
 
     public async Task DisposeAsync()
     {
