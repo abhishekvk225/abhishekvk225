@@ -372,6 +372,28 @@ public class MasterKeyRotationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_key_that_was_rotated_away_from_cannot_anchor_the_same_ledgers_again_so_the_tool_asks_for_a_fresh_key()
+    {
+        var a = OnlyA();
+        await SeedAsync(a, clients: 2);
+        var b = AandBCurrentB();
+        (await b.RotateAsync()).Outcome.ShouldBe(RotationOutcome.Complete);
+
+        var backToA = Harness(KeyRotationHarness.Ring("a", ("a", 1), ("b", 2)));
+        var refused = await backToA.RotateAsync();
+
+        refused.Outcome.ShouldBe(RotationOutcome.Failed);
+        refused.Message.ShouldNotBeNull().ShouldContain("never been used");
+        (await backToA.UsageAsync()).Under(KeyArtifacts.ClientDataKey, "b").ShouldBe(2); // nothing was touched
+
+        // a fresh key works, and everything is readable with only that key
+        var c = Harness(KeyRotationHarness.Ring("c", ("a", 1), ("b", 2), ("c", 3)));
+        (await c.RotateAsync()).Outcome.ShouldBe(RotationOutcome.Complete);
+        (await c.UsageAsync()).IsSafeToRetire("b").ShouldBeTrue();
+        await AssertEverythingReadableAsync(Harness(KeyRotationHarness.Ring("c", ("c", 3))));
+    }
+
+    [Fact]
     public async Task Rotation_refuses_an_ephemeral_keyring_and_a_bad_batch_size()
     {
         var ephemeral = Harness(new Dictionary<string, string?> { ["Encryption:AllowEphemeralKey"] = "true" });

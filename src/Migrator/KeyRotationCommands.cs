@@ -70,6 +70,12 @@ internal static class KeyRotationCommands
     public static async Task<int> StatusAsync(IServiceProvider services, CancellationToken cancellationToken)
     {
         var master = services.GetRequiredService<MasterKeyProvider>();
+        if (master.IsEphemeral)
+        {
+            Console.WriteLine("The keyring is ephemeral (no Encryption:Keys / MasterKeyBase64 supplied): supply the real keys, otherwise every record looks undecryptable.");
+            return 1;
+        }
+
         PrintRing(master);
         var usage = await services.GetRequiredService<KeyUsageSurvey>().SurveyAsync(cancellationToken);
         PrintUsage("Usage", usage);
@@ -98,6 +104,12 @@ internal static class KeyRotationCommands
         }
 
         var master = services.GetRequiredService<MasterKeyProvider>();
+        if (master.IsEphemeral)
+        {
+            logger.LogError("The keyring is ephemeral (no Encryption:Keys / MasterKeyBase64 supplied): supply the real keys to verify them.");
+            return 1;
+        }
+
         PrintRing(master);
         var result = await services.GetRequiredService<KeyringVerifier>().VerifyAsync(sample, cancellationToken);
         PrintUsage("Usage", result.Usage);

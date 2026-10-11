@@ -119,6 +119,11 @@ public sealed partial class MasterKeyRotationService
             return Fail(report, $"Live data references master key id(s) that are not in the keyring: {string.Join(", ", report.Before.UnknownKeyIds)}. Add those keys to Encryption:Keys first; nothing was changed.");
         }
 
+        if (request.IncludeLedger && report.Before.Pending(KeyArtifacts.LedgerCheckpoint) > 0 && await CurrentKeyWasRotatedAwayFromAsync(cancellationToken))
+        {
+            return Fail(report, $"Key '{_master.CurrentKeyId}' already anchored ledgers that a later rotation superseded, so it cannot anchor the same ledger heads again. Rotate to a key id that has never been used (add a new key).");
+        }
+
         if (request.DryRun)
         {
             report.After = report.Before;
@@ -527,6 +532,11 @@ public sealed partial class MasterKeyRotationService
 
             await db.SaveChangesAsync(cancellationToken);
 
+            foreach (var created in db.LedgerCheckpoints.Local.Where(c => c.KeyId == current && c.Id != 0 && !existing.ContainsKey(c.LastEntryId)))
+            {
+                LogCheckpointWritten(_logger, created.LicenseId, created.LastEntryId, created.EntryCount, Convert.ToHexString(created.HeadHash), Convert.ToHexString(created.Mac));
+            }
+
             foreach (var checkpoint in old)
             {
                 var verified = replacements.TryGetValue(checkpoint.LastEntryId, out var added) ? added : existing[checkpoint.LastEntryId];
@@ -556,6 +566,16 @@ public sealed partial class MasterKeyRotationService
     }
 
     // ------------------------------------------------------------------ helpers
+
+    /// <summary>Checkpoints are append-only and unique per (license, entry, key): a key whose checkpoints were superseded cannot sign the same heads again.</summary>
+    private async Task<bool> CurrentKeyWasRotatedAwayFromAsync(CancellationToken cancellationToken)
+    {
+        await using var scope = _scopes.CreateAsyncScope();
+        using var platform = scope.ServiceProvider.GetRequiredService<ITenantScope>().BeginPlatform("master key rotation: pre-flight");
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var current = _master.CurrentKeyId;
+        return await db.LedgerCheckpoints.AsNoTracking().AnyAsync(c => c.KeyId == current && db.LedgerCheckpointSupersessions.Any(s => s.CheckpointId == c.Id), cancellationToken);
+    }
 
     private RotationReport Fail(RotationReport report, string message)
     {
@@ -639,6 +659,11 @@ public sealed partial class MasterKeyRotationService
 
     [LoggerMessage(EventId = 7104, Level = LogLevel.Information, Message = "Master key rotation: license {LicenseId} re-anchored ({Count} checkpoint(s) re-signed under key {KeyId})")]
     private static partial void LogLicenseAnchored(ILogger logger, Guid licenseId, int count, string keyId);
+
+    // Same event and shape as the verification job's anchor line: the off-database copy of every checkpoint (the MAC is not secret, the key is).
+    [LoggerMessage(EventId = 7002, Level = LogLevel.Information,
+        Message = "Ledger checkpoint written: license {LicenseId} entry {LastEntryId} rows {EntryCount} head {HeadHash} mac {Mac}")]
+    private static partial void LogCheckpointWritten(ILogger logger, Guid licenseId, long lastEntryId, long entryCount, string headHash, string mac);
 
     [LoggerMessage(EventId = 7107, Level = LogLevel.Information, Message = "Lazy re-wrap to master key {KeyId}: {ClientKeys} client key(s), {Mfa} MFA secret(s)")]
     private static partial void LogLazyBatch(ILogger logger, string keyId, long clientKeys, long mfa);

@@ -17,6 +17,7 @@ The application **never** migrates itself in production. The Migrator is the onl
 | `script` | Prints the idempotent SQL equivalent (also a release artefact `migrate.sql`). Needs no database connection. |
 | `app-principal` | Creates/updates the app login (`Migrator__AppLogin`, `Migrator__AppPassword`). Use it for DB password rotation. |
 | `recover-superadmin` | Break-glass: (re)creates `Seed__SuperAdminEmail` as an active Super Admin. |
+| `rotate-master-key`, `rotation-status`, `verify-keyring` | Master-key rotation tooling (online, resumable; `--dry-run`, `--batch-size=N`, `--max-batches=N`, `--resume`, `--confirm-backup`). Need the keyring (`Encryption__Keys__*`, `Encryption__CurrentKeyId`) like the API. See [key-rotation](key-rotation.md) section 3. |
 
 ## 3. Standard flow (pipeline)
 
