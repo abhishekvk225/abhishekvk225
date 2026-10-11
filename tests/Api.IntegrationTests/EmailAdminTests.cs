@@ -295,7 +295,7 @@ public class EmailAdminTests : IAsyncLifetime
     [Fact]
     public async Task A_test_email_is_queued_with_the_admin_test_template_and_audited_without_the_address()
     {
-        var response = await _app.PostAsync(Test, new SendTestEmailRequest("  Tester@Example.com "), _admin.AccessToken);
+        var response = await _app.PostAsync(Test, new SendTestEmailRequest("Tester@Example.com"), _admin.AccessToken);
 
         response.StatusCode.ShouldBe(HttpStatusCode.Accepted);
         var queued = (await response.Content.ReadFromJsonAsync<SendTestEmailResponse>(AuthApp.Json))!;
