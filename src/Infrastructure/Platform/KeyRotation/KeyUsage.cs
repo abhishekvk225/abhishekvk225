@@ -125,6 +125,3 @@ public sealed class KeyUsageSurvey
         return new KeyUsageReport(_master.CurrentKeyId, _master.Keys.Select(k => k.Id).ToList(), counts);
     }
 }
-
-/// <summary>The keyring state for the readiness endpoint and CLI: ids and fingerprints only.</summary>
-public sealed record KeyringSnapshot(string CurrentKeyId, IReadOnlyList<MasterKeyInfo> Keys, IReadOnlyList<string> UnknownKeyIdsInUse, IReadOnlyDictionary<string, long> ArtifactsPerKey, double PercentComplete);
