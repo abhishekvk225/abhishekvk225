@@ -47,10 +47,19 @@ groups:
           summary: "API request-log queue full; usage log entries are being dropped"
 
       - alert: EmailsBeingDropped
-        expr: sum(count_over_time({app="nexaverify-api"} |~ "Email queue is full|Giving up sending email" [30m])) > 0
+        # Event 8323 (Critical): a message used up every delivery attempt and was abandoned; 8322: the mail server refused it for good.
+        # Check Email:* settings and the mail provider, then retry from the admin email outbox (docs/03 section 3.3, deploy/CONFIG.md "Email delivery").
+        expr: sum(count_over_time({app="nexaverify-api"} |~ "EMAIL ABANDONED|was refused permanently" [30m])) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: "Outgoing email (verification, resets, receipts) is failing and messages were given up"
+
+      - alert: EmailRetriesElevated
+        # Event 8321: attempts that failed and were rescheduled. A burst usually means the SMTP server, credentials or certificate.
+        expr: sum(count_over_time({app="nexaverify-api"} |= "failed on attempt" |= "next try at" [15m])) > 20
         labels: { severity: warning }
         annotations:
-          summary: "Outgoing email (invitations, resets) is failing"
+          summary: "Outgoing email is being retried repeatedly (mail server, credentials or certificate?)"
 
   - name: nexaverify-webhooks
     rules:
