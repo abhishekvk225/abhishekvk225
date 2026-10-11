@@ -327,7 +327,12 @@ public sealed class AuthService : IAuthService
 
             RecordLogin(user, user.ClientId, request.Email, LoginOutcome.PasswordReset, null);
             _audit.Record(new AuditEntry(AuditActions.PasswordReset, nameof(User), user.Id.ToString(), user.ClientId, ActorId: user.Id));
-            await _email.SendAsync(SecurityNotices.PasswordChanged(user, now, "a password reset"), cancellationToken);
+            if (user.LastLoginAt is not null)
+            {
+                // Choosing a first password from an invitation is account setup, not a change worth a warning.
+                await _email.SendAsync(SecurityNotices.PasswordChanged(user, now, "a password reset"), cancellationToken);
+            }
+
             await _unitOfWork.SaveChangesAsync(CancellationToken.None);
             await _throttle.ClearAsync(user.Id, cancellationToken); // the emailed link is the way out of a lockout
             _sessions.Invalidate(user.Id);
@@ -373,6 +378,7 @@ public sealed class AuthService : IAuthService
             return Error.Validation("The new password is not acceptable.", new Dictionary<string, string[]> { ["newPassword"] = [.. problems] });
         }
 
+        var forcedChange = user.MustChangePassword; // replacing a temporary password someone else set is part of onboarding
         user.SetPassword(_hasher.Hash(request.NewPassword), now, mustChangePassword: false);
         foreach (var refresh in await _refreshTokens.GetActiveForUserAsync(user.Id, cancellationToken))
         {
@@ -386,7 +392,11 @@ public sealed class AuthService : IAuthService
 
         var response = await IssueSessionAsync(user, familyId: null, now, cancellationToken);
         _audit.Record(new AuditEntry(AuditActions.PasswordChanged, nameof(User), user.Id.ToString(), user.ClientId));
-        await _email.SendAsync(SecurityNotices.PasswordChanged(user, now, "your account settings"), cancellationToken);
+        if (!forcedChange)
+        {
+            await _email.SendAsync(SecurityNotices.PasswordChanged(user, now, "your account settings"), cancellationToken);
+        }
+
         await _unitOfWork.SaveChangesAsync(CancellationToken.None);
         await _throttle.ClearAsync(user.Id, cancellationToken);
         _sessions.Invalidate(user.Id);

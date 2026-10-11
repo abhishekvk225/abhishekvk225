@@ -92,6 +92,14 @@ public class LicenseAlertTests : UsageTestBase
         var low = _receiver.Requests.Single(r => r.Body.Contains("\"type\":\"license.low_balance\"", StringComparison.Ordinal));
         low.Body.ShouldContain("\"remainingCredits\":5");
         low.Body.ShouldContain("\"percentRemaining\":5");
+
+        // the client's contact also gets a low-balance and an expiry mail (not one per alert type: expired/key notices are in-app only)
+        var mails = App.Emails.Sent.Where(m => m.Template is "LicenseLowBalance" or "LicenseExpiring").ToList();
+        mails.Select(m => m.Template).Order().ShouldBe(["LicenseExpiring", "LicenseLowBalance"]);
+        mails.ShouldAllBe(m => m.To == "contact@a1.test" || m.To.EndsWith(".test", StringComparison.Ordinal));
+        mails.Single(m => m.Template == "LicenseLowBalance").Body.ShouldContain("5 of 100 credits left (5%)");
+        mails.Single(m => m.Template == "LicenseExpiring").Body.ShouldContain("5 days left");
+        mails.ShouldAllBe(m => !m.Body.Contains("NXV-", StringComparison.Ordinal)); // no license key in any mail
     }
 
     [Fact]
@@ -107,6 +115,7 @@ public class LicenseAlertTests : UsageTestBase
 
         (await AlertsAsync(t.ClientId)).Count.ShouldBe(4);
         (await DeliveriesAsync(t.ClientId)).Count.ShouldBe(4);
+        App.Emails.Sent.Count(m => m.Template is "LicenseLowBalance" or "LicenseExpiring").ShouldBe(2); // and no mail twice
     }
 
     [Fact]
@@ -120,6 +129,7 @@ public class LicenseAlertTests : UsageTestBase
         raised.Sum().ShouldBe(4);
         (await AlertsAsync(t.ClientId)).Count.ShouldBe(4);
         (await DeliveriesAsync(t.ClientId)).Count.ShouldBe(4); // the loser's webhook rows rolled back with its alert row
+        App.Emails.Sent.Count(m => m.Template is "LicenseLowBalance" or "LicenseExpiring").ShouldBe(2); // ... and so did its mails
     }
 
     [Fact]

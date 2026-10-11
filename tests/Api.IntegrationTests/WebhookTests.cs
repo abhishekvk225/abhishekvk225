@@ -222,6 +222,12 @@ public class WebhookTests : IAsyncLifetime
         endpoint.Status.ShouldBe("Disabled");
         endpoint.DisabledReason.ShouldNotBeNull();
 
+        // the client's contact is told once, in the same transaction that switched the endpoint off
+        var notice = _app.Emails.Sent.Single(m => m.Template == "WebhookEndpointDisabled");
+        notice.Subject.ShouldBe("A NexaVerify webhook endpoint was disabled");
+        notice.Body.ShouldContain($"/client/webhooks/{hook.Endpoint.Id}");
+        notice.Body.ShouldNotContain("?"); // the endpoint address is shown without a query string that could hold a secret
+
         // events no longer queue for it, and a test event is refused until it is enabled again
         await VerifyAsync(t);
         (await DeliveriesAsync()).Count.ShouldBe(WebhookEndpoint.DisableAfterConsecutiveFailures);

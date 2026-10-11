@@ -129,6 +129,12 @@ public class MfaTests : IAsyncLifetime
         audit.ShouldAllBe(v => v == null || !v.Contains(start.SecretBase32));
         var status = await ReadAsync<MfaStatusDto>(await _app.GetAsync("/api/v1/auth/mfa", enabled.Session.AccessToken));
         (status.Enabled, status.RecoveryCodesRemaining).ShouldBe((true, 10));
+
+        var notice = _app.Emails.Sent.Single(m => m.Template == "MfaEnabled");
+        notice.To.ShouldBe(DatabaseBootstrap.SuperAdminEmail);
+        notice.Subject.ShouldBe("Two-factor authentication was turned on");
+        notice.Body.ShouldNotContain(start.SecretBase32); // the notice says that it happened, never the secret or the codes
+        notice.Html.ShouldNotContain(enabled.RecoveryCodes[0]);
     }
 
     [Fact]
@@ -300,6 +306,9 @@ public class MfaTests : IAsyncLifetime
         var status = await ReadAsync<MfaStatusDto>(await _app.GetAsync("/api/v1/auth/mfa", session.AccessToken));
         status.RecoveryCodesRemaining.ShouldBe(8);
         (await _app.WithDbAsync(db => db.AuditLogs.CountAsync(a => a.Action == "auth.mfa_recovery_code_used"))).ShouldBe(2);
+        var notices = _app.Emails.Sent.Where(m => m.Template == "MfaRecoveryCodeUsed").ToList();
+        notices.Count.ShouldBe(2); // one per successful sign-in with a recovery code, none for the refused replay
+        notices.ShouldAllBe(m => m.To == DatabaseBootstrap.SuperAdminEmail && !m.Body.Contains(recovery[0], StringComparison.Ordinal));
     }
 
     [Fact]
@@ -354,6 +363,9 @@ public class MfaTests : IAsyncLifetime
         entry.NewValuesJson!.ShouldContain("Lost phone, identity verified by phone call");
         entry.NewValuesJson!.ShouldNotContain(secret);
         (await _app.PostAsync(resetUrl, new ResetMfaRequest("again"), _admin.AccessToken)).StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        var disabled = _app.Emails.Sent.Single(m => m.Template == "MfaDisabled"); // the person whose second step was removed is told, once
+        disabled.To.ShouldBe(otherEmail);
+        disabled.Body.ShouldNotContain("Lost phone"); // the administrator's reason stays in the audit trail
     }
 
     [Fact]

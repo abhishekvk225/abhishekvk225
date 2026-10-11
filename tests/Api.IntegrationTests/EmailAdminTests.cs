@@ -403,6 +403,7 @@ public class EmailAdminTests : IAsyncLifetime
         var (email, token) = AuthApp.LinkFrom(invite);
         (await _app.PostAsync("/api/v1/auth/reset-password", new ResetPasswordRequest(email, token, AuthApp.StrongPassword))).StatusCode.ShouldBe(HttpStatusCode.NoContent);
         (await _app.LoginAsync("newbie@invt.test", AuthApp.StrongPassword)).User.Email.ShouldBe("newbie@invt.test");
+        _app.Emails.Sent.Skip(before).Count(m => m.Template == "PasswordChanged").ShouldBe(0); // choosing a first password is setup, not a change to warn about
     }
 
     // ---------------------------------------------------------------- startup guard
@@ -416,7 +417,13 @@ public class EmailAdminTests : IAsyncLifetime
             ConnectionString = connection,
             Environment = "Production",
             UseTestAuth = false,
-            Settings = new Dictionary<string, string> { ["Email:AllowLoggingProvider"] = "false", ["Portal:PublicBaseUrl"] = "https://portal.test" },
+            Settings = new Dictionary<string, string>
+            {
+                ["Email:AllowLoggingProvider"] = "false",
+                ["Portal:PublicBaseUrl"] = "https://portal.test",
+                ["AllowedHosts"] = "api.example.com",
+                ["Hosting:RedirectToHttps"] = "false",
+            },
         };
 
         var ex = Should.Throw<Exception>(() => refused.CreateClient());
@@ -436,6 +443,8 @@ public class EmailAdminTests : IAsyncLifetime
             UseTestAuth = false,
             Settings = new Dictionary<string, string>
             {
+                ["AllowedHosts"] = "localhost",
+                ["Hosting:RedirectToHttps"] = "false",
                 ["Email:AllowLoggingProvider"] = "false",
                 ["Email:Provider"] = "Smtp",
                 ["Email:Smtp:Host"] = "smtp.invalid",
