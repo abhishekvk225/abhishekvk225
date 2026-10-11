@@ -231,6 +231,10 @@ public class LedgerVerificationTests
 
         public string KeyId => "test";
 
+        public bool HasKey(string keyId) => keyId == KeyId;
+
+        public byte[] ComputeMac(string purpose, ReadOnlySpan<byte> data, string keyId) => ComputeMac(purpose, data);
+
         public byte[] Protect(ReadOnlySpan<byte> plaintext, string purpose, string context) => throw new NotSupportedException();
 
         public byte[] Unprotect(ReadOnlySpan<byte> payload, string purpose, string context) => throw new NotSupportedException();

@@ -15,6 +15,10 @@ using Serilog;
 //   recover-superadmin break-glass: (re)create the Seed:SuperAdminEmail account as an active Super Admin with Seed:SuperAdminPassword
 //   verify-ledger      recompute every license ledger (hash chain, balances, signed checkpoints); exit code 3 when something is broken.
 //                      Needs the SAME Encryption__MasterKeyBase64 as the API (the checkpoints are keyed). Used by the restore drill.
+//   rotate-master-key  move all master-key-protected data onto Encryption:CurrentKeyId (online, resumable): --dry-run, --batch-size=N,
+//                      --max-batches=N, --resume, --confirm-backup (required unless --dry-run). Exit 0 complete, 4 incomplete, 3 ledger broken, 1 failed.
+//   rotation-status    counts per key id per artifact type, % complete, safe-to-retire per old key (exit 3 when data references an unknown key id)
+//   verify-keyring     decrypt-test a sample under every key + ledger verification (--sample=N); exit 0 ok, 3 ledger broken, 1 keyring failure
 //   app-principal      create the least-privilege login the API connects as (Migrator:AppLogin / Migrator:AppPassword)
 // Connection string: ConnectionStrings__Default (an administrative principal). Seed: Seed__SuperAdminEmail / Seed__SuperAdminPassword.
 
@@ -90,8 +94,20 @@ try
                 return report.BrokenLicenses == 0 ? 0 : 3;
             }
 
+        case "rotate-master-key":
+            using (scope.ServiceProvider.GetRequiredService<ITenantScope>().BeginPlatform("master key rotation (operator command)"))
+            {
+                return await NexaVerify.Migrator.KeyRotationCommands.RotateAsync(scope.ServiceProvider, args, logger, CancellationToken.None);
+            }
+
+        case "rotation-status":
+            return await NexaVerify.Migrator.KeyRotationCommands.StatusAsync(scope.ServiceProvider, CancellationToken.None);
+
+        case "verify-keyring":
+            return await NexaVerify.Migrator.KeyRotationCommands.VerifyAsync(scope.ServiceProvider, args, logger, CancellationToken.None);
+
         default:
-            logger.LogError("Unknown command '{Command}'. Use: migrate | script | app-principal | recover-superadmin | verify-ledger", command);
+            logger.LogError("Unknown command '{Command}'. Use: migrate | script | app-principal | recover-superadmin | verify-ledger | rotate-master-key | rotation-status | verify-keyring", command);
             return 2;
     }
 }

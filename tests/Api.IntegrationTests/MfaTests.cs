@@ -108,7 +108,10 @@ public class MfaTests : IAsyncLifetime
         var plain = Base32.Decode(start.SecretBase32)!;
         stored.SecretEnc.ShouldNotBe(plain);
         System.Text.Encoding.UTF8.GetString(stored.SecretEnc).ShouldNotContain(start.SecretBase32);
-        stored.SecretEnc.Length.ShouldBe(12 + 16 + 20); // nonce + tag + secret: AES-GCM, not plaintext
+        // key-id header | nonce | tag | secret: AES-GCM, not plaintext, and it names the master key that sealed it
+        NexaVerify.Infrastructure.Security.KeyEnvelope.TryReadHeader(stored.SecretEnc, out var keyId, out var bodyOffset).ShouldBeTrue();
+        keyId.ShouldNotBeNullOrEmpty();
+        (stored.SecretEnc.Length - bodyOffset).ShouldBe(12 + 16 + 20);
 
         // not enabled yet: sign-in is still single-step, and a wrong code does not enable it
         (await _app.PostAsync(Confirm, new ConfirmMfaRequest("000000"), _admin.AccessToken)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);

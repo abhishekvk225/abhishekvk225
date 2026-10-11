@@ -135,9 +135,19 @@ public static class DependencyInjection
         services.AddScoped<IClientMembershipRepository, ClientMembershipRepository>();
         services.AddScoped<IClientQueries, ClientQueries>();
         services.AddOptions<EncryptionOptions>().Bind(configuration.GetSection(EncryptionOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<EncryptionOptions>, EncryptionOptionsValidator>());
         services.AddSingleton<MasterKeyProvider>();
         services.AddSingleton<PlatformCrypto>();
         services.AddSingleton<IPlatformCrypto>(sp => sp.GetRequiredService<PlatformCrypto>());
+        services.AddSingleton<Platform.KeyRotation.KeyUsageSurvey>();
+        services.AddSingleton<Platform.KeyRotation.MasterKeyRotationService>();
+        services.AddSingleton<Platform.KeyRotation.KeyringVerifier>();
+        services.AddSingleton<Platform.KeyRotation.KeyringHealthCheck>();
+        if (configuration.GetValue<bool>("Encryption:LazyRewrap"))
+        {
+            services.AddHostedService<KeyRewrapJob>();
+        }
+
         services.AddScoped<ClientKeyService>();
         services.AddScoped<IClientKeyProvisioner>(sp => sp.GetRequiredService<ClientKeyService>());
         services.AddScoped<IClientEncryption>(sp => sp.GetRequiredService<ClientKeyService>());

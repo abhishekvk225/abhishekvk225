@@ -143,7 +143,22 @@ internal sealed class LedgerCheckpointConfiguration : IEntityTypeConfiguration<L
         b.Property(x => x.KeyId).HasMaxLength(60).IsUnicode(false).IsRequired();
         b.HasOne<License>().WithMany().HasForeignKey(x => x.LicenseId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Client>().WithMany().HasForeignKey(x => x.ClientId).OnDelete(DeleteBehavior.Restrict);
-        b.HasIndex(x => new { x.LicenseId, x.LastEntryId }).IsUnique(); // one anchor per ledger head
+        b.HasIndex(x => new { x.LicenseId, x.LastEntryId, x.KeyId }).IsUnique(); // one anchor per ledger head and key (a rotation re-signs the same head under the new key)
+    }
+}
+
+internal sealed class LedgerCheckpointSupersessionConfiguration : IEntityTypeConfiguration<LedgerCheckpointSupersession>
+{
+    public void Configure(EntityTypeBuilder<LedgerCheckpointSupersession> b)
+    {
+        b.ToTable("LedgerCheckpointSupersessions", "licensing");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Id).ValueGeneratedOnAdd();
+        b.HasOne<LedgerCheckpoint>().WithMany().HasForeignKey(x => x.CheckpointId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<LedgerCheckpoint>().WithMany().HasForeignKey(x => x.ReplacedByCheckpointId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Client>().WithMany().HasForeignKey(x => x.ClientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => x.CheckpointId).IsUnique(); // a checkpoint is superseded at most once
+        b.HasIndex(x => x.LicenseId);
     }
 }
 

@@ -397,7 +397,7 @@ public sealed class MfaService : IMfaService
     private async Task<User?> CurrentUserAsync(CancellationToken cancellationToken) =>
         _currentUser.ActorId is { } id && _currentUser.ActorType == ActorType.User ? await _users.GetByIdAsync(id, cancellationToken) : null;
 
-    private static string ContextFor(Guid userId) => userId.ToString("N");
+    private static string ContextFor(Guid userId) => CryptoPurposes.MfaSecretContext(userId);
 
     /// <summary>The TOTP step the code matches (within the drift window), or null. Never throws on a damaged secret: that just fails closed.</summary>
     private long? MatchStep(UserMfa record, string code, DateTime now)

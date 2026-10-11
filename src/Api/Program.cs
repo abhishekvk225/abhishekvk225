@@ -59,7 +59,8 @@ builder.Services.AddApiRateLimiting(builder.Configuration);
 builder.Services.AddApiForwardedHeaders(builder.Configuration);
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<AppDbContext>("database", tags: ["ready"])
-    .AddCheck<TenantProtectionHealthCheck>("tenant-protection", tags: ["ready"]);
+    .AddCheck<TenantProtectionHealthCheck>("tenant-protection", tags: ["ready"])
+    .AddCheck<NexaVerify.Infrastructure.Platform.KeyRotation.KeyringHealthCheck>(NexaVerify.Infrastructure.Platform.KeyRotation.KeyringHealthCheck.Name, tags: ["ready"]);
 builder.Services.AddOpenApi();
 builder.Services.AddApiTelemetry(builder.Configuration, "nexaverify-api");
 
@@ -165,6 +166,19 @@ app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => fa
 app.MapHealthChecks("/health/ready", new HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("ready"),
+    ResultStatusCodes =
+    {
+        [HealthStatus.Healthy] = StatusCodes.Status200OK,
+        [HealthStatus.Degraded] = StatusCodes.Status200OK,
+        [HealthStatus.Unhealthy] = StatusCodes.Status503ServiceUnavailable,
+    },
+}).AllowAnonymous();
+
+// Keyring state for operators and rotation scripts: key ids and booleans only (no key material, fingerprints or counts).
+app.MapHealthChecks("/health/keyring", new HealthCheckOptions
+{
+    Predicate = check => check.Name == NexaVerify.Infrastructure.Platform.KeyRotation.KeyringHealthCheck.Name,
+    ResponseWriter = KeyringHealthResponse.WriteAsync,
     ResultStatusCodes =
     {
         [HealthStatus.Healthy] = StatusCodes.Status200OK,

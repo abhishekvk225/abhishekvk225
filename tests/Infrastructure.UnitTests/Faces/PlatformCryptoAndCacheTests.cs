@@ -24,7 +24,7 @@ public class PlatformCryptoAndCacheTests
         var a = crypto.Protect(secret, CryptoPurposes.MfaSecret, "user-1");
         var b = crypto.Protect(secret, CryptoPurposes.MfaSecret, "user-1");
 
-        a.Length.ShouldBe(12 + 16 + 20);
+        a.Length.ShouldBe(KeyEnvelope.HeaderLength("m1") + 12 + 16 + 20); // key-id header | nonce | tag | ciphertext
         a.ShouldNotBe(b); // a fresh nonce every time
         a.AsSpan().IndexOf(secret.AsSpan()).ShouldBe(-1);
         crypto.Unprotect(a, CryptoPurposes.MfaSecret, "user-1").ShouldBe(secret);

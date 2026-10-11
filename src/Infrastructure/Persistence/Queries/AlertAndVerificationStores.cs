@@ -40,11 +40,13 @@ internal sealed class LedgerVerificationStore : ILedgerVerificationStore
             .ToListAsync(cancellationToken);
 
     public async Task<IReadOnlyList<LedgerCheckpoint>> ListCheckpointsAsync(Guid licenseId, CancellationToken cancellationToken) =>
-        await _db.LedgerCheckpoints.AsNoTracking().Where(c => c.LicenseId == licenseId).OrderBy(c => c.LastEntryId).ToListAsync(cancellationToken);
+        await _db.LedgerCheckpoints.AsNoTracking()
+            .Where(c => c.LicenseId == licenseId && !_db.LedgerCheckpointSupersessions.Any(s => s.CheckpointId == c.Id)) // superseded (re-signed by a key rotation) ones no longer count
+            .OrderBy(c => c.LastEntryId).ThenBy(c => c.Id).ToListAsync(cancellationToken);
 
     public async Task<IReadOnlyList<LicenseLedgerHead>> ListOrphanCheckpointLicensesAsync(CancellationToken cancellationToken) =>
         await _db.LedgerCheckpoints.AsNoTracking()
-            .Where(c => !_db.Licenses.Any(l => l.Id == c.LicenseId))
+            .Where(c => !_db.Licenses.Any(l => l.Id == c.LicenseId) && !_db.LedgerCheckpointSupersessions.Any(s => s.CheckpointId == c.Id))
             .Select(c => new { c.LicenseId, c.ClientId })
             .Distinct()
             .Select(c => new LicenseLedgerHead(c.LicenseId, c.ClientId, 0))

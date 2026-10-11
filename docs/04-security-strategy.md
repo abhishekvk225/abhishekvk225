@@ -76,9 +76,9 @@ Mandatory automated tests (release gate): for each tenant-owned entity and each 
 | Item | Mechanism |
 |---|---|
 | Config secrets (DB, JWT signing key, master key) | `dotnet user-secrets` (dev) → environment variables / Azure Key Vault / Docker secrets (prod). **Nothing sensitive in `appsettings*.json` or the repo.** Startup validation fails fast if missing. |
-| Data keys | per-client DEK (AES-256), wrapped by master key (KEK) via `IKeyProvider`; KEK rotation re-wraps DEKs only |
+| Data keys | per-client DEK (AES-256), wrapped by master key (KEK) via `IKeyProvider`; KEK rotation re-wraps DEKs only: online, through the master **keyring** (`Encryption:Keys`/`CurrentKeyId`; every wrapped key records its key id) and `Migrator rotate-master-key` (runbook: key-rotation section 3) |
 | Face templates, webhook secrets | AES-256-GCM, random 96-bit nonce, `ClientId` + `KeyVersion` as AAD (prevents ciphertext transplant between tenants) |
-| Platform-level secrets (staff/user MFA secrets, ledger anchor MAC) | HKDF-SHA256 sub-keys of the master key per purpose (`mfa-secret`, `ledger-anchor`); AES-256-GCM with the owning record id as AAD / HMAC-SHA256. Rotating the master key means re-enrolling MFA and re-anchoring the ledger (documented in `deploy/CONFIG.md`) |
+| Platform-level secrets (staff/user MFA secrets, ledger anchor MAC) | HKDF-SHA256 sub-keys of the master key per purpose (`mfa-secret`, `ledger-anchor`); AES-256-GCM with the owning record id as AAD / HMAC-SHA256. Each payload/checkpoint records the id of the key that produced it (MFA: payload header; checkpoint: `KeyId` inside the MAC), so a rotation re-encrypts MFA secrets and re-signs checkpoints online with `Migrator rotate-master-key` (ledger verified clean first, originals superseded in the same transaction); users re-enrol nothing |
 | API keys / refresh tokens | random 256-bit (CSPRNG), stored as SHA-256; raw value shown once |
 | Passwords | Identity hasher (PBKDF2-HMAC-SHA512, 210,000 iterations — the OWASP figure for SHA-512; configurable and auto-upgraded) |
 | Randomness | `RandomNumberGenerator` only |
