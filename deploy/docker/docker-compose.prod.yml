@@ -94,6 +94,16 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4317}
       # Demo/rehearsal only: the shipped face engine is a mock that recognises nothing. Remove once a real provider exists.
       FaceEngine__AllowMockInProduction: ${ALLOW_MOCK_FACE_ENGINE:-false}
+      # Email (deploy/CONFIG.md "Email"): production must use Smtp. The log-only provider is refused unless ALLOW_LOGGING_EMAIL=true (rehearsal only).
+      # The SMTP password is a secret: set Email__Smtp__Password through your secret store / the secrets directory, not here.
+      Email__PublicBaseUrl: "https://${PORTAL_HOST}"
+      Email__Provider: ${EMAIL_PROVIDER:-Logging}
+      Email__AllowLoggingProvider: ${ALLOW_LOGGING_EMAIL:-false}
+      Email__From__Address: ${EMAIL_FROM_ADDRESS:-no-reply@nexaverify.example}
+      Email__Smtp__Host: ${SMTP_HOST:-}
+      Email__Smtp__Port: ${SMTP_PORT:-587}
+      Email__Smtp__Security: ${SMTP_SECURITY:-StartTls}
+      Email__Smtp__Username: ${SMTP_USERNAME:-}
     secrets:
       - { source: api_connection, target: ConnectionStrings__Default }
       - { source: jwt_signing_key, target: Jwt__SigningKeyPem }

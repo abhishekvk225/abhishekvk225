@@ -155,6 +155,76 @@ On the API side: add the portal's address to `ForwardedHeaders:KnownProxies` so 
 | `Auth__PasswordResetUrlTemplate`, `Cors__AllowedOrigins__0` | derived from `PORTAL_HOST` |
 | `FaceEngine__AllowMockInProduction` | `ALLOW_MOCK_FACE_ENGINE` (demo / rehearsal only) |
 | Portal `Api__BaseUrl`, `DataProtection__KeyPath`, `Session__AllowInMemoryStore` | `https://<API_HOST>`, `/keys` (named volume), `true` |
+## Email delivery (M13)
+Every email (sign-up verification, password reset, invitations, security notices, receipts, alerts, contact notifications) is rendered from a template and stored in the database **in the same transaction as the change that caused it**; a background dispatcher on every API node sends it. A slow or broken mail server therefore never delays or fails a request.
+
+| Key | Default | Secret | Notes |
+|---|---|---|---|
+| `Email:Provider` | `Logging` | no | `Smtp` (real delivery) or `Logging` (writes the mail, including links, to the log - Development/Testing). **Outside Development/Testing the application refuses to start with `Logging`** unless `Email:AllowLoggingProvider=true` (a demo that must not send mail). |
+| `Email:AllowLoggingProvider` | `false` | no | See above. Never set it in a real production: sign-up links and password resets would reach nobody. |
+| `Email:LogBodies` | `false` (`true` in Development) | no | Logging provider only: also log the plain-text body, which contains one-time links. |
+| `Email:From:Name` / `Email:From:Address` | `NexaVerify` / `no-reply@nexaverify.example` | no | The visible sender. The address must be on a domain you control and have authenticated (SPF/DKIM/DMARC below). |
+| `Email:ReplyTo` | unset | no | Optional reply address (plain address). |
+| `Email:PublicBaseUrl` | unset = `Portal:PublicBaseUrl` | no | Every link in a mail is built under this absolute https URL (http only for localhost), never from a request header. The password-reset link keeps its path and query from `Auth:PasswordResetUrlTemplate` but its **host comes from here**, so keep the two pointing at the same portal. |
+| `Email:Footer` | empty | no | Legal / postal address text added to every mail (up to 500 characters, line breaks allowed). Many jurisdictions require one for commercial mail. |
+| `Email:MaxPerMinute` | 120 | no | Platform-wide ceiling on delivery attempts per minute, counted in the database so it holds across all nodes. Set it below your provider's sending limit. |
+| `Email:Smtp:Host` / `Port` | - / 587 | no | Required with `Provider=Smtp`. |
+| `Email:Smtp:Security` | `StartTls` | no | `StartTls` (port 587/25: connect, then **require** the upgrade to TLS), `SslOnConnect` (implicit TLS, port 465) or `None`. `None` is refused for a non-loopback host unless `Email:Smtp:AllowPlaintext=true` (trusted private relay only; the password would travel in clear text). |
+| `Email:Smtp:Username` / `Password` | unset | **Password: yes** | Set together or not at all (anonymous relay). Supply the password only as `Email__Smtp__Password` through the environment or a file in the secrets directory (`NEXAVERIFY_SECRETS_DIR`, file name `Email__Smtp__Password`), never in a settings file. It is never logged and is removed from stored error texts. |
+| `Email:Smtp:TimeoutSeconds` | 15 | no | Connect, TLS handshake, each SMTP command and the data transfer each give up after this long (the whole send after four times it). |
+| `Email:Smtp:CaCertificateFile` | unset | no | PEM file with the certificate authority that signed a **private** relay's certificate. It only adds a trusted root: the chain must lead to it and the host name must match. **There is no setting that accepts any certificate.** Public providers need nothing here. |
+| `Email:Smtp:LocalDomain` | machine name | no | Name announced in EHLO. |
+| `Email:Dispatcher:Enabled` | `true` | no | Turn delivery off on a node (a web-only node can leave delivery to others). |
+| `Email:Dispatcher:PollSeconds` / `BatchSize` / `Parallelism` | 2 / 20 / 4 | no | A cycle claims at most `BatchSize` due messages and sends `Parallelism` at a time, each over its own SMTP connection. |
+| `Email:Dispatcher:MaxAttempts` | 6 | no | After this many failed attempts a message is **abandoned** (Critical log event 8323; visible in the outbox). |
+| `Email:Dispatcher:BaseDelaySeconds` / `MaxDelaySeconds` / `JitterPercent` | 30 / 3600 / 20 | no | Retry delay: base, doubled per attempt, capped, randomised by +/- the jitter so a recovering mail server is not hit by every retry at once. Defaults retry after about 30 s, 1 min, 2 min, 4 min, 8 min. |
+| `Email:Dispatcher:MaxPerDomainPerCycle` | 5 | no | Per recipient domain, per node and cycle: one big mailing to one provider cannot starve the rest or trip that provider's limits. |
+| `Email:Dispatcher:LeaseSeconds` | 0 (derived) | no | How long a claimed message is reserved for a node before another may take it (a crashed node's mail reappears after it). 0 = derive the worst case from batch, parallelism and timeout; a smaller explicit value is refused at startup. |
+| `Email:Dispatcher:RetentionDays` | 30 | no | Finished messages (and their stored rendered bodies) are deleted after this many days. Bodies that carry a one-time link (verification, reset, invitation) are erased **the moment the mail is sent**, and on failed ones after 7 days. |
+| `RateLimiting:EmailTestPerMinute` | 3 | no | Test emails (`POST /admin/email/test`) per administrator per minute. |
+
+**Delivery guarantees.** At-least-once: a node that dies between the mail server accepting a message and the status being saved can cause one duplicate (the fixed `Message-ID` makes it recognisable). A recipient the server permanently refuses (5xx on `RCPT`, "no such user") ends the message as `Failed` and is added to the suppression list; later mail to that address is skipped until an administrator clears it. Other 5xx answers (sender or content refused, policy) fail the message without suppressing the address. 4xx answers, network errors, timeouts, authentication and certificate problems are transient: they are retried with backoff (so fixing the credentials or certificate lets queued mail flow) and abandoned after `MaxAttempts`.
+
+**Operating it.**
+* Admin API (docs/03 section 3.3): `GET /admin/email/outbox` (permission `system.configure`; addresses are masked without `email.read`), `POST /admin/email/outbox/{id}/retry`, `GET /admin/email/suppressions` (`email.read`), `DELETE /admin/email/suppressions/{id}`, `POST /admin/email/test {to}` (`email.manage`).
+* Alert on log event **8323** (`EMAIL ABANDONED`, Critical) and watch 8321 (retry scheduled) / 8322 (permanently refused). Event 8325 means the per-minute ceiling is holding mail back. Logs never contain recipient addresses, bodies or links outside the Logging provider.
+* After the first deployment send a test mail (`POST /admin/email/test`) and check the outbox shows `Sent`.
+* Tables: `tenancy.OutboundEmails`, `tenancy.EmailSuppressions` (no new database grants needed).
+
+### DNS: make receiving servers trust your mail
+Use a sending domain you control (the domain of `Email:From:Address`, or a subdomain such as `mail.example.com`) and publish all three before going live; without them verification and reset mail lands in spam or is rejected.
+1. **SPF** - a TXT record on the sending domain naming the provider: `v=spf1 include:<provider's include> -all` (SES `amazonses.com`, SendGrid `sendgrid.net`, Mailgun `mailgun.org`, Google `_spf.google.com`). Only one SPF record per domain; merge the includes. With a custom MAIL FROM / return-path domain (SES, Mailgun) publish the SPF record on that domain too.
+2. **DKIM** - the provider signs each message; publish the public key it gives you (usually three CNAMEs for SES "Easy DKIM", two for SendGrid domain authentication, a TXT for Mailgun, a TXT generated in the Google Admin console). Use 2048-bit keys and rotate them as the provider advises.
+3. **DMARC** - a TXT record on `_dmarc.<domain>`; start monitoring-only and tighten once reports are clean: `v=DMARC1; p=none; rua=mailto:dmarc-reports@example.com; adkim=s; aspf=s`, later `p=quarantine`, then `p=reject`. DMARC passes only when SPF or DKIM passes **and aligns** with the From domain, so the From domain must be the authenticated one.
+4. Optional but advisable: a PTR record for any self-hosted relay's IP, MTA-STS and TLS-RPT for the domain, and a monitored `abuse@` / `postmaster@` mailbox.
+
+### Provider examples (all over SMTP)
+Set the password as a secret (`Email__Smtp__Password`), the rest as ordinary settings. `Email__From__Address` must be a verified sender/domain at the provider.
+
+| Provider | Settings | Notes |
+|---|---|---|
+| **Amazon SES** | `Email__Provider=Smtp`, `Email__Smtp__Host=email-smtp.<region>.amazonaws.com`, `Port=587`, `Security=StartTls` (or `Port=465` + `SslOnConnect`), `Username=<SMTP user name>` | The SMTP credentials are generated in the SES console ("SMTP settings"); they are **not** your AWS access keys. Verify the domain (Easy DKIM), leave the SES sandbox before sending to unverified recipients, and set `Email__MaxPerMinute` under your SES rate. |
+| **SendGrid** | `Host=smtp.sendgrid.net`, `Port=587`, `Security=StartTls`, `Username=apikey` (literally) | The password is an API key with "Mail Send" permission. Complete domain authentication; a single-sender verification works for tests only. |
+| **Mailgun** | `Host=smtp.mailgun.org` (`smtp.eu.mailgun.org` for the EU region), `Port=587`, `Security=StartTls`, `Username=postmaster@<your sending domain>` | The password is the SMTP credential of that domain. Use a sending subdomain (`mg.example.com`) and add its DNS records. |
+| **Gmail / Google Workspace SMTP relay** | `Host=smtp-relay.gmail.com`, `Port=587`, `Security=StartTls`; authenticate by IP (leave `Username`/`Password` unset) or with a Workspace account | Configure the relay in the Google Admin console (SMTP relay service, allowed sender IPs, "require TLS"). The plain `smtp.gmail.com` with an app password also works for small volumes but is rate limited (about 500 per day) and not recommended for production. |
+| **Private relay with its own CA** | as above plus `Email__Smtp__CaCertificateFile=/path/ca.pem` | The relay's certificate must chain to that CA and match `Host`. |
+
+Example (environment variables or one file per setting in the secrets directory):
+```
+Email__Provider=Smtp
+Email__From__Name=NexaVerify
+Email__From__Address=no-reply@example.com
+Email__ReplyTo=support@example.com
+Email__PublicBaseUrl=https://portal.example.com
+Email__Footer=Example Ltd, 1 High Street, London EC1A 1BB, United Kingdom
+Email__Smtp__Host=email-smtp.eu-west-1.amazonaws.com
+Email__Smtp__Port=587
+Email__Smtp__Security=StartTls
+Email__Smtp__Username=AKIA...            # SES SMTP user name
+Email__Smtp__Password=...                # secret: environment or secrets directory only
+```
+**Not verified against live providers.** The SMTP client is exercised in the test suite against an in-process SMTP server (STARTTLS, implicit TLS, private CA, bad/foreign/mismatched certificates, authentication, 4xx/5xx, timeouts) but the provider settings above follow their public documentation and have not been run against Amazon SES, SendGrid, Mailgun or Gmail from this repository. Send a test mail first.
+
 ## Public website and self-service sign-up (M11)
 | Key | Default | Notes |
 |---|---|---|

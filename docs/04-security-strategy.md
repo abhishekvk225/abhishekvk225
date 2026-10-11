@@ -38,12 +38,14 @@
 ### Permission catalogue (initial)
 `clients.read|create|update|manage-status|reset-password|settings` · `licenses.read|create|update|manage-status|renew|adjust|cost-rules|verify-ledger` · `plans.manage` · `dashboard.admin` · `dashboard.client` · `reports.read` · `audit.read` · `audit.read.client` · `system.configure` · `roles.manage` · `users.platform-manage` · `users.manage` · `client.profile.read|update` · `license.read` · `usage.read` · `apikeys.read|manage` · `apilogs.read` · `settings.recognition|notifications|security` · `webhooks.manage` · `notifications.read` · `faces.enroll|verify|identify|detect|read|manage|erase|history` · `billing.read|manage` (client) · `billing.packs.manage|orders.read|refund` (platform)
 
+`email.read|manage` (platform; M13 email delivery: `read` shows full recipient addresses and the suppression list, without it addresses are masked; `manage` retries failed mail, clears suppressed addresses and sends a test mail).
 ### Default role matrix
 | Capability | Super Admin | Client Admin | Client User |
 |---|:-:|:-:|:-:|
 | Create/edit/suspend clients, reset client passwords | ✅ | – | – |
 | Generate/renew/adjust/suspend licenses, cost rules, plans | ✅ | – | – |
 | Admin dashboard, global reports, audit logs, system config, RBAC | ✅ | – | – |
+| Outgoing email: outbox (`system.configure`, addresses masked), full addresses + suppression list (`email.read`), retry / clear suppression / test mail (`email.manage`) | ✅ | – | – |
 | Client dashboard & usage | (via client drill-down) | ✅ | ✅ (read-only summary) |
 | View own license & ledger | – | ✅ | ✅ (balance/expiry only) |
 | Manage API keys, webhooks, API logs | – | ✅ | – |

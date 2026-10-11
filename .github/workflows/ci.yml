@@ -133,6 +133,7 @@ jobs:
           bash deploy/docker/prod/make-secrets.sh
           cp deploy/docker/.env.prod.example deploy/docker/.env.prod
           sed -i 's/^ALLOW_MOCK_FACE_ENGINE=.*/ALLOW_MOCK_FACE_ENGINE=true/' deploy/docker/.env.prod
+          sed -i 's/^ALLOW_LOGGING_EMAIL=.*/ALLOW_LOGGING_EMAIL=true/' deploy/docker/.env.prod
       - name: Build and start
         run: |
           docker compose -f deploy/docker/docker-compose.prod.yml --env-file deploy/docker/.env.prod build
