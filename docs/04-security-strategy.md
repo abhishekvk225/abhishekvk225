@@ -38,6 +38,8 @@
 ### Permission catalogue (initial)
 `clients.read|create|update|manage-status|reset-password|settings` · `licenses.read|create|update|manage-status|renew|adjust|cost-rules|verify-ledger` · `plans.manage` · `dashboard.admin` · `dashboard.client` · `reports.read` · `audit.read` · `audit.read.client` · `system.configure` · `roles.manage` · `users.platform-manage` · `users.manage` · `client.profile.read|update` · `license.read` · `usage.read` · `apikeys.read|manage` · `apilogs.read` · `settings.recognition|notifications|security` · `webhooks.manage` · `notifications.read` · `faces.enroll|verify|identify|detect|read|manage|erase|history` · `billing.read|manage` (client) · `billing.packs.manage|orders.read|refund` (platform)
 
+**M14 (planned)** `verification.bank-statement.submit|pan.submit|passport.submit` · `verification.read` · `verification.report.download` · `verification.document.download` · `verification.erase` (client scope) · `verification.admin.read|admin.configure` (platform scope).
+
 `email.read|manage` (platform; M13 email delivery: `read` shows full recipient addresses and the suppression list, without it addresses are masked; `manage` retries failed mail, clears suppressed addresses and sends a test mail).
 ### Default role matrix
 | Capability | Super Admin | Client Admin | Client User |
@@ -54,6 +56,8 @@
 | Enroll/verify/identify faces | – | ✅ | ✅ (`faces.verify`, `faces.identify`, `faces.history`; `faces.enroll` configurable) |
 | Erase face profiles | – | ✅ | – |
 | Client audit & login history | ✅ (any client) | ✅ (own) | – |
+| **M14 (planned)** Submit / read / cancel / erase document verifications (bank statement, PAN, passport), download reports | – | ✅ (all `verification.*` client keys; original-document download additionally off by default via `Verification:Download:AllowOriginalDownload`) | – (none by default; identity and financial documents) |
+| **M14 (planned)** Verification module switch, provider status, volumes, tenant metadata investigation | ✅ (`verification.admin.read`, `verification.admin.configure`; cost edits via `licenses.cost-rules`) | – | – |
 
 Super Admin has **no** implicit access to biometric content of clients: face operations on behalf of a client are not granted to platform roles (support impersonation, if ever added, is a separate time-boxed, audited, client-approved permission).
 
@@ -131,6 +135,17 @@ See `docs/03` §7. Implemented in M1/M2: global per-IP limiter, a much stricter 
 
 | M9a | Hardening (security features) | implemented, pending Security review | MFA (TOTP, recovery codes, throttling, replay protection, enforcement), two-person approval for large credit adjustments, keyed ledger anchors + async verification + alert de-duplication, emergency API controls (revoke all/one, kill switch), client-view redaction of platform staff, target-privilege rule in client user management, security-m6 L-1/L-3/L-4/L-6/L-7/L-9, security-m5 open items (atomic profile cap, history personal-data retention, drained sweeper) — see STATUS.md |
 | M9b | Hardening (scalability) | implemented, pending Security review | Shared SQL rate-limit/quota counters, per-principal throttles, webhook fairness + failed-event counting, ledger alert-once with operator list, CSV failure handling + BOM, shared portal cache option (SQL Server / Redis), load tooling, restore drill + runbook, portal header allow-list — see STATUS.md |
+
+### 14. M14 (planned) — document-handling controls
+Full design and the 20-item risk register: `07-document-verification.md` §12. Controls every implementer must meet:
+- **Upload hardening:** allow-list by magic bytes (PDF, JPEG, PNG, WebP); extension and MIME must agree with the detected type; size, page and pixel caps (configuration); encrypted PDFs and PDFs with JavaScript, launch actions, embedded files or XFA are rejected; inspection has a timeout and a bulkhead (503 when full); file names are never used for storage or paths; nothing is rendered or served inline.
+- **Isolation:** request metadata is `ITenantOwned` and contains no personal data; documents, extracted data and checks are `IStrictTenantOwned` (platform staff cannot read them). The worker processes each request inside the owning tenant's scope. Foreign ids return 404.
+- **Encryption and minimisation:** documents and extracted results are sealed with `IClientEncryption` (per-client data key, purpose bound to the request id); only masked identifiers and a keyed hash are queryable; full PAN/passport/account numbers exist only inside the encrypted result; provider payloads are not stored; retention caps (document 7 d, result 90 d, metadata 730 d defaults) and immediate erasure (`DELETE /verifications/{id}/data`); crypto-shredding on off-boarding.
+- **No sensitive data in logs, audit, metrics or errors:** no document bytes, extracted text, names, identifiers, descriptions or amounts; redaction canary tests.
+- **Providers:** URLs and credentials come from configuration/secret files only; https, fixed host, no redirects, TLS validation, timeouts, response size cap; no request-derived URLs (SSRF). Release 1 has no vendor adapter: `ProviderNotConfigured` is the safe default and results are never fabricated (rule V-1: only a provider `Verified` is "verified").
+- **Parsing safety:** regex with match timeouts, rule files validated at start-up, OCR run out-of-process with an argument list (no shell), per-page timeouts and concurrency limits.
+- **Abuse:** credits preflight, per-principal throttles, queue cap per client, charge-on-completion, single-use 60-second authenticated download links (no public URLs), original-document download off by default.
+- **Compliance:** `consentReference` required by default; the client is controller and the platform the processor; vendor DPA and cross-border review are go-live items.
 
 ### Known limits (documented, accepted)
 - Session/permission/client-status caches are per instance: revocation reaches other instances within ≤ 30 s (sessions) / 60 s (role→permission map).

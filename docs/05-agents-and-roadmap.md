@@ -59,6 +59,17 @@ Rules:
 | **M8 — Blazor Portal** *(UI tracks start earlier per module — see §4)* | Component library, themes, Admin & Client apps, all screens, FaceCapture, accessibility pass | E2E critical journeys green on desktop/tablet/mobile viewports |
 | **M9 — Hardening** | Full security review, MFA for Super Admin, pen-test fixes, performance tests, backup/restore drill, load test | ASVS-L2 checklist signed; no open Critical/High |
 | **M10 — Release readiness** | Docker + IIS packages, environment config, CI/CD to staging, monitoring/alerting dashboards, runbooks; **final QA regression** | Staging soak passes; go/no-go |
+| **M14 — Digital Verification Platform** *(planned; design in `07-document-verification.md`)* | Bank statement, PAN and passport verification (release 1): module registry with Upcoming catalogue entries, async upload → worker pipeline, encrypted short-retention document store, OCR/PDF/MRZ/bank-statement parsing, provider abstractions (no vendor in R1), per-stage credit charging through the existing ledger, client portal "Document verification" group, admin module/provider/volume/investigation screens | M14 DoD below; **not production-ready** while a PAN/passport provider is unconfigured and OCR accuracy is unmeasured on real samples |
+
+### M14 Definition of Done (in addition to the module DoD above)
+- [ ] Rule V-1 enforced and tested: nothing is "verified" without a provider `Verified` result; no fake or simulated provider in production code (architecture test)
+- [ ] Upcoming modules: catalogue only; no route, processor, permission, metered operation or credit deduction (test)
+- [ ] Ledger ↔ request reconciliation test, concurrent-deduction test and idempotent-retry test green; failed processing and provider failures never charge
+- [ ] Documents/results/checks are strict-tenant tables with RLS; platform scope reads none of them; redaction canary test (no PII in logs/audit/errors) green
+- [ ] Upload-security suite green (polyglot, bombs/limits, active content, malformed); inspection and OCR bounded by timeouts and bulkheads
+- [ ] Parsers covered by table-driven tests (bank arithmetic/continuity, PAN rules, MRZ TD3 check digits, name matching)
+- [ ] Client and admin screens: loading/empty/error/validation/responsive states, wording table respected (no "authentic/genuine")
+- [ ] `deploy/CONFIG.md` and runbooks list every `Verification:*` key, the OCR dependency and outstanding provider credentials; `docs/STATUS.md` lists what could not be verified
 
 ## 4. How UI work interleaves
 To avoid a "big-bang UI" at the end, the UI Developer agent builds the **shell + component library in M1–M2** (against a stub API), then each backend module's screens immediately after its APIs land (M3 client mgmt screens, M4 license screens, …). Milestone M8 is the polish, consistency, accessibility and E2E pass.

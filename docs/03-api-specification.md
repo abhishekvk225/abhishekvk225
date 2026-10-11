@@ -234,6 +234,42 @@ Hosted checkout only: the customer pays on the payment provider's page, **no car
 * Templates: `VerifyEmail`, `AlreadyRegistered`, `PasswordReset`, `PasswordChanged`, `UserInvite`, `MfaEnabled`, `MfaDisabled`, `MfaRecoveryCodeUsed`, `LicenseLowBalance`, `LicenseExpiring`, `PaymentReceipt`, `RefundNotice`, `ContactRequest`, `WebhookEndpointDisabled`, `AdminTest`. Links are built only under `Email:PublicBaseUrl` (fallback `Portal:PublicBaseUrl`). Audit actions: `email.retried`, `email.suppression_removed`, `email.test_sent`.
 * The payment receipt and refund notice now link to `/client/billing/orders/{id}` (the portal's real route; before they pointed at `/billing/orders/{id}`).
 
+### 7d. Document verification (M14, planned — not implemented)
+Design and rationale: `07-document-verification.md`. Processing is **asynchronous**: submit returns `202` with a request id; poll `status`/`result` or subscribe to the webhook `verification.completed`. Client routes accept JWT **or** API key (tenant from the credential, never in the request). Other tenants' ids return 404. Nothing is reported as "verified" unless `external.state = Verified` (a named provider answered); `ProviderNotConfigured` is the release-1 default for PAN and passport.
+
+**Client (`/api/v1/verifications`)**
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| GET | `/verifications/modules` | `verification.read` | Catalogue incl. Upcoming modules (`available:false`, no endpoints, no credits), effective status, upload limits, provider configured flag |
+| POST | `/verifications/bank-statements` | `verification.bank-statement.submit` | multipart `document` + `externalRef?`, `consentReference`, `accountHolderName?`, `bankName?`, `accountNumberLast4?`, `periodFrom?`, `periodTo?`; `Idempotency-Key` optional; `202` (replay `200`); `Location` -> status |
+| POST | `/verifications/pan` | `verification.pan.submit` | multipart `document?` + `panNumber?` (one of them required), `fullName`, `consentReference`, `dateOfBirth?`, `fatherName?`, `externalRef?` |
+| POST | `/verifications/passports` | `verification.passport.submit` | multipart `document` (required) + `consentReference`, `passportNumber?`, `fullName?`, `dateOfBirth?`, `nationality?`, `dateOfIssue?`, `dateOfExpiry?`, `externalRef?` |
+| GET | `/verifications` | `verification.read` | filters `type,status,reviewRequired,externalState,from,to,search`; paging as §1 |
+| GET | `/verifications/{id}` | `verification.read` | result: stages, assurance, checks, review reasons, field matches, extracted (masked identifiers), external block, credits (only with `license.read`) |
+| GET | `/verifications/{id}/status` | `verification.read` | lightweight polling |
+| GET | `/verifications/{id}/transactions` | `verification.read` | bank statement transactions, `pageSize` <= 500 |
+| POST | `/verifications/{id}/cancel` | submit permission of the type | `Queued`/`Processing` only (409 `VERIFICATION_NOT_CANCELLABLE`) |
+| POST | `/verifications/{id}/retry-external` | submit permission of the type | re-run the provider stage only; 409 `VERIFICATION_NOT_RETRYABLE` |
+| DELETE | `/verifications/{id}/data` | `verification.erase` | immediate purge of document + result + checks |
+| POST | `/verifications/{id}/downloads` | `verification.report.download` (`verification.document.download` for the original) | `{kind: Report|TransactionsCsv|OriginalDocument, format?}` -> `{downloadUrl, expiresAt}` (60 s, single use) |
+| GET | `/verifications/downloads/{token}` | same permission | authenticated, bound to caller/tenant/request, `no-store`, `attachment` |
+
+**Platform (`/api/v1/admin`)**
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| GET | `/admin/verifications/modules` | `verification.admin.read` | availability, provider configuration status (no secrets), last-24 h provider outcomes, resolved credit cost per operation |
+| PUT | `/admin/verifications/modules/{key}` | `verification.admin.configure` | `{isEnabled, reason, rowVersion}`; audited; 404 for Upcoming/unknown keys |
+| GET | `/admin/verifications/stats` (+ `/stats/export.csv`) | `verification.admin.read` | volumes, success/failure/review, provider errors, credits, latency, queue depth |
+| GET | `/admin/clients/{clientId}/verifications` · `/{id}` | `verification.admin.read` | metadata only (no documents, extracted data, masked identifiers or checks); each detail view audited |
+| GET | `/admin/verifications/audit` | `audit.read` | audit rows with action `verification.*` |
+| (existing) | `/admin/cost-rules…` | `licenses.cost-rules` | credit cost per operation: `BankStatementExtraction`, `PanExtraction`, `PanProviderCheck`, `PassportExtraction`, `PassportProviderCheck` |
+
+* Billing: charged per stage **on completion** through the existing ledger (idempotency keys `vr:{requestId}:x|p`); failed processing and provider failures are not charged; manual-review outcomes are. Preflight at submit returns `402 LICENSE_*`.
+* Upload rules (configurable, `Verification:Upload:*`): PDF/JPEG/PNG/WebP detected by magic bytes (extension and MIME must agree), default 10 MB, page caps 30/2/4, encrypted or active-content (JavaScript, launch, embedded files) PDFs rejected.
+* New error codes: `DOCUMENT_REQUIRED`, `DOCUMENT_INVALID`, `DOCUMENT_UNSUPPORTED_TYPE` (400); `DOCUMENT_TOO_LARGE` (413); `DOCUMENT_TOO_MANY_PAGES`, `DOCUMENT_ENCRYPTED`, `DOCUMENT_ACTIVE_CONTENT` (422); `VERIFICATION_MODULE_DISABLED` (404); `VERIFICATION_NOT_CANCELLABLE`, `VERIFICATION_NOT_RETRYABLE` (409); `DOWNLOAD_LINK_EXPIRED` (410); `VERIFICATION_QUEUE_FULL` (429); `PROCESSING_UNAVAILABLE` (503). Provider outcomes are not errors (`200` with `external.state`).
+* Rate limits: per-principal throttles `Throttle:VerificationSubmitsPerMinute` (20) and `Throttle:VerificationDownloadsPerMinute` (30); `Verification:Limits:MaxQueuedPerClient` (50).
+* New webhook event `verification.completed` (no personal data in the payload); new permission keys are listed in `04` §14.
+
 ## 7. Rate limiting & quotas
 - **Layer 1 — anonymous/auth endpoints**: per-IP sliding window (e.g. 10/min login, 5/min forgot-password) + per-account lockout.
 - **Layer 2 — authenticated**: partitioned per API key (or per user for JWT) — limit from key override → client setting → plan → platform default (all configurable). Token-bucket for face endpoints (burst allowed), fixed-window for the rest.
@@ -243,7 +279,7 @@ Hosted checkout only: the customer pays on the payment provider's page, **no car
 - Limits are read from configuration/settings only — no literals in code.
 
 ## 8. Webhooks (client-registered)
-Events: `recognition.completed`, `license.low_balance`, `license.expiring`, `license.expired`, `license.exhausted`, `apikey.expiring`.
+Events: `recognition.completed`, `license.low_balance`, `license.expiring`, `license.expired`, `license.exhausted`, `apikey.expiring` (M14 planned: `verification.completed`, §7d).
 Delivery: `POST` JSON with headers `X-Signature: t=<unix>,v1=<hex HMAC-SHA256(secret, t + "." + body)>`, `X-Event-Id`, `X-Event-Type`; 5 s timeout; exponential-backoff retries (max 8) from the outbox; endpoint auto-disabled after sustained failure with a notification: **20 consecutive failed events** (an event counts once, when its first attempt fails; retries do not pile on; any success resets; test events never count). Scheduling is fair: at most `Webhooks:MaxPerEndpointPerCycle` (5) deliveries per endpoint in each 2-second cycle, `Webhooks:BatchSize` (50) in total, claimed by exactly one node. URLs must be `https`, resolve to public IPs only (SSRF guard re-checked at send time, redirects not followed).
 
 ## 9. Documentation for integrators

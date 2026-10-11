@@ -46,3 +46,24 @@
 6. **Accessibility**: keyboard reachable, focus trap in dialogs, `aria-live` for toasts, alt text, semantic headings, motion-reduced respects OS setting.
 7. **Plain language** for client-facing license/usage text; no jargon like "ledger" in client UI (use "credit history").
 8. **Security in UI**: permission-trimmed nav is convenience only (API enforces); secrets never rendered after reveal dialog; no `MarkupString` with user data.
+
+## 6. M14 (planned) — Document verification navigation and screens
+Full spec: `07-document-verification.md` §11.
+
+**Client portal** — new sidebar group **Document verification** (after Recognition), items permission-trimmed:
+| Item | Route | Permission |
+|---|---|---|
+| Overview (module catalogue) | `client/verification` | `verification.read` |
+| Bank statement | `client/verification/bank-statement` | `verification.bank-statement.submit` |
+| PAN | `client/verification/pan` | `verification.pan.submit` |
+| Passport | `client/verification/passport` | `verification.passport.submit` |
+| Verification history | `client/verification/history` | `verification.read` |
+
+- **Upcoming modules** (Aadhaar, Driving Licence, Voter ID, DigiLocker, additional government documents, KYC and fraud detection) appear only as muted, non-clickable cards with an "Upcoming" chip on the Overview page ("Not available yet. No credits are used."); they are not sidebar entries and have no pages.
+- **Submit pages:** file picker with client-side pre-checks (type, size, signature), progress, inline field errors, consent reference, cost hint; after `202` the user lands on the details page, which polls until a terminal state.
+- **History** (`DataTable`): request id, type, submitted, status, review flag, provider verification, reference, credits (if authorised). Row action menu: View details, Download report (JSON/HTML, transactions CSV), Retry provider check, Cancel, Delete data. No duplicate sidebar entries for these.
+- **Details:** stage stepper (Uploaded · Extracted · Rules checked · Consistency checked · Official verification), review reasons, official-verification card (the only place a positive "verified" appears), check results table, field matches, extracted fields (masked identifiers; transactions paged), credits, timestamps/correlation id. Wording comes from one table; "authentic/genuine/valid/active" are never shown.
+
+**Admin portal** — new group **Verification**: `admin/verification` (volume, success/failure/review, provider errors, credits, queue depth; modules table with enable/disable, provider configuration status without secrets, credit cost per operation linking to Cost rules), `admin/verification/requests` (tenant-scoped, metadata-only investigation), `admin/verification/audit` (audit history of administrative changes). Permissions `verification.admin.read` / `verification.admin.configure`.
+
+New shared components: `DocumentUpload`, `VerificationStatusChip`, `ExternalStateChip`, `StageStepper`, `CheckResultsTable`, `FieldMatchList`, `ReviewReasonsAlert`, `ExtractedFieldsCard`, `UpcomingModuleCard`, `ModuleCard`.
