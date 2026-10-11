@@ -1,5 +1,9 @@
 # Status board
 
+**Snapshot:** M1–M13 are built; the last full test run passed 2,387 tests (Domain 112, Application 280, Architecture 12, Infrastructure unit 360, Infrastructure integration 100, Web components 1,027, API integration 496). Latest modules: M11 public website + self-service sign-up, M12 payments and credit top-up (Stripe, Razorpay and a simulated provider; screens wired and checked against the real API), M13 real email sender (SMTP, outbox, 15 templates) and master-key rotation (keyring, `rotate-master-key`).
+
+**Before real customers:** real face engine + liveness (the engine is a mock), live-provider trials (Stripe, Razorpay, SMTP), security and code reviews for M9a–M13, first real runs of CI/CD, IIS and staging drills, legal review of the draft terms and privacy pages, and a tool to replace (not just re-wrap) client data keys. Overall module sign-off (every gate green) has **not** been given; the reviews were deferred at the product owner's request.
+
 Gate legend: ✅ passed · 🔄 in progress · ⬜ not started · ❌ failed. A module is **Complete** only when every gate is ✅ (see Definition of Done in `05-agents-and-roadmap.md`).
 
 | Module | Design | DB | Backend | UI | Security | QA | Code review | DevOps | Final regression | Complete |
@@ -15,8 +19,8 @@ Gate legend: ✅ passed · 🔄 in progress · ⬜ not started · ❌ failed. A 
 | M8 Blazor Portal polish | ⬜ | – | – | 🔄 M8a done (BFF + real dashboards + Platform/Admin screens); M8b done (client portal: license, face workspace, API keys, webhooks, API logs + CSV, notifications, users/settings/activity, API guide) | ✅ re-verified: pass-with-conditions (Lows/Info open) | ✅ 559 component/unit + 6 portal-to-API e2e tests | ✅ M8a+M8b Majors fixed | ⬜ | ⬜ | ⬜ |
 | M9 Hardening | 🔄 M9a security features done (MFA, adjust approvals, ledger anchors, emergency controls, M3 redaction/privilege, lows); M9b scalability/ops done (shared counters, webhook fairness, ledger alert-once, shared portal cache, load tooling, restore drill) | ✅ M9b migration `M9bScalability` | ✅ M9a + M9b | 🔄 M9a: `/login/mfa`, `/mfa/enroll` (QR), ledger run polling; no approval-queue UI and no open-ledger-breaks screen yet | ⬜ security re-verification of M9a + M9b pending | ⬜ | ✅ M9a/M9b tests added at every layer (see "M9a notes", "M9b notes"); code review of M9a/M9b outstanding | 🔄 runbook + drill script + load tooling added; not verified on real infrastructure | ⬜ | ⬜ |
 | M10 Release readiness | – | – | – | – | ⬜ | ⬜ | ⬜ | 🔄 containers, compose stacks, IIS package, CI/CD, observability, runbooks and checklist written; compose stack verified locally; pipelines, IIS, staging **not** run (see "M10 notes") | ⬜ | ⬜ |
-| M11 Public website + self-service sign-up | ✅ | ✅ migration `M11PublicSignup` | ✅ public API (see "M11 notes") | 🔄 website built by another agent | ⬜ | ✅ tests at every layer | ⬜ | ⬜ | ⬜ | ⬜ |
-| M12 Payments and self-service top-up | ✅ | ✅ migration `M12Payments` | ✅ API (see "M12 notes") | 🔄 built by another agent | ⬜ | ✅ tests at every layer | ⬜ | ⬜ | ⬜ | ⬜ |
+| M11 Public website + self-service sign-up | ✅ | ✅ migration `M11PublicSignup` | ✅ public API (see "M11 notes") | ✅ public site + sign-up pages (see "M11 UI notes"); verified end to end against the real API | ⬜ | ✅ tests at every layer | ⬜ | ⬜ | ⬜ | ⬜ |
+| M12 Payments and self-service top-up | ✅ | ✅ migration `M12Payments` | ✅ API (see "M12 notes") | ✅ buy / orders / invoices / admin packs and orders (see "M12 UI notes"); purchase verified against the real API with the simulated provider | ⬜ | ✅ tests at every layer | ⬜ | ⬜ | ⬜ | ⬜ |
 | M13 Email delivery (SMTP, outbox, templates) | ✅ | ✅ migration `AddEmailOutbox` | ✅ (see "Email sender notes") | – | ⬜ | ✅ tests at every layer (live providers not run) | ⬜ | ⬜ | ⬜ | ⬜ |
 
 ## Key rotation notes (master keyring, online rotation)

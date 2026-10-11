@@ -10,8 +10,12 @@ A multi-tenant, commercial face-recognition platform: ASP.NET Core (Clean Archit
 | [04 — Security strategy](04-security-strategy.md) | Threat model, authN/Z, permission catalogue & role matrix, headers/CORS/CSRF, crypto, privacy, OWASP mapping | Security |
 | [05 — Agents & roadmap](05-agents-and-roadmap.md) | Agent roster, module pipeline & Definition of Done, milestones, risks, open decisions | Orchestrator |
 | [06 — UI information architecture](06-ui-information-architecture.md) | Sitemap, dashboard widgets, component library, theme, UX checklist | UI Developer |
-| [STATUS](STATUS.md) | Live module/gate status board | Orchestrator |
+| [UI notes](ui-notes.md) | Portal build notes: BFF/session design, pages, components, public website, billing screens, how to run | UI Developer |
+| [STATUS](STATUS.md) | Live module/gate status board and per-module notes (M1–M13) | Orchestrator |
 | [Runbooks](runbooks/README.md) · [Release checklist](release-checklist.md) | Deploy, rollback, DB migration, key rotation, incident response, monitoring, soak test, go/no-go | DevOps |
+| [Configuration reference](../deploy/CONFIG.md) | Every setting, default and startup guard (encryption keyring, JWT, MFA, email, billing, sign-up, portal sessions, telemetry) | DevOps |
 | `reviews/` | Per-module security, QA and code-review reports | Reviewer agents |
 
 Agent definitions: [`.claude/agents/`](../.claude/agents).
+
+Project overview and quick start: [../README.md](../README.md). Load tests: [`tests/Load`](../tests/Load).
