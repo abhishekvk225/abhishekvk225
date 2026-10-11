@@ -33,6 +33,7 @@ public sealed class RateLimitSettings
 {
     public const string SectionName = "RateLimiting";
     public const string AuthPolicy = "auth";
+    public const string EmailTestPolicy = "email-test";
 
     /// <summary>Requests per minute per client IP across the whole API (abuse backstop).</summary>
     [Range(1, 1000000)]
@@ -41,4 +42,8 @@ public sealed class RateLimitSettings
     /// <summary>Requests per minute per client IP for credential endpoints (login, refresh, forgot/reset password).</summary>
     [Range(1, 1000000)]
     public int AuthPerIpPerMinute { get; set; } = 10;
+
+    /// <summary>Test emails per minute per administrator (<c>POST /admin/email/test</c>).</summary>
+    [Range(1, 1000)]
+    public int EmailTestPerMinute { get; set; } = 3;
 }

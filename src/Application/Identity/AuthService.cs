@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using NexaVerify.Application.Abstractions;
 using NexaVerify.Application.Auditing;
 using NexaVerify.Application.Common;
+using NexaVerify.Application.Messaging;
 using NexaVerify.Application.Persistence;
 using NexaVerify.Contracts.Common;
 using NexaVerify.Contracts.Identity;
@@ -56,6 +57,7 @@ public sealed class AuthService : IAuthService
     private readonly IMfaService _mfa;
     private readonly IMfaPolicy _mfaPolicy;
     private readonly IPasswordResetService _resetService;
+    private readonly IEmailSender _email;
     private readonly IClientRepository _clients;
     private readonly IClientAccessGuard _clientGuard;
     private readonly IAuditService _audit;
@@ -83,6 +85,7 @@ public sealed class AuthService : IAuthService
         IMfaService mfa,
         IMfaPolicy mfaPolicy,
         IPasswordResetService resetService,
+        IEmailSender email,
         IClientRepository clients,
         IClientAccessGuard clientGuard,
         IAuditService audit,
@@ -109,6 +112,7 @@ public sealed class AuthService : IAuthService
         _mfa = mfa;
         _mfaPolicy = mfaPolicy;
         _resetService = resetService;
+        _email = email;
         _clients = clients;
         _clientGuard = clientGuard;
         _audit = audit;
@@ -282,8 +286,8 @@ public sealed class AuthService : IAuthService
             {
                 var raw = await _resetService.IssueAsync(user, ResetEmailKind.Reset, cancellationToken);
                 _audit.Record(new AuditEntry(AuditActions.PasswordResetRequested, nameof(User), user.Id.ToString(), user.ClientId, ActorId: user.Id));
+                await _resetService.SendAsync(user, raw, ResetEmailKind.Reset, cancellationToken); // staged: stored with the token in one save
                 await _unitOfWork.SaveChangesAsync(CancellationToken.None);
-                await _resetService.SendAsync(user, raw, ResetEmailKind.Reset, cancellationToken);
             }
 
             return Result.Success();
@@ -323,6 +327,7 @@ public sealed class AuthService : IAuthService
 
             RecordLogin(user, user.ClientId, request.Email, LoginOutcome.PasswordReset, null);
             _audit.Record(new AuditEntry(AuditActions.PasswordReset, nameof(User), user.Id.ToString(), user.ClientId, ActorId: user.Id));
+            await _email.SendAsync(SecurityNotices.PasswordChanged(user, now, "a password reset"), cancellationToken);
             await _unitOfWork.SaveChangesAsync(CancellationToken.None);
             await _throttle.ClearAsync(user.Id, cancellationToken); // the emailed link is the way out of a lockout
             _sessions.Invalidate(user.Id);
@@ -381,6 +386,7 @@ public sealed class AuthService : IAuthService
 
         var response = await IssueSessionAsync(user, familyId: null, now, cancellationToken);
         _audit.Record(new AuditEntry(AuditActions.PasswordChanged, nameof(User), user.Id.ToString(), user.ClientId));
+        await _email.SendAsync(SecurityNotices.PasswordChanged(user, now, "your account settings"), cancellationToken);
         await _unitOfWork.SaveChangesAsync(CancellationToken.None);
         await _throttle.ClearAsync(user.Id, cancellationToken);
         _sessions.Invalidate(user.Id);

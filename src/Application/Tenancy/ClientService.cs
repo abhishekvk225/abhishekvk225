@@ -173,11 +173,12 @@ public sealed class ClientService : IClientService, IClientProvisioner
 
         _audit.Record(new AuditEntry("client.created", nameof(Client), client.Id.ToString(), client.Id,
             NewValues: new { client.Code, client.Name, client.ContactEmail, AdminEmail = admin.Email, provisioning.Source }));
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
         if (invitation is not null)
         {
-            await _resetService.SendAsync(admin, invitation, ResetEmailKind.Invitation, cancellationToken);
+            await _resetService.SendAsync(admin, invitation, ResetEmailKind.Invitation, cancellationToken); // staged: committed with the client
         }
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return client.ToDto();
     }
@@ -251,9 +252,9 @@ public sealed class ClientService : IClientService, IClientProvisioner
 
         var raw = await _resetService.IssueAsync(user, ResetEmailKind.Reset, cancellationToken);
         _audit.Record(new AuditEntry("client.user_password_reset", nameof(User), user.Id.ToString(), clientId));
+        await _resetService.SendAsync(user, raw, ResetEmailKind.Reset, cancellationToken); // staged: committed with the new token
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         _sessions.Invalidate(user.Id);
-        await _resetService.SendAsync(user, raw, ResetEmailKind.Reset, cancellationToken);
         return Result.Success();
     }
 

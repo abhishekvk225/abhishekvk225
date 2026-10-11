@@ -27,6 +27,7 @@ public static class DependencyInjection
         services.AddScoped<ISignupService, SignupService>();
         services.AddScoped<IPublicInfoService, PublicInfoService>();
         services.AddScoped<IContactService, ContactService>();
+        services.AddScoped<Messaging.IEmailAdminService, Messaging.EmailAdminService>();
 
         services.AddScoped<IMfaPolicy, MfaPolicy>();
         services.AddScoped<ISessionIssuer, SessionIssuer>();

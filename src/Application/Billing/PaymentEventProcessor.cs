@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using NexaVerify.Application.Abstractions;
 using NexaVerify.Application.Api;
 using NexaVerify.Application.Auditing;
+using NexaVerify.Application.Messaging;
 using NexaVerify.Application.Common;
 using NexaVerify.Application.Licensing;
 using NexaVerify.Application.Persistence;
@@ -12,6 +13,7 @@ using NexaVerify.Contracts.Licensing;
 using NexaVerify.Domain.Api;
 using NexaVerify.Domain.Billing;
 using NexaVerify.Domain.Licensing;
+using NexaVerify.Domain.Messaging;
 
 namespace NexaVerify.Application.Billing;
 
@@ -73,12 +75,11 @@ public sealed partial class PaymentEventProcessor : IPaymentEventProcessor
     private readonly ILicenseAlertRepository _alerts;
     private readonly IClientRepository _clients;
     private readonly IAuditService _audit;
-    private readonly IEmailOutbox _outbox;
+    private readonly IEmailSender _email;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ITenantScope _scope;
     private readonly ITenantContext _tenantContext;
     private readonly BillingOptions _options;
-    private readonly PortalLinksOptions _portal;
     private readonly TimeProvider _time;
     private readonly ILogger<PaymentEventProcessor> _logger;
 
@@ -92,12 +93,11 @@ public sealed partial class PaymentEventProcessor : IPaymentEventProcessor
         ILicenseAlertRepository alerts,
         IClientRepository clients,
         IAuditService audit,
-        IEmailOutbox outbox,
+        IEmailSender email,
         IUnitOfWork unitOfWork,
         ITenantScope scope,
         ITenantContext tenantContext,
         IOptions<BillingOptions> options,
-        IOptions<PortalLinksOptions> portal,
         TimeProvider time,
         ILogger<PaymentEventProcessor> logger)
     {
@@ -110,12 +110,11 @@ public sealed partial class PaymentEventProcessor : IPaymentEventProcessor
         _alerts = alerts;
         _clients = clients;
         _audit = audit;
-        _outbox = outbox;
+        _email = email;
         _unitOfWork = unitOfWork;
         _scope = scope;
         _tenantContext = tenantContext;
         _options = options.Value;
-        _portal = portal.Value;
         _time = time;
         _logger = logger;
     }
@@ -139,7 +138,6 @@ public sealed partial class PaymentEventProcessor : IPaymentEventProcessor
             ? _scope.BeginTenant(order.ClientId)
             : _tenantContext.ClientId is { } own ? _scope.BeginTenant(own) : _scope.BeginPlatform("billing: payment event without an order");
 
-        Receipt? receipt = null;
         try
         {
             var outcome = await _unitOfWork.ExecuteInTransactionAsync(
@@ -153,17 +151,16 @@ public sealed partial class PaymentEventProcessor : IPaymentEventProcessor
                     await _unitOfWork.SaveChangesAsync(ct);
 
                     var (code, made) = await ApplyAsync(paymentEvent, ct);
-                    receipt = made;
+                    if (made is not null)
+                    {
+                        await StageReceiptAsync(made, ct); // committed with the credits it announces
+                    }
+
                     record.Complete(code, Now);
                     await _unitOfWork.SaveChangesAsync(ct);
                     return code;
                 },
                 cancellationToken);
-
-            if (receipt is not null)
-            {
-                await SendReceiptAsync(receipt, cancellationToken);
-            }
 
             return outcome;
         }
@@ -317,7 +314,7 @@ public sealed partial class PaymentEventProcessor : IPaymentEventProcessor
         return outcome;
     }
 
-    private async Task SendReceiptAsync(Receipt receipt, CancellationToken cancellationToken)
+    private async Task StageReceiptAsync(Receipt receipt, CancellationToken cancellationToken)
     {
         var buyer = BuyerSnapshot.Parse(receipt.BuyerJson);
         var to = buyer.BillingEmail;
@@ -331,18 +328,18 @@ public sealed partial class PaymentEventProcessor : IPaymentEventProcessor
             return;
         }
 
-        var link = _portal.LinkTo($"billing/orders/{receipt.OrderId:D}");
-        _outbox.Enqueue(new EmailMessage(
-            to,
-            $"Payment received - invoice {receipt.InvoiceNumber}",
-            $"Hello,\n\nWe received your payment of {Money.Format(receipt.TotalMinor, receipt.Currency)} for \"{Plain(receipt.PackName)}\".\n"
-            + $"{receipt.Credits.ToString("N0", CultureInfo.InvariantCulture)} credits were added to your account and stay valid until {receipt.ExpiresAt.ToString("d MMMM yyyy", CultureInfo.InvariantCulture)} (UTC).\n\n"
-            + $"Invoice: {receipt.InvoiceNumber}\nView the order and print the invoice: {link}\n\nThank you."));
+        await _email.SendAsync(
+            new EmailRequest(EmailTemplate.PaymentReceipt, to)
+                .Text("amount", Money.Format(receipt.TotalMinor, receipt.Currency))
+                .Text("packName", receipt.PackName)
+                .Number("credits", receipt.Credits)
+                .Text("validUntil", receipt.ExpiresAt.ToString("d MMMM yyyy", CultureInfo.InvariantCulture))
+                .Text("invoiceNumber", receipt.InvoiceNumber)
+                .Link("invoice", $"client/billing/orders/{receipt.OrderId:D}"),
+            cancellationToken);
     }
 
     private static string Truncate(string value, int max) => value.Length <= max ? value : value[..max];
-
-    private static string Plain(string value) => value.ReplaceLineEndings(" ").Trim();
 
     private sealed record Receipt(
         Guid OrderId, Guid ClientId, string PackName, int Credits, long TotalMinor, string Currency, string InvoiceNumber, DateTime ExpiresAt, string BuyerJson);

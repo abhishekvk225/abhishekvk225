@@ -6,6 +6,7 @@ using NexaVerify.Application.Abstractions;
 using NexaVerify.Application.Auditing;
 using NexaVerify.Application.Common;
 using NexaVerify.Application.Licensing;
+using NexaVerify.Application.Messaging;
 using NexaVerify.Application.Persistence;
 using NexaVerify.Application.Public;
 using NexaVerify.Application.Tenancy;
@@ -15,6 +16,7 @@ using NexaVerify.Contracts.Public;
 using NexaVerify.Contracts.Tenancy;
 using NexaVerify.Domain.Common;
 using NexaVerify.Domain.Identity;
+using NexaVerify.Domain.Messaging;
 using NexaVerify.Domain.Tenancy;
 
 namespace NexaVerify.Application.Identity;
@@ -39,8 +41,6 @@ public interface ISignupService
 public sealed partial class SignupService : ISignupService
 {
     public const string Source = "public-signup";
-    public const string VerificationSubject = "Confirm your NexaVerify account";
-    public const string ExistingAccountSubject = "You already have a NexaVerify account";
     public const string TrialLicenseName = "Free trial";
 
     private static readonly Error InvalidLink = Error.Validation("The verification link is invalid or has expired.");
@@ -52,7 +52,7 @@ public sealed partial class SignupService : ISignupService
     private readonly IPlanRepository _plans;
     private readonly IPasswordHasher _hasher;
     private readonly ISecureTokenService _secure;
-    private readonly IEmailOutbox _outbox;
+    private readonly IEmailSender _email;
     private readonly IPublicThrottle _throttle;
     private readonly ICaptchaVerifier _captcha;
     private readonly IRequestInfo _request;
@@ -62,7 +62,6 @@ public sealed partial class SignupService : ISignupService
     private readonly IAuditService _audit;
     private readonly IUnitOfWork _unitOfWork;
     private readonly SignupOptions _options;
-    private readonly PortalLinksOptions _portal;
     private readonly TimeProvider _time;
     private readonly ILogger<SignupService> _logger;
 
@@ -74,7 +73,7 @@ public sealed partial class SignupService : ISignupService
         IPlanRepository plans,
         IPasswordHasher hasher,
         ISecureTokenService secure,
-        IEmailOutbox outbox,
+        IEmailSender email,
         IPublicThrottle throttle,
         ICaptchaVerifier captcha,
         IRequestInfo request,
@@ -84,7 +83,6 @@ public sealed partial class SignupService : ISignupService
         IAuditService audit,
         IUnitOfWork unitOfWork,
         IOptions<SignupOptions> options,
-        IOptions<PortalLinksOptions> portal,
         TimeProvider time,
         ILogger<SignupService> logger)
     {
@@ -95,7 +93,7 @@ public sealed partial class SignupService : ISignupService
         _plans = plans;
         _hasher = hasher;
         _secure = secure;
-        _outbox = outbox;
+        _email = email;
         _throttle = throttle;
         _captcha = captcha;
         _request = request;
@@ -105,7 +103,6 @@ public sealed partial class SignupService : ISignupService
         _audit = audit;
         _unitOfWork = unitOfWork;
         _options = options.Value;
-        _portal = portal.Value;
         _time = time;
         _logger = logger;
     }
@@ -158,15 +155,15 @@ public sealed partial class SignupService : ISignupService
             using var scope = _scope.BeginPlatform("public signup");
             if (await _users.EmailExistsAsync(User.Normalize(email), cancellationToken))
             {
-                _outbox.Enqueue(ExistingAccountMessage(email, request.FullName));
+                await _email.SendAsync(ExistingAccountMessage(email, request.FullName), cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
                 LogSignupRequested("existing");
                 return Result.Success();
             }
 
             var token = _secure.CreateToken();
-            if (await StagePendingAsync(request, email, passwordHash, _secure.Hash(token), cancellationToken))
+            if (await StagePendingAsync(request, email, passwordHash, token, cancellationToken))
             {
-                _outbox.Enqueue(VerificationMessage(email, request.FullName, request.CompanyName, token));
                 LogSignupRequested("new");
             }
 
@@ -206,8 +203,8 @@ public sealed partial class SignupService : ISignupService
             var token = _secure.CreateToken();
             if (pending is not null && pending.Reissue(_secure.Hash(token), Now, TimeSpan.FromHours(_options.VerificationHours)))
             {
-                await _unitOfWork.SaveChangesAsync(cancellationToken);
-                _outbox.Enqueue(VerificationMessage(pending.Email.ToLowerInvariant(), pending.FullName, pending.CompanyName, token));
+                await _email.SendAsync(VerificationMessage(pending.Email.ToLowerInvariant(), pending.FullName, pending.CompanyName, token), cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken); // the new token and its email commit together
                 LogSignupRequested("resent");
             }
 
@@ -245,7 +242,7 @@ public sealed partial class SignupService : ISignupService
     }
 
     /// <summary>Replaces any earlier pending sign-up of the address. False when a concurrent sign-up for the same address won the slot.</summary>
-    private async Task<bool> StagePendingAsync(SignupRequest request, string email, string passwordHash, byte[] tokenHash, CancellationToken cancellationToken)
+    private async Task<bool> StagePendingAsync(SignupRequest request, string email, string passwordHash, string token, CancellationToken cancellationToken)
     {
         try
         {
@@ -259,10 +256,11 @@ public sealed partial class SignupService : ISignupService
 
                     await _unitOfWork.SaveChangesAsync(ct); // free the one-per-address slot before the new row takes it
 
-                    var pending = PendingSignup.Issue(request.CompanyName, request.FullName, email, passwordHash, tokenHash, Now,
+                    var pending = PendingSignup.Issue(request.CompanyName, request.FullName, email, passwordHash, _secure.Hash(token), Now,
                         TimeSpan.FromHours(_options.VerificationHours));
                     _pending.Add(pending);
                     _audit.Record(new AuditEntry("signup.requested", nameof(PendingSignup), pending.Id.ToString(), NewValues: new { Source, pending.CompanyName, pending.ExpiresAt }));
+                    await _email.SendAsync(VerificationMessage(email, request.FullName, request.CompanyName, token), ct); // committed with the pending row
                     await _unitOfWork.SaveChangesAsync(ct);
                     return true;
                 },
@@ -352,21 +350,20 @@ public sealed partial class SignupService : ISignupService
         throw new SignupAbortedException(Error.Conflict(ErrorCodes.Conflict, "No free client code."));
     }
 
-    private EmailMessage VerificationMessage(string email, string fullName, string companyName, string token)
-    {
-        var link = _portal.LinkTo("verify-email", ("email", email), ("token", token));
-        return new EmailMessage(
-            email,
-            VerificationSubject,
-            $"Hello {Plain(fullName)},\n\nThank you for signing up {Plain(companyName)} for NexaVerify. Confirm your email address to create your account and start your free trial ({_options.TrialCredits} credits for {_options.TrialDays} days). The link expires in {_options.VerificationHours} hours and can be used once.\n\n{link}\n\nIf you did not sign up, you can ignore this email.");
-    }
+    private EmailRequest VerificationMessage(string email, string fullName, string companyName, string token) =>
+        new EmailRequest(EmailTemplate.VerifyEmail, email, fullName)
+            .Text("name", fullName)
+            .Text("company", companyName)
+            .Number("trialCredits", _options.TrialCredits)
+            .Number("trialDays", _options.TrialDays)
+            .Number("hours", _options.VerificationHours)
+            .Link("verify", "verify-email", ("email", email), ("token", token));
 
-    private EmailMessage ExistingAccountMessage(string email, string fullName) => new(
-        email,
-        ExistingAccountSubject,
-        $"Hello {Plain(fullName)},\n\nSomeone used this email address to sign up for NexaVerify, but it already belongs to an account. You can sign in here:\n\n{_portal.LinkTo("login")}\n\nIf you forgot your password you can reset it here:\n\n{_portal.LinkTo("forgot-password")}\n\nIf this was not you, you can ignore this email.");
-
-    private static string Plain(string value) => value.ReplaceLineEndings(" ").Trim();
+    private static EmailRequest ExistingAccountMessage(string email, string fullName) =>
+        new EmailRequest(EmailTemplate.AlreadyRegistered, email, fullName)
+            .Text("name", fullName)
+            .Link("login", "login")
+            .Link("forgot", "forgot-password");
 
     /// <summary>Sign-up responses take at least a fixed time, so latency does not separate known from unknown addresses.</summary>
     private async Task PadAsync(Stopwatch timer, CancellationToken cancellationToken)

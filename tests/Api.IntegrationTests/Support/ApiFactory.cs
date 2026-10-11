@@ -31,6 +31,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
             using var signing = System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
             builder.UseSetting("Jwt:SigningKeyPem", signing.ExportPkcs8PrivateKeyPem());
             builder.UseSetting("FaceEngine:AllowMockInProduction", "true"); // the guard itself is unit-tested
+            builder.UseSetting("Email:AllowLoggingProvider", "true"); // the guard itself is tested in EmailAdminTests
             builder.UseSetting("Encryption:MasterKeyBase64", Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)));
         }
         else
@@ -39,6 +40,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
             builder.UseSetting("Encryption:AllowEphemeralKey", "true");
         }
 
+        builder.UseSetting("Email:Dispatcher:Enabled", "false"); // mail stays in the outbox where tests read it; the dispatcher is tested on its own
         builder.UseSetting("Metering:Alerts:Enabled", "false"); // tests drive the alert processor and the ledger verifier by hand
         builder.UseSetting("Metering:LedgerVerification:Enabled", "false");
         builder.UseSetting("PasswordHashing:IterationCount", "10000");

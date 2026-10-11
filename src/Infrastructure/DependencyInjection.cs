@@ -12,6 +12,7 @@ using NexaVerify.Application.Billing;
 using NexaVerify.Infrastructure.Billing;
 using NexaVerify.Application.Dashboards;
 using NexaVerify.Application.Licensing;
+using NexaVerify.Application.Messaging;
 using NexaVerify.Application.Public;
 using NexaVerify.Application.Faces;
 using NexaVerify.Infrastructure.Faces;
@@ -92,7 +93,8 @@ public static class DependencyInjection
         services.AddOptions<CaptchaOptions>().Bind(configuration.GetSection(CaptchaOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
         services.AddOptions<PortalLinksOptions>().Bind(configuration.GetSection(PortalLinksOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
         services.AddOptions<BillingOptions>().Bind(configuration.GetSection(BillingOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
-        services.AddOptions<EmailOptions>().Bind(configuration.GetSection(EmailOptions.SectionName));
+        services.AddOptions<EmailOptions>().Bind(configuration.GetSection(EmailOptions.SectionName)).ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<EmailOptions>, EmailOptionsValidator>());
         services.AddOptions<SeedOptions>().Bind(configuration.GetSection(SeedOptions.SectionName));
 
         // Repositories and identity services
@@ -117,9 +119,16 @@ public static class DependencyInjection
         services.AddHostedService(sp => sp.GetRequiredService<PublicDataPurger>());
         services.AddScoped<IRefreshTokenClaimer, RefreshTokenClaimer>();
         services.AddSingleton<NexaVerify.Application.Licensing.IDistributedLock, Platform.SqlDistributedLock>();
-        services.AddSingleton<EmailOutbox>();
-        services.TryAddSingleton<IEmailOutbox>(sp => sp.GetRequiredService<EmailOutbox>());
-        services.AddHostedService<EmailDispatcher>();
+        services.AddSingleton<EmailLinkBuilder>();
+        services.AddSingleton<IEmailRenderer, EmailRenderer>();
+        services.AddSingleton<IEmailTransport>(sp => sp.GetRequiredService<IOptions<EmailOptions>>().Value.IsSmtp
+            ? ActivatorUtilities.CreateInstance<SmtpEmailTransport>(sp)
+            : ActivatorUtilities.CreateInstance<LoggingEmailTransport>(sp));
+        services.AddScoped<IEmailSender, OutboxEmailSender>();
+        services.AddScoped<IEmailOutboxRepository, EmailOutboxRepository>();
+        services.AddScoped<EmailStore>();
+        services.AddSingleton<EmailDispatcher>();
+        services.AddHostedService(sp => sp.GetRequiredService<EmailDispatcher>());
         services.AddScoped<IPermissionResolver, PermissionResolver>();
         services.AddScoped<ISessionValidator, SessionValidator>();
         services.AddMemoryCache();
@@ -128,7 +137,6 @@ public static class DependencyInjection
         services.AddSingleton<ISecureTokenService, SecureTokenService>();
         services.AddSingleton<JwtKeyProvider>();
         services.AddSingleton<IAccessTokenIssuer, JwtAccessTokenIssuer>();
-        services.TryAddSingleton<IEmailSender, LoggingEmailSender>();
         services.AddScoped<IClientAccessGuard, ClientAccessGuard>();
         services.AddScoped<IClientRepository, ClientRepository>();
         services.AddScoped<IClientSettingRepository, ClientSettingRepository>();

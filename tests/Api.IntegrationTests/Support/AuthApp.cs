@@ -14,26 +14,38 @@ using NexaVerify.TestSupport;
 
 namespace NexaVerify.Api.IntegrationTests.Support;
 
-public sealed class CapturingEmailSender : IEmailOutbox
-{
-    private readonly List<EmailMessage> _sent = [];
+/// <summary>A message as it sits in the outbox table. <see cref="Body"/> is the plain-text part, <see cref="Html"/> the HTML part.</summary>
+public sealed record CapturedEmail(Guid Id, string To, string Subject, string Body, string Html, string Template, string Status, string CorrelationId, string MessageId);
 
-    public IReadOnlyList<EmailMessage> Sent
+/// <summary>
+/// What the application mailed, read from the real outbox table (the dispatcher is switched off in tests, so nothing is sent or erased).
+/// Because the rows are written in the business transaction, a rolled-back change shows up here as "no mail".
+/// </summary>
+public sealed class OutboxMailbox
+{
+    private readonly string _connectionString;
+
+    public OutboxMailbox(string connectionString)
+    {
+        _connectionString = connectionString;
+    }
+
+    public IReadOnlyList<CapturedEmail> Sent
     {
         get
         {
-            lock (_sent)
+            using var connection = new Microsoft.Data.SqlClient.SqlConnection(_connectionString);
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT Id, ToAddress, Subject, ISNULL(TextBody, ''), ISNULL(HtmlBody, ''), Template, Status, CorrelationId, MessageId, CreatedAt FROM tenancy.OutboundEmails";
+            var rows = new List<(DateTime At, CapturedEmail Mail)>();
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
             {
-                return [.. _sent];
+                rows.Add((reader.GetDateTime(9), new CapturedEmail(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.GetString(6), reader.GetString(7), reader.GetString(8))));
             }
-        }
-    }
 
-    public void Enqueue(EmailMessage message)
-    {
-        lock (_sent)
-        {
-            _sent.Add(message);
+            return [.. rows.OrderBy(r => r.At).ThenBy(r => r.Mail.Id).Select(r => r.Mail)];
         }
     }
 }
@@ -43,7 +55,7 @@ public sealed class AuthApp : IAsyncDisposable
 {
     public const string StrongPassword = "Correct-Horse-Battery-9";
 
-    private AuthApp(ApiFactory factory, string connectionString, CapturingEmailSender emails)
+    private AuthApp(ApiFactory factory, string connectionString, OutboxMailbox emails)
     {
         Factory = factory;
         ConnectionString = connectionString;
@@ -55,7 +67,7 @@ public sealed class AuthApp : IAsyncDisposable
 
     public string ConnectionString { get; }
 
-    public CapturingEmailSender Emails { get; }
+    public OutboxMailbox Emails { get; }
 
     public HttpClient Client { get; }
 
@@ -64,7 +76,7 @@ public sealed class AuthApp : IAsyncDisposable
         var connectionString = await fixture.CreateDatabaseAsync();
         await DatabaseBootstrap.MigrateAsync(connectionString);
 
-        var emails = new CapturingEmailSender();
+        var emails = new OutboxMailbox(connectionString);
         var factory = new ApiFactory
         {
             ConnectionString = connectionString,
@@ -72,7 +84,6 @@ public sealed class AuthApp : IAsyncDisposable
             Settings = settings ?? new Dictionary<string, string>(),
             ConfigureServices = services =>
             {
-                services.AddSingleton<IEmailOutbox>(emails);
                 configure?.Invoke(services);
             },
         };
@@ -211,7 +222,7 @@ public sealed class AuthApp : IAsyncDisposable
         SendAsync(new HttpRequestMessage(HttpMethod.Delete, path), token);
 
     /// <summary>Extracts (email, token) from the https link inside a captured invitation / reset email.</summary>
-    public static (string Email, string Token) LinkFrom(EmailMessage mail)
+    public static (string Email, string Token) LinkFrom(CapturedEmail mail)
     {
         var link = new Uri(mail.Body.Split('\n').Single(l => l.StartsWith("https://", StringComparison.Ordinal)));
         var query = System.Web.HttpUtility.ParseQueryString(link.Query);

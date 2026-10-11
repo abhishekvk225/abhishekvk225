@@ -2492,6 +2492,150 @@ namespace NexaVerify.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("NexaVerify.Domain.Messaging.EmailSuppression", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Address")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<Guid?>("SourceEmailId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Address")
+                        .IsUnique();
+
+                    b.HasIndex("CreatedAt");
+
+                    b.ToTable("EmailSuppressions", "tenancy");
+                });
+
+            modelBuilder.Entity("NexaVerify.Domain.Messaging.OutboundEmail", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("BodiesPurgedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<bool>("HasOneTimeToken")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("HtmlBody")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("LastAttemptAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<Guid?>("LeaseToken")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("LeaseUntil")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<string>("MessageId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("NextAttemptAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<DateTime?>("SentAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Template")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("TextBody")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ToAddress")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<string>("ToDomain")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<string>("ToName")
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt")
+                        .IsDescending();
+
+                    b.HasIndex("LastAttemptAt")
+                        .HasFilter("[LastAttemptAt] IS NOT NULL");
+
+                    b.HasIndex("Status", "LeaseUntil");
+
+                    b.HasIndex("Status", "NextAttemptAt");
+
+                    b.HasIndex("ToAddress", "CreatedAt");
+
+                    b.ToTable("OutboundEmails", "tenancy", t =>
+                        {
+                            t.HasCheckConstraint("CK_OutboundEmails_Status", "[Status] IN ('Pending', 'Sending', 'Sent', 'Failed', 'Abandoned')");
+
+                            t.HasCheckConstraint("CK_OutboundEmails_Template", "[Template] IN ('VerifyEmail', 'AlreadyRegistered', 'PasswordReset', 'PasswordChanged', 'UserInvite', 'MfaEnabled', 'MfaDisabled', 'MfaRecoveryCodeUsed', 'LicenseLowBalance', 'LicenseExpiring', 'PaymentReceipt', 'RefundNotice', 'ContactRequest', 'WebhookEndpointDisabled', 'AdminTest')");
+                        });
+                });
+
             modelBuilder.Entity("NexaVerify.Domain.Tenancy.Client", b =>
                 {
                     b.Property<Guid>("Id")

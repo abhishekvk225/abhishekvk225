@@ -291,13 +291,11 @@ public class SecurityHardeningTests
         await DatabaseBootstrap.CreateApplicationPrincipalAsync(adminConnection, login, password);
 
         var appConnection = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(adminConnection) { UserID = login, Password = password }.ConnectionString;
-        var emails = new CapturingEmailSender();
         await using var factory = new ApiFactory
         {
             ConnectionString = appConnection,
             UseTestAuth = false,
             Settings = new Dictionary<string, string> { ["Database:RequireLeastPrivilege"] = "true" },
-            ConfigureServices = s => Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions.AddSingleton<NexaVerify.Application.Abstractions.IEmailOutbox>(s, emails),
         };
         var client = factory.CreateClient();
 

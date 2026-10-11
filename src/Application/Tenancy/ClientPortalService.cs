@@ -186,11 +186,10 @@ public sealed class ClientPortalService : IClientPortalService
 
         var now = _time.GetUtcNow().UtcDateTime;
         var user = User.Create(request.Email, request.FullName, _hasher.Hash(_secure.CreateToken()), clientId, isPlatformUser: false, mustChangePassword: false);
-        string invitation;
         try
         {
             // The early count above is only a quick answer; the authoritative check runs under a per-client lock inside the transaction.
-            invitation = await _unitOfWork.ExecuteInTransactionAsync(
+            await _unitOfWork.ExecuteInTransactionAsync(
                 async ct =>
                 {
                     await _lock.AcquireAsync("users:" + clientId.ToString("N"), ct);
@@ -203,10 +202,11 @@ public sealed class ClientPortalService : IClientPortalService
                     await _users.SetRolesAsync(user, [role.Value], ct);
                     _memberships.Add(ClientUser.Create(clientId, user.Id, Clean(request.JobTitle), isOwner: false, now));
                     var issued = await _resetService.IssueAsync(user, ResetEmailKind.Invitation, ct);
+                    await _resetService.SendAsync(user, issued, ResetEmailKind.Invitation, ct); // staged: committed with the user
                     _audit.Record(new AuditEntry(AuditActions.UserCreated, nameof(User), user.Id.ToString(), clientId,
                         NewValues: new { user.Email, user.FullName, Role = role.Value.Name }));
                     await _unitOfWork.SaveChangesAsync(ct);
-                    return issued;
+                    return true;
                 },
                 cancellationToken);
         }
@@ -215,8 +215,6 @@ public sealed class ClientPortalService : IClientPortalService
             _unitOfWork.ClearTracked();
             return Error.Conflict(ex.Code, ex.Message);
         }
-
-        await _resetService.SendAsync(user, invitation, ResetEmailKind.Invitation, cancellationToken);
 
         var row = await _queries.GetUserAsync(clientId, user.Id, cancellationToken);
         return row!.ToDto();

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using NexaVerify.Application.Abstractions;
 using NexaVerify.Application.Api;
 using NexaVerify.Application.Auditing;
+using NexaVerify.Application.Messaging;
 using NexaVerify.Application.Common;
 using NexaVerify.Application.Licensing;
 using NexaVerify.Application.Persistence;
@@ -14,6 +15,7 @@ using NexaVerify.Domain.Api;
 using NexaVerify.Domain.Billing;
 using NexaVerify.Domain.Common;
 using NexaVerify.Domain.Licensing;
+using NexaVerify.Domain.Messaging;
 
 namespace NexaVerify.Application.Billing;
 
@@ -83,12 +85,11 @@ public sealed partial class BillingAdminService : IBillingAdminService
     private readonly ILicenseAlertRepository _alerts;
     private readonly IClientRepository _clients;
     private readonly IAuditService _audit;
-    private readonly IEmailOutbox _outbox;
+    private readonly IEmailSender _email;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ITenantScope _scope;
     private readonly ICurrentUser _currentUser;
     private readonly BillingOptions _options;
-    private readonly PortalLinksOptions _portal;
     private readonly TimeProvider _time;
     private readonly ILogger<BillingAdminService> _logger;
 
@@ -103,12 +104,11 @@ public sealed partial class BillingAdminService : IBillingAdminService
         ILicenseAlertRepository alerts,
         IClientRepository clients,
         IAuditService audit,
-        IEmailOutbox outbox,
+        IEmailSender email,
         IUnitOfWork unitOfWork,
         ITenantScope scope,
         ICurrentUser currentUser,
         IOptions<BillingOptions> options,
-        IOptions<PortalLinksOptions> portal,
         TimeProvider time,
         ILogger<BillingAdminService> logger)
     {
@@ -122,12 +122,11 @@ public sealed partial class BillingAdminService : IBillingAdminService
         _alerts = alerts;
         _clients = clients;
         _audit = audit;
-        _outbox = outbox;
+        _email = email;
         _unitOfWork = unitOfWork;
         _scope = scope;
         _currentUser = currentUser;
         _options = options.Value;
-        _portal = portal.Value;
         _time = time;
         _logger = logger;
     }
@@ -382,17 +381,17 @@ public sealed partial class BillingAdminService : IBillingAdminService
                 _alerts.Add(LicenseAlert.Create(
                     order.ClientId, LicenseAlertType.PaymentRefunded, refund.Id, "refund", AlertSeverity.Info, "Payment refunded",
                     $"{Money.Format(amount, order.Currency)} of your purchase \"{order.PackName}\" was refunded; {revoked} unused credits were taken back.", Now));
+                await StageRefundNoticeAsync(order, amount, revoked, ct); // committed with the refund record
                 await _unitOfWork.SaveChangesAsync(ct);
                 return true;
             },
             CancellationToken.None);
 
-        await NotifyRefundAsync(order, amount, revoked, cancellationToken);
         LogRefunded(order.Id, order.ClientId, amount, revoked);
         return (await LoadDetailAsync(id, cancellationToken))!;
     }
 
-    private async Task NotifyRefundAsync(PaymentOrder order, long amount, int revoked, CancellationToken cancellationToken)
+    private async Task StageRefundNoticeAsync(PaymentOrder order, long amount, int revoked, CancellationToken cancellationToken)
     {
         var to = BuyerSnapshot.Parse(order.BuyerJson).BillingEmail;
         if (string.IsNullOrWhiteSpace(to))
@@ -405,12 +404,14 @@ public sealed partial class BillingAdminService : IBillingAdminService
             return;
         }
 
-        _outbox.Enqueue(new EmailMessage(
-            to,
-            $"Refund issued - {order.InvoiceNumber ?? "your order"}",
-            $"Hello,\n\nWe refunded {Money.Format(amount, order.Currency)} of your purchase \"{order.PackName.ReplaceLineEndings(" ")}\" ({order.InvoiceNumber}). "
-            + $"{revoked.ToString("N0", CultureInfo.InvariantCulture)} unused credits were taken back from your account.\n\n"
-            + $"Details: {_portal.LinkTo($"billing/orders/{order.Id:D}")}"));
+        await _email.SendAsync(
+            new EmailRequest(EmailTemplate.RefundNotice, to)
+                .Text("amount", Money.Format(amount, order.Currency))
+                .Text("packName", order.PackName)
+                .Text("invoiceNumber", order.InvoiceNumber ?? "your order")
+                .Number("creditsRevoked", revoked)
+                .Link("order", $"client/billing/orders/{order.Id:D}"),
+            cancellationToken);
     }
 
     private async Task<AdminOrderDto?> LoadDetailAsync(Guid id, CancellationToken cancellationToken)

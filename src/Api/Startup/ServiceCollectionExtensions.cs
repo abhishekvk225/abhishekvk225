@@ -131,6 +131,12 @@ public static class ServiceCollectionExtensions
                     Window = TimeSpan.FromMinutes(1),
                     QueueLimit = 0,
                 }));
+
+            // A test email is a real message to a real inbox: few per minute, per signed-in administrator (per address when unauthenticated).
+            options.AddPolicy(RateLimitSettings.EmailTestPolicy, http =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    "email-test:" + (http.User.FindFirst(NexaClaims.Subject)?.Value ?? ClientKey(http)),
+                    _ => new FixedWindowRateLimiterOptions { PermitLimit = settings.EmailTestPerMinute, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
         });
         return services;
     }

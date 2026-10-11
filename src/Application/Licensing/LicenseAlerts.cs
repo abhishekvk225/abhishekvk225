@@ -3,10 +3,13 @@ using System.Globalization;
 using NexaVerify.Application.Abstractions;
 using NexaVerify.Application.Api;
 using NexaVerify.Application.Common;
+using NexaVerify.Application.Messaging;
+using NexaVerify.Application.Persistence;
 using NexaVerify.Contracts.Common;
 using NexaVerify.Contracts.Dashboards;
 using NexaVerify.Domain.Api;
 using NexaVerify.Domain.Licensing;
+using NexaVerify.Domain.Messaging;
 
 namespace NexaVerify.Application.Licensing;
 
@@ -184,6 +187,8 @@ public sealed class LicenseAlertService : ILicenseAlertService
 {
     private readonly ILicenseAlertRepository _alerts;
     private readonly IWebhookPublisher _webhooks;
+    private readonly IEmailSender _email;
+    private readonly IClientRepository _clients;
     private readonly IUnitOfWork _unitOfWork;
     private readonly Microsoft.Extensions.Options.IOptions<LicenseAlertOptions> _options;
     private readonly Microsoft.Extensions.Options.IOptions<Billing.BillingOptions> _billing;
@@ -192,6 +197,8 @@ public sealed class LicenseAlertService : ILicenseAlertService
     public LicenseAlertService(
         ILicenseAlertRepository alerts,
         IWebhookPublisher webhooks,
+        IEmailSender email,
+        IClientRepository clients,
         IUnitOfWork unitOfWork,
         Microsoft.Extensions.Options.IOptions<LicenseAlertOptions> options,
         Microsoft.Extensions.Options.IOptions<Billing.BillingOptions> billing,
@@ -199,6 +206,8 @@ public sealed class LicenseAlertService : ILicenseAlertService
     {
         _alerts = alerts;
         _webhooks = webhooks;
+        _email = email;
+        _clients = clients;
         _unitOfWork = unitOfWork;
         _options = options;
         _billing = billing;
@@ -211,8 +220,8 @@ public sealed class LicenseAlertService : ILicenseAlertService
         var options = _options.Value;
         var raised = 0;
         var billingUrl = _billing.Value.Enabled ? _portal.Value.LinkTo("billing") : null;
-        var candidates = licenses.SelectMany(l => LicenseAlertRules.Evaluate(l, now, options, billingUrl).Select(a => (l.ClientId, Alert: a)))
-            .Concat(apiKeys.SelectMany(k => LicenseAlertRules.Evaluate(k, now, options).Select(a => (k.ClientId, Alert: a))))
+        var candidates = licenses.SelectMany(l => LicenseAlertRules.Evaluate(l, now, options, billingUrl).Select(a => (l.ClientId, Alert: a, License: (LicenseAlertCandidate?)l)))
+            .Concat(apiKeys.SelectMany(k => LicenseAlertRules.Evaluate(k, now, options).Select(a => (k.ClientId, Alert: a, License: (LicenseAlertCandidate?)null))))
             .ToList();
         if (candidates.Count == 0)
         {
@@ -220,7 +229,8 @@ public sealed class LicenseAlertService : ILicenseAlertService
         }
 
         var already = await _alerts.RaisedAsync(candidates.Select(c => c.Alert.SubjectId).Distinct().ToList(), cancellationToken);
-        foreach (var (clientId, due) in candidates)
+        var contacts = new Dictionary<Guid, (string Email, string Name)?>();
+        foreach (var (clientId, due, license) in candidates)
         {
             if (already.Contains((due.SubjectId, due.Type, due.Bucket)))
             {
@@ -234,6 +244,7 @@ public sealed class LicenseAlertService : ILicenseAlertService
                     {
                         _alerts.Add(LicenseAlert.Create(clientId, due.Type, due.SubjectId, due.Bucket, due.Severity, due.Title, due.Message, now));
                         await _webhooks.PublishAsync(clientId, due.EventType, due.Payload, ct);
+                        await StageEmailAsync(clientId, due, license, billingUrl is not null, now, contacts, ct);
                         await _unitOfWork.SaveChangesAsync(ct); // alert row + queued deliveries commit together or not at all
                         return true;
                     },
@@ -247,6 +258,63 @@ public sealed class LicenseAlertService : ILicenseAlertService
         }
 
         return raised;
+    }
+
+    private static string TimeLeft(TimeSpan left)
+    {
+        var days = (long)Math.Ceiling(left.TotalDays);
+        return days <= 1 ? "1 day" : days + " days";
+    }
+
+    /// <summary>Emails the client's contact address about a low balance or an expiring license, in the same transaction as the alert.</summary>
+    private async Task StageEmailAsync(
+        Guid clientId, DueAlert due, LicenseAlertCandidate? license, bool canBuy, DateTime now,
+        Dictionary<Guid, (string Email, string Name)?> contacts, CancellationToken cancellationToken)
+    {
+        if (license is null || due.Type is not (LicenseAlertType.LowBalance or LicenseAlertType.Exhausted or LicenseAlertType.Expiring))
+        {
+            return;
+        }
+
+        if (!contacts.TryGetValue(clientId, out var contact))
+        {
+            var client = await _clients.GetByIdAsync(clientId, cancellationToken);
+            contact = client is null || string.IsNullOrWhiteSpace(client.ContactEmail) ? null : (client.ContactEmail, client.Name);
+            contacts[clientId] = contact;
+        }
+
+        if (contact is not { } c)
+        {
+            return;
+        }
+
+        var remaining = Math.Max(0, license.TotalCredits - license.ConsumedCredits);
+        EmailRequest request;
+        if (due.Type == LicenseAlertType.Expiring)
+        {
+            request = new EmailRequest(EmailTemplate.LicenseExpiring, c.Email)
+                .Text("company", c.Name)
+                .Text("licenseName", license.Name)
+                .Text("expiresOn", license.ExpiresAt.ToString("d MMMM yyyy", System.Globalization.CultureInfo.InvariantCulture))
+                .Text("timeLeft", TimeLeft(license.ExpiresAt - now))
+                .Number("remaining", remaining);
+        }
+        else
+        {
+            request = new EmailRequest(EmailTemplate.LicenseLowBalance, c.Email)
+                .Text("company", c.Name)
+                .Text("licenseName", license.Name)
+                .Number("remaining", remaining)
+                .Number("total", license.TotalCredits)
+                .Number("percent", license.TotalCredits <= 0 ? 0 : (long)Math.Floor(100.0 * remaining / license.TotalCredits));
+        }
+
+        if (canBuy)
+        {
+            request.Link("buy", "client/billing/buy");
+        }
+
+        await _email.SendAsync(request, cancellationToken);
     }
 }
 

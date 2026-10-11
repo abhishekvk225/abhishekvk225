@@ -67,6 +67,10 @@ public class AppDbContext : DbContext, IUnitOfWork
 
     public DbSet<ContactRequest> ContactRequests => Set<ContactRequest>();
 
+    public DbSet<Domain.Messaging.OutboundEmail> OutboundEmails => Set<Domain.Messaging.OutboundEmail>();
+
+    public DbSet<Domain.Messaging.EmailSuppression> EmailSuppressions => Set<Domain.Messaging.EmailSuppression>();
+
     public DbSet<LoginHistory> LoginHistory => Set<LoginHistory>();
 
     public DbSet<UserMfa> UserMfa => Set<UserMfa>();

@@ -2,11 +2,13 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NexaVerify.Application.Abstractions;
 using NexaVerify.Application.Common;
+using NexaVerify.Application.Messaging;
 using NexaVerify.Application.Persistence;
 using NexaVerify.Contracts.Common;
 using NexaVerify.Contracts.Public;
 using NexaVerify.Domain.Common;
 using NexaVerify.Domain.Licensing;
+using NexaVerify.Domain.Messaging;
 using NexaVerify.Domain.Tenancy;
 
 namespace NexaVerify.Application.Public;
@@ -68,7 +70,7 @@ public sealed partial class ContactService : IContactService
     private readonly IContactRequestRepository _requests;
     private readonly IPublicThrottle _throttle;
     private readonly IRequestInfo _request;
-    private readonly IEmailOutbox _outbox;
+    private readonly IEmailSender _email;
     private readonly IUnitOfWork _unitOfWork;
     private readonly SignupOptions _options;
     private readonly TimeProvider _time;
@@ -78,7 +80,7 @@ public sealed partial class ContactService : IContactService
         IContactRequestRepository requests,
         IPublicThrottle throttle,
         IRequestInfo request,
-        IEmailOutbox outbox,
+        IEmailSender email,
         IUnitOfWork unitOfWork,
         IOptions<SignupOptions> options,
         TimeProvider time,
@@ -87,7 +89,7 @@ public sealed partial class ContactService : IContactService
         _requests = requests;
         _throttle = throttle;
         _request = request;
-        _outbox = outbox;
+        _email = email;
         _unitOfWork = unitOfWork;
         _options = options.Value;
         _time = time;
@@ -119,16 +121,19 @@ public sealed partial class ContactService : IContactService
         }
 
         _requests.Add(contact);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-        LogReceived(contact.Id);
-
         if (!string.IsNullOrWhiteSpace(_options.ContactNotifyEmail))
         {
-            _outbox.Enqueue(new EmailMessage(
-                _options.ContactNotifyEmail,
-                $"New contact request from {Plain(contact.Name)}",
-                $"Name: {Plain(contact.Name)}\nEmail: {Plain(contact.Email)}\nCompany: {Plain(contact.Company ?? "-")}\n\n{contact.Message}"));
+            await _email.SendAsync(
+                new EmailRequest(EmailTemplate.ContactRequest, _options.ContactNotifyEmail)
+                    .Text("name", contact.Name)
+                    .Text("email", contact.Email)
+                    .Text("company", contact.Company ?? "-")
+                    .Block("message", contact.Message),
+                cancellationToken); // staged: stored with the request itself
         }
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        LogReceived(contact.Id);
 
         return Result.Success();
     }
@@ -140,8 +145,6 @@ public sealed partial class ContactService : IContactService
         return new PagedResult<ContactRequestDto>(
             items.Select(c => new ContactRequestDto(c.Id, c.Name, c.Email, c.Company, c.Message, c.CreatedAt)).ToList(), paging.Page, paging.PageSize, total);
     }
-
-    private static string Plain(string value) => value.ReplaceLineEndings(" ").Trim();
 
     [LoggerMessage(EventId = 8010, Level = LogLevel.Information, Message = "Contact request {ContactRequestId} received")]
     private partial void LogReceived(Guid contactRequestId);

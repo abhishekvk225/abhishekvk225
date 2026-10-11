@@ -9,7 +9,9 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NexaVerify.Application.Abstractions;
 using NexaVerify.Application.Api;
+using NexaVerify.Application.Messaging;
 using NexaVerify.Domain.Api;
+using NexaVerify.Domain.Messaging;
 using NexaVerify.Infrastructure.Persistence;
 using NexaVerify.Infrastructure.Platform;
 
@@ -262,24 +264,57 @@ public sealed class WebhookDispatcher : BackgroundService
         // an endpoint is switched off after DisableAfterFailedEvents different events failed in a row, and any success resets it.
         if (delivery.EventType != WebhookEvents.Test && delivery.Attempts == 1)
         {
-            await RecordEndpointFailureAsync(db, endpoint, finished, cancellationToken);
+            await RecordEndpointFailureAsync(db, scope.ServiceProvider.GetRequiredService<IEmailSender>(), endpoint, finished, cancellationToken);
         }
     }
 
-    private async Task RecordEndpointFailureAsync(AppDbContext db, WebhookEndpoint endpoint, DateTime now, CancellationToken cancellationToken)
+    private async Task RecordEndpointFailureAsync(AppDbContext db, IEmailSender email, WebhookEndpoint endpoint, DateTime now, CancellationToken cancellationToken)
     {
         var limit = _options.DisableAfterFailedEvents;
-        await db.WebhookEndpoints.Where(e => e.Id == endpoint.Id)
-            .ExecuteUpdateAsync(s => s.SetProperty(e => e.FailureCount, e => e.FailureCount + 1), cancellationToken);
-        var disabled = await db.WebhookEndpoints
-            .Where(e => e.Id == endpoint.Id && e.Status == WebhookStatus.Active && e.FailureCount >= limit)
-            .ExecuteUpdateAsync(s => s
-                .SetProperty(e => e.Status, WebhookStatus.Disabled)
-                .SetProperty(e => e.DisabledAt, now)
-                .SetProperty(e => e.DisabledReason, "Disabled automatically after repeated delivery failures."), cancellationToken);
+
+        // The counter, the switch-off and the notice to the client commit together: a client is never left with a disabled endpoint and no word about it.
+        var disabled = await db.ExecuteInTransactionAsync(
+            async ct =>
+            {
+                await db.WebhookEndpoints.Where(e => e.Id == endpoint.Id)
+                    .ExecuteUpdateAsync(s => s.SetProperty(e => e.FailureCount, e => e.FailureCount + 1), ct);
+                var switchedOff = await db.WebhookEndpoints
+                    .Where(e => e.Id == endpoint.Id && e.Status == WebhookStatus.Active && e.FailureCount >= limit)
+                    .ExecuteUpdateAsync(s => s
+                        .SetProperty(e => e.Status, WebhookStatus.Disabled)
+                        .SetProperty(e => e.DisabledAt, now)
+                        .SetProperty(e => e.DisabledReason, "Disabled automatically after repeated delivery failures."), ct);
+                if (switchedOff > 0)
+                {
+                    await StageDisabledNoticeAsync(db, email, endpoint, limit, ct);
+                    await db.SaveChangesAsync(ct);
+                }
+
+                return switchedOff;
+            },
+            cancellationToken);
         if (disabled > 0)
         {
             _logger.LogWarning("Webhook endpoint {EndpointId} of client {ClientId} was disabled after repeated failures", endpoint.Id, endpoint.ClientId);
         }
+    }
+
+    private static async Task StageDisabledNoticeAsync(AppDbContext db, IEmailSender email, WebhookEndpoint endpoint, int failures, CancellationToken cancellationToken)
+    {
+        var client = await db.Clients.AsNoTracking().FirstOrDefaultAsync(c => c.Id == endpoint.ClientId, cancellationToken);
+        if (client is null || string.IsNullOrWhiteSpace(client.ContactEmail))
+        {
+            return;
+        }
+
+        // Host and path only: a query string may carry a secret.
+        var shown = Uri.TryCreate(endpoint.Url, UriKind.Absolute, out var uri) ? uri.GetLeftPart(UriPartial.Path) : "(unreadable address)";
+        await email.SendAsync(
+            new EmailRequest(EmailTemplate.WebhookEndpointDisabled, client.ContactEmail)
+                .Text("company", client.Name)
+                .Text("endpoint", shown)
+                .Number("failures", failures)
+                .Link("manage", $"client/webhooks/{endpoint.Id:D}"),
+            cancellationToken);
     }
 }

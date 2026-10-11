@@ -23,6 +23,8 @@
     <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
     <PackageVersion Include="SkiaSharp" Version="3.119.2" />
     <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.2" />
+    <!-- SMTP delivery for the email dispatcher (MIT licence; also pulls MimeKit and BouncyCastle.Cryptography, both MIT). -->
+    <PackageVersion Include="MailKit" Version="4.18.1" />
     <PackageVersion Include="MudBlazor" Version="9.11.0" />
     <!-- QR code module matrix for the MFA enrolment page (MIT licence; only the matrix is used, rendering is done by a Blazor component). -->
     <PackageVersion Include="QRCoder" Version="1.6.0" />

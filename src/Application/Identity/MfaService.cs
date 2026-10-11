@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using NexaVerify.Application.Abstractions;
 using NexaVerify.Application.Auditing;
 using NexaVerify.Application.Common;
+using NexaVerify.Application.Messaging;
 using NexaVerify.Application.Persistence;
 using NexaVerify.Contracts.Common;
 using NexaVerify.Contracts.Identity;
@@ -62,6 +63,7 @@ public sealed class MfaService : IMfaService
     private readonly IClientAccessGuard _clientGuard;
     private readonly ISessionValidator _sessions;
     private readonly IAuditService _audit;
+    private readonly IEmailSender _email;
     private readonly ICurrentUser _currentUser;
     private readonly IRequestInfo _request;
     private readonly IUnitOfWork _unitOfWork;
@@ -85,6 +87,7 @@ public sealed class MfaService : IMfaService
         IClientAccessGuard clientGuard,
         ISessionValidator sessions,
         IAuditService audit,
+        IEmailSender email,
         ICurrentUser currentUser,
         IRequestInfo request,
         IUnitOfWork unitOfWork,
@@ -107,6 +110,7 @@ public sealed class MfaService : IMfaService
         _clientGuard = clientGuard;
         _sessions = sessions;
         _audit = audit;
+        _email = email;
         _currentUser = currentUser;
         _request = request;
         _unitOfWork = unitOfWork;
@@ -217,6 +221,7 @@ public sealed class MfaService : IMfaService
 
         var session = await _sessionIssuer.IssueAsync(user, familyId: null, now, cancellationToken);
         _audit.Record(new AuditEntry(AuditActions.MfaEnabled, nameof(User), user.Id.ToString(), user.ClientId, ActorId: user.Id));
+        await _email.SendAsync(SecurityNotices.MfaEnabled(user, now), cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         _sessions.Invalidate(user.Id);
         return new MfaEnabledDto(codes, session);
@@ -337,6 +342,11 @@ public sealed class MfaService : IMfaService
         var session = await _sessionIssuer.IssueAsync(user, familyId: null, now, cancellationToken);
         RecordLogin(user, LoginOutcome.Success, null);
         _audit.Record(new AuditEntry(AuditActions.MfaVerified, nameof(User), user.Id.ToString(), user.ClientId, NewValues: new { Method = method }, ActorId: user.Id));
+        if (method == "recovery")
+        {
+            await _email.SendAsync(SecurityNotices.MfaRecoveryCodeUsed(user, now), cancellationToken);
+        }
+
         await _unitOfWork.SaveChangesAsync(CancellationToken.None);
         return session;
     }
@@ -387,6 +397,7 @@ public sealed class MfaService : IMfaService
 
         _audit.Record(new AuditEntry(AuditActions.MfaReset, nameof(User), user.Id.ToString(), user.ClientId,
             NewValues: new { request.Reason, TargetUserId = user.Id }, ActorId: actorId));
+        await _email.SendAsync(SecurityNotices.MfaDisabled(user, now), cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         _sessions.Invalidate(user.Id);
         return Result.Success();

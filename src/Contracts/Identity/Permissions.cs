@@ -144,6 +144,15 @@ public static class Permissions
         public const string Refund = "billing.refund";
     }
 
+    public static class Email
+    {
+        /// <summary>Platform: see full recipient addresses in the email outbox and the suppression list (without it addresses are masked).</summary>
+        public const string Read = "email.read";
+
+        /// <summary>Platform: retry failed emails, clear suppressed addresses and send a test email.</summary>
+        public const string Manage = "email.manage";
+    }
+
     public static class Faces
     {
         public const string Enroll = "faces.enroll";
@@ -188,6 +197,9 @@ public static class Permissions
         new(Billing.PacksManage, "Billing", PermissionScopeKind.Platform, "Manage the credit packs clients can buy"),
         new(Billing.OrdersRead, "Billing", PermissionScopeKind.Platform, "View clients' payment orders and the billing configuration"),
         new(Billing.Refund, "Billing", PermissionScopeKind.Platform, "Refund or reconcile a payment order"),
+
+        new(Email.Read, "Email", PermissionScopeKind.Platform, "See full recipient addresses in the email outbox and suppression list"),
+        new(Email.Manage, "Email", PermissionScopeKind.Platform, "Retry failed emails, clear suppressed addresses and send a test email"),
 
         new(Billing.Read, "Billing", PermissionScopeKind.Client, "View credit packs, orders, invoices and the billing profile"),
         new(Billing.Manage, "Billing", PermissionScopeKind.Client, "Buy credit packs and edit the billing profile"),
