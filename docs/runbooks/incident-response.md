@@ -51,7 +51,7 @@ Connection pool exhaustion, deadlocks, full disk, failover: see SQL Server logs;
 ## 3. Suspected data breach (SEV1)
 
 1. IC declares; restrict who has production access (use the kill switch / take the API out of rotation if exfiltration is ongoing).
-2. Contain: revoke keys of affected clients, rotate JWT key (ends sessions), rotate DB passwords, rotate other exposed secrets ([key-rotation](key-rotation.md)). Master key exposure has no supported in-place rotation yet: escalate to engineering immediately.
+2. Contain: revoke keys of affected clients, rotate JWT key (ends sessions), rotate DB passwords, rotate other exposed secrets ([key-rotation](key-rotation.md)). Master key exposure: rotate online with `Migrator rotate-master-key` and follow the compromise procedure in [key-rotation](key-rotation.md) section 3 (rotation re-wraps data keys but does not change them: also assess data-key re-keying if the database was exposed).
 3. Preserve evidence (logs, snapshots, audit rows); do not wipe hosts.
 4. Assess scope with audit and request logs (what, which tenants, which period). Biometric templates are encrypted per client; their exposure depends on key exposure.
 5. Notify: legal/DPO decide on regulator and customer notification (GDPR 72 h clock starts at awareness). Draft the customer message from facts only.

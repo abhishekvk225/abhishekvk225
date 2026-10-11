@@ -77,6 +77,41 @@ public sealed class LedgerCheckpoint : ITenantOwned, IAppendOnly
 }
 
 /// <summary>
+/// Records that a checkpoint was replaced by a re-signed copy of itself during a master-key rotation. Checkpoints are append-only, so
+/// "superseded" is a separate append-only fact: a superseded checkpoint stays in the table (evidence) but is no longer checked, which is
+/// what lets the old key be retired. Written in the same transaction as the replacement.
+/// </summary>
+public sealed class LedgerCheckpointSupersession : ITenantOwned, IAppendOnly
+{
+    private LedgerCheckpointSupersession()
+    {
+    }
+
+    public long Id { get; private set; }
+
+    public Guid ClientId { get; set; }
+
+    public Guid LicenseId { get; private set; }
+
+    /// <summary>The checkpoint that no longer counts.</summary>
+    public long CheckpointId { get; private set; }
+
+    /// <summary>The checkpoint (same content, newer key) that replaces it.</summary>
+    public long ReplacedByCheckpointId { get; private set; }
+
+    public DateTime SupersededAt { get; private set; }
+
+    public static LedgerCheckpointSupersession Create(LedgerCheckpoint old, long replacedBy, DateTime now) => new()
+    {
+        ClientId = old.ClientId,
+        LicenseId = old.LicenseId,
+        CheckpointId = old.Id,
+        ReplacedByCheckpointId = replacedBy,
+        SupersededAt = new DateTime(now.Ticks - now.Ticks % TimeSpan.TicksPerMillisecond, DateTimeKind.Utc),
+    };
+}
+
+/// <summary>
 /// One persistent ledger finding, remembered so that a break that stays broken is reported to the audit trail ONCE (per license and
 /// first broken row) instead of every night. The operator alert (Critical log event 7001) fires when the record is opened and then
 /// only as an occasional reminder; quiet runs log a Warning (event 7003).

@@ -2005,10 +2005,48 @@ namespace NexaVerify.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("ClientId");
 
-                    b.HasIndex("LicenseId", "LastEntryId")
+                    b.HasIndex("LicenseId", "LastEntryId", "KeyId")
                         .IsUnique();
 
                     b.ToTable("LedgerCheckpoints", "licensing");
+                });
+
+            modelBuilder.Entity("NexaVerify.Domain.Licensing.LedgerCheckpointSupersession", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("CheckpointId")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("LicenseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("ReplacedByCheckpointId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("SupersededAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CheckpointId")
+                        .IsUnique();
+
+                    b.HasIndex("ClientId");
+
+                    b.HasIndex("LicenseId");
+
+                    b.HasIndex("ReplacedByCheckpointId");
+
+                    b.ToTable("LedgerCheckpointSupersessions", "licensing");
                 });
 
             modelBuilder.Entity("NexaVerify.Domain.Licensing.LedgerVerificationRun", b =>
@@ -3258,6 +3296,27 @@ namespace NexaVerify.Infrastructure.Persistence.Migrations
                     b.HasOne("NexaVerify.Domain.Licensing.License", null)
                         .WithMany()
                         .HasForeignKey("LicenseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("NexaVerify.Domain.Licensing.LedgerCheckpointSupersession", b =>
+                {
+                    b.HasOne("NexaVerify.Domain.Licensing.LedgerCheckpoint", null)
+                        .WithMany()
+                        .HasForeignKey("CheckpointId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NexaVerify.Domain.Tenancy.Client", null)
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NexaVerify.Domain.Licensing.LedgerCheckpoint", null)
+                        .WithMany()
+                        .HasForeignKey("ReplacedByCheckpointId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

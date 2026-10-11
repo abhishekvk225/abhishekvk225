@@ -262,8 +262,15 @@ public sealed class LedgerAnchorService
         LedgerCheckpoint.Create(licenseId, clientId, verified.LastEntryId, verified.Entries, verified.LastHash, verified.LastBalance, _crypto.KeyId,
             _time.GetUtcNow().UtcDateTime, bytes => _crypto.ComputeMac(CryptoPurposes.LedgerAnchor, bytes));
 
+    /// <summary>True when the checkpoint's MAC verifies under the key it names (a rotated checkpoint is checked with its own key, not the current one). Unknown key: false.</summary>
     public bool IsAuthentic(LedgerCheckpoint checkpoint) =>
-        CryptographicOperations.FixedTimeEquals(checkpoint.Mac, _crypto.ComputeMac(CryptoPurposes.LedgerAnchor, checkpoint.CanonicalBytes()));
+        _crypto.HasKey(checkpoint.KeyId)
+        && CryptographicOperations.FixedTimeEquals(checkpoint.Mac, _crypto.ComputeMac(CryptoPurposes.LedgerAnchor, checkpoint.CanonicalBytes(), checkpoint.KeyId));
+
+    /// <summary>Signs the same content as <paramref name="source"/> (same head, count, balance and timestamp) under the current key: the re-anchor of a key rotation.</summary>
+    public LedgerCheckpoint Resign(LedgerCheckpoint source) =>
+        LedgerCheckpoint.Create(source.LicenseId, source.ClientId, source.LastEntryId, source.EntryCount, source.HeadHash, source.BalanceAfter, _crypto.KeyId,
+            source.CreatedAt, bytes => _crypto.ComputeMac(CryptoPurposes.LedgerAnchor, bytes));
 
     /// <summary>The license's checkpoints split into the authentic ones (to compare against the ledger) and problems for forged ones.</summary>
     public async Task<(IReadOnlyList<LedgerCheckpoint> Authentic, IReadOnlyList<LedgerProblem> Forged)> LoadAsync(Guid licenseId, CancellationToken cancellationToken)
@@ -280,7 +287,9 @@ public sealed class LedgerAnchorService
             {
                 forged.Add(new LedgerProblem(
                     null,
-                    $"The signed checkpoint {checkpoint.Id} (entry {checkpoint.LastEntryId}) fails its signature check: it was altered, or the anchor key changed.",
+                    _crypto.HasKey(checkpoint.KeyId)
+                        ? $"The signed checkpoint {checkpoint.Id} (entry {checkpoint.LastEntryId}) fails its signature check: it was altered, or the anchor key changed."
+                        : $"The signed checkpoint {checkpoint.Id} (entry {checkpoint.LastEntryId}) was made with master key '{checkpoint.KeyId}', which is not in the keyring (Encryption:Keys): it cannot be verified.",
                     $"checkpoint-signature:{checkpoint.Id}"));
             }
         }

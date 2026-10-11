@@ -71,10 +71,14 @@ public sealed class AuthApp : IAsyncDisposable
 
     public HttpClient Client { get; }
 
-    public static async Task<AuthApp> CreateAsync(SqlServerFixture fixture, IReadOnlyDictionary<string, string>? settings = null, Action<IServiceCollection>? configure = null)
+    public static async Task<AuthApp> CreateAsync(SqlServerFixture fixture, IReadOnlyDictionary<string, string>? settings = null, Action<IServiceCollection>? configure = null, string? existingConnectionString = null)
     {
-        var connectionString = await fixture.CreateDatabaseAsync();
-        await DatabaseBootstrap.MigrateAsync(connectionString);
+        // existingConnectionString: another API instance (another configuration, e.g. a different master keyring) over a database that already has data.
+        var connectionString = existingConnectionString ?? await fixture.CreateDatabaseAsync();
+        if (existingConnectionString is null)
+        {
+            await DatabaseBootstrap.MigrateAsync(connectionString);
+        }
 
         var emails = new OutboxMailbox(connectionString);
         var factory = new ApiFactory
@@ -266,6 +270,12 @@ public sealed class AuthApp : IAsyncDisposable
     {
         Client.Dispose();
         await Factory.DisposeAsync();
-        await SqlServerFixture.TryDropDatabaseAsync(ConnectionString);
+        if (!KeepDatabase)
+        {
+            await SqlServerFixture.TryDropDatabaseAsync(ConnectionString);
+        }
     }
+
+    /// <summary>Set when another instance continues on the same database (the last instance to be disposed drops it).</summary>
+    public bool KeepDatabase { get; set; }
 }

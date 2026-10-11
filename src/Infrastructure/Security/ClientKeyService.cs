@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using System.ComponentModel.DataAnnotations;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
@@ -11,51 +10,6 @@ using NexaVerify.Application.Persistence;
 using NexaVerify.Domain.Tenancy;
 
 namespace NexaVerify.Infrastructure.Security;
-
-public sealed class EncryptionOptions
-{
-    public const string SectionName = "Encryption";
-
-    /// <summary>Base64 of the 32-byte master key (KEK) that wraps every client's data key. A secret — supply via a key vault / secret store.</summary>
-    public string? MasterKeyBase64 { get; set; }
-
-    /// <summary>Identifier stored with wrapped keys; bump when the master key is rotated.</summary>
-    [Required]
-    public string MasterKeyId { get; set; } = "m1";
-
-    /// <summary>Development/test only: generate a throw-away master key (data does not survive a restart).</summary>
-    public bool AllowEphemeralKey { get; set; }
-}
-
-public sealed class MasterKeyProvider
-{
-    public MasterKeyProvider(IOptions<EncryptionOptions> options, ILogger<MasterKeyProvider> logger)
-    {
-        var o = options.Value;
-        MasterKeyId = o.MasterKeyId;
-        if (!string.IsNullOrWhiteSpace(o.MasterKeyBase64))
-        {
-            Key = Convert.FromBase64String(o.MasterKeyBase64);
-            if (Key.Length != 32)
-            {
-                throw new InvalidOperationException("Encryption:MasterKeyBase64 must decode to exactly 32 bytes.");
-            }
-        }
-        else if (o.AllowEphemeralKey)
-        {
-            Key = RandomNumberGenerator.GetBytes(32);
-            logger.LogWarning("Using an EPHEMERAL master key: encrypted data is unreadable after restart. Never use this in production.");
-        }
-        else
-        {
-            throw new InvalidOperationException("Encryption:MasterKeyBase64 is not configured. Provide a 32-byte base64 key through a secret store.");
-        }
-    }
-
-    public string MasterKeyId { get; }
-
-    internal byte[] Key { get; }
-}
 
 /// <summary>
 /// Envelope encryption: each client has its own random 256-bit data key, stored only wrapped by the master key. Ciphertexts are
@@ -87,7 +41,7 @@ public sealed class ClientKeyService : IClientKeyProvisioner, IClientEncryption
         var dataKey = RandomNumberGenerator.GetBytes(32);
         try
         {
-            _db.ClientKeys.Add(ClientKey.Create(clientId, 1, Wrap(clientId, 1, dataKey), _master.MasterKeyId, _time.GetUtcNow().UtcDateTime));
+            _db.ClientKeys.Add(ClientKey.Create(clientId, 1, DataKeyWrapper.Wrap(_master, _master.CurrentKeyId, clientId, 1, dataKey), _master.CurrentKeyId, _time.GetUtcNow().UtcDateTime));
         }
         finally
         {
@@ -168,30 +122,11 @@ public sealed class ClientKeyService : IClientKeyProvisioner, IClientEncryption
                 throw new CryptographicException("The client's encryption key has been destroyed.");
             }
 
-            return new DataKey(version, Unwrap(clientId, version, row.WrappedDataKey));
+            return new DataKey(version, DataKeyWrapper.Unwrap(_master, row.MasterKeyId, clientId, version, row.WrappedDataKey));
         });
 
         return key!;
     }
-
-    private byte[] Wrap(Guid clientId, int version, byte[] dataKey)
-    {
-        var wrapped = new byte[NonceSize + TagSize + dataKey.Length];
-        RandomNumberGenerator.Fill(wrapped.AsSpan(0, NonceSize));
-        using var aes = new AesGcm(_master.Key, TagSize);
-        aes.Encrypt(wrapped.AsSpan(0, NonceSize), dataKey, wrapped.AsSpan(NonceSize + TagSize), wrapped.AsSpan(NonceSize, TagSize), WrapAad(clientId, version));
-        return wrapped;
-    }
-
-    private byte[] Unwrap(Guid clientId, int version, byte[] wrapped)
-    {
-        var dataKey = new byte[wrapped.Length - NonceSize - TagSize];
-        using var aes = new AesGcm(_master.Key, TagSize);
-        aes.Decrypt(wrapped.AsSpan(0, NonceSize), wrapped.AsSpan(NonceSize + TagSize), wrapped.AsSpan(NonceSize, TagSize), dataKey, WrapAad(clientId, version));
-        return dataKey;
-    }
-
-    private byte[] WrapAad(Guid clientId, int version) => Encoding.UTF8.GetBytes($"dek|{clientId:N}|{version}|{_master.MasterKeyId}");
 
     private static byte[] Aad(Guid clientId, string purpose, int version) => Encoding.UTF8.GetBytes($"data|{clientId:N}|{purpose}|{version}");
 
@@ -200,4 +135,39 @@ public sealed class ClientKeyService : IClientKeyProvisioner, IClientEncryption
     private static string ActiveKey(Guid clientId) => $"dek-active:{clientId:N}";
 
     private sealed record DataKey(int Version, byte[] Material);
+}
+
+/// <summary>
+/// Wraps and unwraps client data keys under a named master key (AES-256-GCM; client, key version and key id are authenticated, so a
+/// wrapped key cannot be moved or re-labelled). The key id is an explicit argument: reads use the id stored in the row, never "whatever is current".
+/// </summary>
+public static class DataKeyWrapper
+{
+    private const int NonceSize = 12;
+    private const int TagSize = 16;
+
+    public static byte[] Wrap(MasterKeyProvider master, string keyId, Guid clientId, int version, byte[] dataKey)
+    {
+        var wrapped = new byte[NonceSize + TagSize + dataKey.Length];
+        RandomNumberGenerator.Fill(wrapped.AsSpan(0, NonceSize));
+        using var aes = new AesGcm(master.GetKey(keyId), TagSize);
+        aes.Encrypt(wrapped.AsSpan(0, NonceSize), dataKey, wrapped.AsSpan(NonceSize + TagSize), wrapped.AsSpan(NonceSize, TagSize), Aad(clientId, version, keyId));
+        return wrapped;
+    }
+
+    /// <summary>Throws <see cref="UnknownMasterKeyException"/> for an id outside the ring, <see cref="CryptographicException"/> for a wrong key or tampering.</summary>
+    public static byte[] Unwrap(MasterKeyProvider master, string keyId, Guid clientId, int version, byte[] wrapped)
+    {
+        if (wrapped.Length < NonceSize + TagSize)
+        {
+            throw new CryptographicException("The wrapped key is malformed.");
+        }
+
+        var dataKey = new byte[wrapped.Length - NonceSize - TagSize];
+        using var aes = new AesGcm(master.GetKey(keyId), TagSize);
+        aes.Decrypt(wrapped.AsSpan(0, NonceSize), wrapped.AsSpan(NonceSize + TagSize), wrapped.AsSpan(NonceSize, TagSize), dataKey, Aad(clientId, version, keyId));
+        return dataKey;
+    }
+
+    private static byte[] Aad(Guid clientId, int version, string keyId) => Encoding.UTF8.GetBytes($"dek|{clientId:N}|{version}|{keyId}");
 }

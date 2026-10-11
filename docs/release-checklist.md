@@ -50,7 +50,9 @@ Release: `v____`  Commit: `____`  Date: `____`  Release manager: `____`
 | D1 | [Staging soak test](runbooks/staging-soak-test.md) completed on this release candidate; results attached; all pass criteria met | **blocker** |
 | D2 | Backup restore drill performed this quarter: RTO ____ / RPO ____ meet targets; backups are off-host and encrypted | **blocker** |
 | D3 | Master key and JWT key backed up in the vault with two-person access; recovery tested | **blocker** |
-| D4 | **Master-key rotation/re-anchor tooling** ([key-rotation](runbooks/key-rotation.md) section 3) exists and was rehearsed, **or** the risk is accepted in writing with the interim plan | **blocker** until accepted |
+| D4 | **Master-key rotation** ([key-rotation](runbooks/key-rotation.md) section 3): the tooling exists (`Migrator rotate-master-key`, `rotation-status`, `verify-keyring`); **rehearse it on a restored production backup** (dry-run, rotate A to B, `rotation-status` 100%, retire A, `verify-keyring` exit 0, `/health/keyring` healthy) and record the evidence | **blocker** until the rehearsal is recorded |
+| D4a | `Encryption:Keys` + `CurrentKeyId` configured in production (or the legacy single key kept unchanged), `/health/keyring` returns `Healthy`, old keys vaulted with the retention of the backups that need them | **blocker** |
+| D4b | JWT keyring procedure (`Jwt:Keys`, runbook section 1) understood by on-call; portal `DataProtection__KeyPath` is shared, persistent and in the backup set (runbook section 1b) | major |
 | D5 | Monitoring live: health probes, dashboards, alert routing to a staffed channel; every alert fired once in drill (S13); thresholds tuned | **blocker** |
 | D6 | Log shipping live, retention set; **event 7002 shipped to write-once storage** and its silence alert active | **blocker** |
 | D7 | Business gauges gap acknowledged ([monitoring](runbooks/monitoring.md) section 5) with interim procedure (admin dashboard checks) | |
