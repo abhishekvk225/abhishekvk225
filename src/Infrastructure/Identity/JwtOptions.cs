@@ -28,11 +28,33 @@ public sealed class JwtOptions
     [Required]
     public string SigningKeyId { get; set; } = "k1";
 
+    /// <summary>
+    /// The JWT keyring: every key whose tokens are still accepted, with its key id. Tokens are signed with <see cref="CurrentKeyId"/> (which
+    /// needs <see cref="JwtKeyEntry.SigningKeyPem"/>); entries holding only a public key just validate. Rotate by adding the new key,
+    /// switching <see cref="CurrentKeyId"/>, and removing the old entry after <see cref="AccessTokenMinutes"/> plus clock skew. The legacy
+    /// single-key settings below keep working and count as ring entries.
+    /// </summary>
+    public List<JwtKeyEntry> Keys { get; set; } = [];
+
+    /// <summary>Which ring entry signs new tokens. Defaults to <see cref="SigningKeyId"/>.</summary>
+    public string? CurrentKeyId { get; set; }
+
     /// <summary>Public keys of previous signing keys, still accepted for validation during rotation.</summary>
     public List<PublicKeyEntry> AdditionalValidationKeys { get; set; } = [];
 
     /// <summary>Development/test only: generate a throw-away key at startup (tokens die on restart, and break across instances).</summary>
     public bool AllowEphemeralKey { get; set; }
+
+    public sealed class JwtKeyEntry
+    {
+        public string KeyId { get; set; } = string.Empty;
+
+        /// <summary>ECDSA P-256 private key PEM (a secret; supply through the secret store). Required for the current key.</summary>
+        public string? SigningKeyPem { get; set; }
+
+        /// <summary>Public key PEM, for an old key that only validates.</summary>
+        public string? PublicKeyPem { get; set; }
+    }
 
     public sealed class PublicKeyEntry
     {
