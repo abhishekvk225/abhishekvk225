@@ -93,6 +93,8 @@ public class AppDbContext : DbContext, IUnitOfWork
 
     public DbSet<LedgerCheckpoint> LedgerCheckpoints => Set<LedgerCheckpoint>();
 
+    public DbSet<LedgerCheckpointSupersession> LedgerCheckpointSupersessions => Set<LedgerCheckpointSupersession>();
+
     public DbSet<LedgerBreakRecord> LedgerBreakRecords => Set<LedgerBreakRecord>();
 
     public DbSet<LedgerVerificationRun> LedgerVerificationRuns => Set<LedgerVerificationRun>();

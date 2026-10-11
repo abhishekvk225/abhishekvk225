@@ -9,6 +9,9 @@ public interface IPlatformCrypto
     /// <summary>Identifier of the master key in use (stored next to a MAC so a key rotation can be told apart from tampering).</summary>
     string KeyId { get; }
 
+    /// <summary>True when the keyring holds <paramref name="keyId"/> (a record naming an unknown key cannot be read or verified, and must not be silently re-keyed).</summary>
+    bool HasKey(string keyId);
+
     /// <summary>AES-256-GCM. <paramref name="context"/> (for example the owning user id) is authenticated, so a ciphertext cannot be moved to another record.</summary>
     byte[] Protect(ReadOnlySpan<byte> plaintext, string purpose, string context);
 
@@ -17,6 +20,9 @@ public interface IPlatformCrypto
 
     /// <summary>HMAC-SHA256 under the purpose's derived key. The key never leaves the process and is not stored in the database.</summary>
     byte[] ComputeMac(string purpose, ReadOnlySpan<byte> data);
+
+    /// <summary>HMAC-SHA256 under the key <paramref name="keyId"/> (to verify a record made under an older key). Throws when the key is not in the keyring.</summary>
+    byte[] ComputeMac(string purpose, ReadOnlySpan<byte> data, string keyId);
 }
 
 /// <summary>Purpose labels for <see cref="IPlatformCrypto"/> (each yields an independent key).</summary>
@@ -24,4 +30,7 @@ public static class CryptoPurposes
 {
     public const string MfaSecret = "mfa-secret";
     public const string LedgerAnchor = "ledger-anchor";
+
+    /// <summary>The authenticated context of a user's MFA secret (shared by the MFA service and the key-rotation tool, so both seal and open it identically).</summary>
+    public static string MfaSecretContext(Guid userId) => userId.ToString("N");
 }

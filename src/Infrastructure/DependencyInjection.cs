@@ -135,6 +135,7 @@ public static class DependencyInjection
         services.AddScoped<IClientMembershipRepository, ClientMembershipRepository>();
         services.AddScoped<IClientQueries, ClientQueries>();
         services.AddOptions<EncryptionOptions>().Bind(configuration.GetSection(EncryptionOptions.SectionName)).ValidateDataAnnotations().ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<EncryptionOptions>, EncryptionOptionsValidator>());
         services.AddSingleton<MasterKeyProvider>();
         services.AddSingleton<PlatformCrypto>();
         services.AddSingleton<IPlatformCrypto>(sp => sp.GetRequiredService<PlatformCrypto>());
