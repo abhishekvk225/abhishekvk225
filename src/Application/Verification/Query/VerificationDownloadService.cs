@@ -174,6 +174,11 @@ public sealed class VerificationDownloadService : IVerificationDownloadService
             return new DownloadContent(bytes.Value, document.ContentType, $"verification-{requestId:N}{document.Extension}");
         }
 
+        if (!await _permissions.HasPermissionAsync(Permissions.Verification.ReportDownload, cancellationToken).ConfigureAwait(false))
+        {
+            return Error.Forbidden(ErrorCodes.Forbidden, "You do not have permission to download reports.");
+        }
+
         var result = await _query.GetResultAsync(requestId, cancellationToken).ConfigureAwait(false);
         if (result.IsFailure)
         {

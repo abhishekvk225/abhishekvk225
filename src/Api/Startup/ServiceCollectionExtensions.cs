@@ -68,6 +68,7 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
         services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
+        services.AddScoped<NexaVerify.Application.Abstractions.IPermissionEvaluator, HttpPermissionEvaluator>();
         services.AddAuthorization(options =>
         {
             // Deny by default: every endpoint requires authentication unless it opts out with [AllowAnonymous].

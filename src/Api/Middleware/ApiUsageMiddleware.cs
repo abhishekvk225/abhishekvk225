@@ -8,12 +8,13 @@ using NexaVerify.Contracts.Common;
 namespace NexaVerify.Api.Middleware;
 
 /// <summary>
-/// For API-key calls and the face endpoints: enforces the per-credential rate limit and the per-client daily quota, then records
+/// For API-key calls, the face endpoints and state-changing verification calls: enforces the per-credential rate limit and the per-client daily quota, then records
 /// the call (route template, status, timing — never bodies or query strings) for the client's usage screens.
 /// </summary>
 public sealed class ApiUsageMiddleware
 {
     private const string FacePrefix = "/api/v1/faces";
+    private const string VerificationPrefix = "/api/v1/verifications";
 
     private readonly RequestDelegate _next;
 
@@ -61,7 +62,11 @@ public sealed class ApiUsageMiddleware
     }
 
     private static bool IsMetered(HttpContext context, ICurrentUser user) =>
-        user.ActorType == ActorType.ApiKey || context.Request.Path.StartsWithSegments(FacePrefix, StringComparison.OrdinalIgnoreCase);
+        user.ActorType == ActorType.ApiKey
+        || context.Request.Path.StartsWithSegments(FacePrefix, StringComparison.OrdinalIgnoreCase)
+        // Document verification: state-changing calls of portal users count against the rate limit and daily quota like face calls;
+        // polling (GET) does not, so a portal waiting for a result cannot exhaust the quota. API keys are metered for every call.
+        || (!HttpMethods.IsGet(context.Request.Method) && context.Request.Path.StartsWithSegments(VerificationPrefix, StringComparison.OrdinalIgnoreCase));
 
     private static void Record(HttpContext context, ICurrentUser user, Guid clientId, IApiRequestLogSink sink, TimeProvider time, long started)
     {
