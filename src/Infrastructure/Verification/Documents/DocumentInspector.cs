@@ -211,7 +211,7 @@ public sealed class DocumentInspector : IDocumentInspector, IDisposable
             using var doc = PdfDocument.Open(content, new ParsingOptions { UseLenientParsing = true, SkipMissingFonts = true });
             if (doc.IsEncrypted || encryptedMarker)
             {
-                return Fail(ErrorCodes.DocumentEncrypted, "Encrypted or password-protected PDFs are not accepted.", ErrorType.Validation);
+                return Fail(ErrorCodes.DocumentEncrypted, "Encrypted or password-protected PDFs are not accepted.", ErrorType.UnprocessableEntity);
             }
 
             if (doc.NumberOfPages < 1)
@@ -221,13 +221,13 @@ public sealed class DocumentInspector : IDocumentInspector, IDisposable
 
             if (doc.NumberOfPages > policy.MaxPages)
             {
-                return Fail(ErrorCodes.DocumentTooManyPages, "The PDF has more pages than allowed.", ErrorType.Validation);
+                return Fail(ErrorCodes.DocumentTooManyPages, "The PDF has more pages than allowed.", ErrorType.UnprocessableEntity);
             }
 
             var active = HasActiveContent(doc, content);
             if (active && policy.RejectActiveContent)
             {
-                return Fail(ErrorCodes.DocumentActiveContent, "PDFs with scripts, launch actions or embedded files are not accepted.", ErrorType.Validation);
+                return Fail(ErrorCodes.DocumentActiveContent, "PDFs with scripts, launch actions or embedded files are not accepted.", ErrorType.UnprocessableEntity);
             }
 
             return new DocumentInspection(DocumentKind.Pdf, ContentTypeOf(DocumentKind.Pdf), extension, doc.NumberOfPages, null, null, false, active, sha);
@@ -236,7 +236,7 @@ public sealed class DocumentInspector : IDocumentInspector, IDisposable
         {
             if (encryptedMarker || ex.GetType().Name.Contains("Encrypt", StringComparison.OrdinalIgnoreCase))
             {
-                return Fail(ErrorCodes.DocumentEncrypted, "Encrypted or password-protected PDFs are not accepted.", ErrorType.Validation);
+                return Fail(ErrorCodes.DocumentEncrypted, "Encrypted or password-protected PDFs are not accepted.", ErrorType.UnprocessableEntity);
             }
 
             _logger.LogInformation("PDF inspection failed ({ExceptionType})", ex.GetType().Name);

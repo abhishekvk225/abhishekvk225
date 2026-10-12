@@ -46,6 +46,15 @@ public static class ApiKeyScopes
         Permissions.Faces.Manage,
         Permissions.Faces.Erase,
         Permissions.Faces.History,
+
+        // M14 document verification: submit, read and report downloads are integration operations. The original-document download
+        // (identity documents) is deliberately not assignable to a key.
+        Permissions.Verification.BankStatementSubmit,
+        Permissions.Verification.PanSubmit,
+        Permissions.Verification.PassportSubmit,
+        Permissions.Verification.Read,
+        Permissions.Verification.ReportDownload,
+        Permissions.Verification.Erase,
     ];
 
     public static string Describe(string key) => Permissions.All.FirstOrDefault(p => p.Key == key)?.Description ?? key;
