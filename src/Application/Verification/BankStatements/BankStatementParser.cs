@@ -66,13 +66,13 @@ public sealed class BankStatementParser : IBankStatementParser
                 continue;
             }
 
+            nonTxLines.Add(line); // header and footer fields are read from every non-transaction line
             if (ignore.Any(rx => TextSupport.SafeMatch(rx, line) is not null))
             {
                 last = null;
                 continue;
             }
 
-            nonTxLines.Add(line);
             if (TextSupport.SafeMatch(dateStart, line) is not null)
             {
                 unparsedDateLines++;
