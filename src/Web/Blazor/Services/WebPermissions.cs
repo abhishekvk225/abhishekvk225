@@ -64,6 +64,17 @@ public static class WebPermissions
     public const string BillingOrdersRead = BillingPermissions.OrdersRead;
     public const string BillingRefund = BillingPermissions.Refund;
 
+    // Document verification (M14): the nine keys of docs/07 §10.1.
+    public const string VerificationBankStatementSubmit = Permissions.Verification.BankStatementSubmit;
+    public const string VerificationPanSubmit = Permissions.Verification.PanSubmit;
+    public const string VerificationPassportSubmit = Permissions.Verification.PassportSubmit;
+    public const string VerificationRead = Permissions.Verification.Read;
+    public const string VerificationReportDownload = Permissions.Verification.ReportDownload;
+    public const string VerificationDocumentDownload = Permissions.Verification.DocumentDownload;
+    public const string VerificationErase = Permissions.Verification.Erase;
+    public const string VerificationAdminRead = Permissions.VerificationAdmin.Read;
+    public const string VerificationAdminConfigure = Permissions.VerificationAdmin.Configure;
+
     /// <summary>Permissions of the default Super Admin role (used by tests and the design stubs).</summary>
     public static IReadOnlyList<string> SuperAdminDefaults => SystemRoles.PermissionsFor(SystemRoles.SuperAdmin);
 

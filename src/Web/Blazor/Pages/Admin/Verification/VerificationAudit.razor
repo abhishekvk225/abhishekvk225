@@ -1,0 +1,28 @@
+@page "/admin/verification/audit"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.AuditRead)]
+@inject IAdminVerificationApiClient Api
+
+<PageTitle>Verification audit · Admin · NexaVerify</PageTitle>
+
+<PageHeader Title="Verification audit" Subtitle="Changes to modules and prices, and times platform staff opened a client's request." />
+
+<MudPaper Class="nv-card" Elevation="0">
+    <DataTable T="AuditLogDto" Caption="Verification audit trail" Columns="_columns" LoadPage="LoadAsync" PageSize="25" EmptyMessage="Nothing has been recorded yet." />
+</MudPaper>
+
+@code {
+    private IReadOnlyList<DataColumn<AuditLogDto>> _columns = [];
+
+    protected override void OnInitialized() =>
+        _columns =
+        [
+            DataColumn<AuditLogDto>.Text("When", a => VerificationText.When(a.OccurredAt)),
+            DataColumn<AuditLogDto>.Text("What happened", a => a.Action),
+            DataColumn<AuditLogDto>.Text("About", a => $"{a.EntityType} {a.EntityId}"),
+            DataColumn<AuditLogDto>.Text("By", a => a.ActorType),
+            DataColumn<AuditLogDto>.Text("Reference", a => a.CorrelationId),
+        ];
+
+    private Task<ApiResult<PagedResult<AuditLogDto>>> LoadAsync(PageRequest page, CancellationToken ct) =>
+        Api.GetAuditAsync(new ActivityQuery { Page = page.Page, PageSize = page.PageSize }, ct);
+}

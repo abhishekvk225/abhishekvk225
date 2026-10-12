@@ -1,0 +1,124 @@
+@page "/admin/verification/modules"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.VerificationAdminRead)]
+@implements IDisposable
+@inject IAdminVerificationApiClient Api
+@inject IDialogService Dialogs
+@inject IAppSnackbar Snackbar
+
+<PageTitle>Verification modules · Admin · NexaVerify</PageTitle>
+
+<PageHeader Title="Verification modules" Subtitle="Which document checks are on, whether an official provider is set up, and what each step costs." />
+
+<MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4" data-testid="modules-note">
+    Provider credentials are kept in secure configuration and are never shown here. This page only says whether a provider is set up.
+</MudAlert>
+
+<PageState T="IReadOnlyList<AdminVerificationModuleDto>" Result="_state.Result" OnRetry="LoadAsync" IsEmpty="@(m => m.Count == 0)" EmptyTitle="No modules found">
+    <Loading><div class="nv-module-grid"><MudPaper Class="nv-card nv-card-pad" Elevation="0"><SkeletonCard Lines="4" /></MudPaper><MudPaper Class="nv-card nv-card-pad" Elevation="0"><SkeletonCard Lines="4" /></MudPaper></div></Loading>
+    <ChildContent Context="modules">
+        <div class="nv-module-grid" style="grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));" data-testid="admin-modules">
+            @foreach (var module in modules.OrderBy(m => m.DisplayOrder))
+            {
+                @if (module.Status == "Upcoming")
+                {
+                    <div class="nv-card nv-module-card nv-module-upcoming" aria-disabled="true" data-testid="admin-upcoming" data-module="@module.Key">
+                        <div class="d-flex align-center justify-space-between"><MudText Typo="Typo.h6" HtmlTag="h2">@module.DisplayName</MudText><MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" tabindex="-1">Upcoming</MudChip></div>
+                        <MudText Typo="Typo.body2" Class="nv-muted">Catalogue only. No route, no cost, no provider.</MudText>
+                    </div>
+                }
+                else
+                {
+                    <div class="nv-card nv-module-card" data-testid="admin-module" data-module="@module.Key" data-enabled="@(module.IsEnabled == true)">
+                        <div class="d-flex align-center justify-space-between" style="gap: var(--nv-space-2);">
+                            <MudText Typo="Typo.h6" HtmlTag="h2">@module.DisplayName</MudText>
+                            <MudChip T="string" Size="Size.Small" Color="@(module.IsEnabled == true ? Color.Success : Color.Default)" Variant="Variant.Text" tabindex="-1" data-testid="module-state">@(module.IsEnabled == true ? "On" : "Off")</MudChip>
+                        </div>
+                        <MudText Typo="Typo.body2" Class="nv-muted">@module.Description</MudText>
+
+                        <MudText Typo="Typo.subtitle2" HtmlTag="h3" Class="mt-2">Official provider</MudText>
+                        @if (module.Providers.Count == 0)
+                        {
+                            <MudText Typo="Typo.body2" Class="nv-muted" data-testid="no-provider">None for this module.</MudText>
+                        }
+                        @foreach (var provider in module.Providers)
+                        {
+                            <div data-testid="provider-row" data-provider="@provider.ProviderId">
+                                <div class="d-flex align-center flex-wrap" style="gap: var(--nv-space-2);">
+                                    <span>@provider.ProviderId</span>
+                                    <MudChip T="string" Size="Size.Small" Color="@(provider.Configured ? Color.Success : Color.Warning)" Variant="Variant.Text" tabindex="-1" data-testid="provider-configured">@(provider.Configured ? "Set up" : "Not set up")</MudChip>
+                                </div>
+                                <MudText Typo="Typo.caption" Class="nv-muted">Last 24 hours: @provider.Last24Hours.Verified verified, @provider.Last24Hours.NotVerified not confirmed, @provider.Last24Hours.Inconclusive inconclusive, @provider.Last24Hours.ProviderError errors, @provider.Last24Hours.Timeout timeouts.</MudText>
+                            </div>
+                        }
+
+                        <MudText Typo="Typo.subtitle2" HtmlTag="h3" Class="mt-2">Credits per step</MudText>
+                        <ul class="ma-0 pa-0" style="list-style:none;display:grid;gap:var(--nv-space-1);">
+                            @foreach (var cost in module.Costs)
+                            {
+                                <li class="d-flex align-center justify-space-between" data-testid="cost-row" data-operation="@cost.Operation">
+                                    <span>@VerificationText.Humanize(cost.Operation): <strong>@UiText.Plural(cost.Credits, "credit")</strong> <span class="nv-muted">(@CostRuleOptions.PolicyLabel(cost.ChargePolicy))</span></span>
+                                    <Can Permission="@WebPermissions.LicensesCostRules">
+                                        <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => EditCostAsync(cost)" aria-label="@($"Change the price of {VerificationText.Humanize(cost.Operation)}")" data-testid="edit-cost">Change</MudButton>
+                                    </Can>
+                                </li>
+                            }
+                        </ul>
+
+                        <Can Permission="@WebPermissions.VerificationAdminConfigure">
+                            <div class="mt-auto pt-3">
+                                <MudButton Variant="Variant.Outlined" Color="@(module.IsEnabled == true ? Color.Error : Color.Primary)" OnClick="() => ToggleAsync(module)" data-testid="toggle-module">
+                                    @(module.IsEnabled == true ? "Switch off" : "Switch on")
+                                </MudButton>
+                            </div>
+                        </Can>
+                    </div>
+                }
+            }
+        </div>
+    </ChildContent>
+</PageState>
+
+@code {
+    private readonly LoadState<IReadOnlyList<AdminVerificationModuleDto>> _state = new();
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    public void Dispose() => _state.Dispose();
+
+    private Task LoadAsync() => _state.LoadAsync(ct => Api.GetModulesAsync(ct));
+
+    private async Task ToggleAsync(AdminVerificationModuleDto module)
+    {
+        var enable = module.IsEnabled != true;
+        var result = await Dialogs.ConfirmAndApplyAsync(Snackbar,
+            enable ? $"Switch on {module.DisplayName}?" : $"Switch off {module.DisplayName}?",
+            enable ? "Clients with access can start new checks again." : "Clients can no longer start new checks of this kind. Checks already accepted still finish and stay readable.",
+            enable ? "Switch on" : "Switch off",
+            reason => Api.UpdateModuleAsync(module.Key, new UpdateVerificationModuleRequest(enable, reason ?? string.Empty, module.RowVersion ?? string.Empty)),
+            enable ? "The module is on." : "The module is off.", destructive: !enable, requireReason: true);
+        if (result is { IsSuccess: true })
+        {
+            await _state.LoadAsync(ct => Api.GetModulesAsync(ct), keepCurrent: true);
+        }
+    }
+
+    private async Task EditCostAsync(ModuleCostDto cost)
+    {
+        var saved = await Dialogs.SaveAsync(Snackbar, $"Price of {VerificationText.Humanize(cost.Operation)}",
+            new VerificationCostForm { Operation = cost.Operation, Credits = cost.Credits, ChargePolicy = cost.ChargePolicy },
+            m => @<div class="d-flex flex-column" style="gap: var(--nv-space-3);">
+                    <MudNumericField T="int" @bind-Value="m.Credits" For="() => m.Credits" Label="Credits per use" Variant="Variant.Outlined" Min="0" Max="1000" />
+                    <MudSelect T="string" @bind-Value="m.ChargePolicy" For="() => m.ChargePolicy" Label="When to charge" Variant="Variant.Outlined">
+                        @foreach (var (value, label) in CostRuleOptions.Policies) { <MudSelectItem T="string" Value="@value">@label</MudSelectItem> }
+                    </MudSelect>
+                    <MudTextField T="string" @bind-Value="m.Reason" For="() => m.Reason" Label="Reason (kept in the audit log)" Variant="Variant.Outlined" Lines="2" Immediate="true" />
+                    <MudText Typo="Typo.caption" Class="nv-muted">The new price applies from now on and never changes past charges.</MudText>
+                  </div>,
+            async m => (await Api.SetDefaultCostAsync(m.Operation, m.Credits, m.ChargePolicy, m.Reason?.Trim())).ToFormError(),
+            "Save price", _ => "The price was saved.");
+        if (saved is not null)
+        {
+            await _state.LoadAsync(ct => Api.GetModulesAsync(ct), keepCurrent: true);
+        }
+    }
+}

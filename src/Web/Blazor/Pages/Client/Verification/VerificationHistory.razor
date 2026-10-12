@@ -1,0 +1,74 @@
+@page "/client/verification/history"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.VerificationRead)]
+@inject IVerificationApiClient Api
+@inject CurrentUserState User
+
+<PageTitle>Verification history · NexaVerify</PageTitle>
+
+<PageHeader Title="Verification history" Subtitle="Every document check you have run. Use the menu on a row for details, reports and other actions." />
+
+<MudPaper Class="nv-card" Elevation="0">
+    <div class="pa-3 d-flex flex-wrap align-center" style="gap: var(--nv-space-3);" role="search" aria-label="Filter checks" data-testid="history-filters">
+        <MudSelect T="string" Value="_filter.Type" ValueChanged="v => Changed(() => _filter.Type = Empty(v))" Label="Type" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width: 160px;" data-testid="filter-type">
+            <MudSelectItem T="string" Value="@string.Empty">All types</MudSelectItem>
+            @foreach (var type in VerificationTypes.All) { <MudSelectItem T="string" Value="type">@VerificationTypes.Label(type)</MudSelectItem> }
+        </MudSelect>
+        <MudSelect T="string" Value="_filter.Status" ValueChanged="v => Changed(() => _filter.Status = Empty(v))" Label="Status" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width: 180px;" data-testid="filter-status">
+            <MudSelectItem T="string" Value="@string.Empty">All statuses</MudSelectItem>
+            @foreach (var status in VerificationStatuses.All) { <MudSelectItem T="string" Value="status">@VerificationText.StatusLabel(status)</MudSelectItem> }
+        </MudSelect>
+        <MudDatePicker Date="_filter.From" DateChanged="d => Changed(() => _filter.From = d)" Label="From" Variant="Variant.Outlined" Margin="Margin.Dense" Editable="true" Clearable="true" />
+        <MudDatePicker Date="_filter.To" DateChanged="d => Changed(() => _filter.To = d)" Label="To" Variant="Variant.Outlined" Margin="Margin.Dense" Editable="true" Clearable="true" />
+        <MudCheckBox T="bool" Value="_filter.ReviewOnly" ValueChanged="v => Changed(() => _filter.ReviewOnly = v)" Label="Needs review only" data-testid="filter-review" />
+        @if (_filter.IsActive)
+        {
+            <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Outlined.FilterAltOff" OnClick="() => Changed(_filter.Clear)" data-testid="filter-clear">Clear filters</MudButton>
+        }
+    </div>
+    <DataTable @ref="_table" T="VerificationListItemDto" Caption="Document checks" Columns="_columns" LoadPage="LoadAsync" PageSize="10" PageSizeOptions="@(new[] { 10, 25, 50 })" DefaultSort="createdAt:desc"
+               EmptyMessage="You have not run any document checks yet. Pick one from Document verification to get started.">
+        <RowActions Context="item">
+            <VerificationRowMenu Item="item" OnChanged="ReloadAsync" />
+        </RowActions>
+    </DataTable>
+</MudPaper>
+
+@code {
+    private DataTable<VerificationListItemDto>? _table;
+    private IReadOnlyList<DataColumn<VerificationListItemDto>> _columns = [];
+    private readonly VerificationHistoryFilter _filter = new();
+
+    protected override void OnInitialized() =>
+        _columns =
+        [
+            DataColumn<VerificationListItemDto>.Custom("Request", i => @<span><a href="@($"client/verification/{i.RequestId}")" title="@i.RequestId" data-testid="request-link">@VerificationText.ShortId(i.RequestId)</a>@if (!string.IsNullOrWhiteSpace(i.ExternalRef)) { <br /><span class="nv-muted">@i.ExternalRef</span> }</span>),
+            DataColumn<VerificationListItemDto>.Text("Type", i => VerificationTypes.Label(i.Type)),
+            DataColumn<VerificationListItemDto>.Text("Submitted", i => VerificationText.When(i.CreatedAt), sortKey: "createdAt"),
+            DataColumn<VerificationListItemDto>.Custom("Status", i => @<span><VerificationStatusChip Status="@i.Status" /></span>),
+            DataColumn<VerificationListItemDto>.Custom("Provider check", i => @<ExternalStateChip State="@i.ExternalState" />),
+            DataColumn<VerificationListItemDto>.Text("Details", i => i.IdentifierMasked),
+        ];
+
+    private static string? Empty(string? value) => string.IsNullOrEmpty(value) ? null : value;
+
+    private async Task Changed(Action apply)
+    {
+        apply();
+        await ReloadAsync();
+    }
+
+    private Task ReloadAsync() => _table is null ? Task.CompletedTask : _table.ReloadAsync();
+
+    private Task<ApiResult<PagedResult<VerificationListItemDto>>> LoadAsync(PageRequest page, CancellationToken ct) =>
+        Api.ListAsync(new VerificationListQuery
+        {
+            Page = page.Page,
+            PageSize = page.PageSize,
+            Sort = page.Sort,
+            Type = _filter.Type,
+            Status = _filter.Status,
+            ReviewRequired = _filter.ReviewOnly ? true : null,
+            From = _filter.From,
+            To = _filter.To?.AddDays(1).AddTicks(-1),
+        }, ct);
+}

@@ -1,0 +1,42 @@
+@using NexaVerify.Contracts.Verification
+@using NexaVerify.Web.Services
+
+<MudPaper Class="nv-card nv-card-pad" Elevation="0" data-testid="external-card" data-state="@External.State">
+    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-2">Official verification</MudText>
+    <div class="d-flex align-center flex-wrap mb-2" style="gap: var(--nv-space-2);">
+        <ExternalStateChip State="@External.State" />
+        <strong data-testid="external-headline">@VerificationText.ExternalHeadline(External.State, External.ProviderId)</strong>
+    </div>
+    <MudText Class="nv-muted" data-testid="external-explanation">@VerificationText.ExternalExplanation(External.State, Type)</MudText>
+    @if (External.State is not (ExternalStates.NotRequested or ExternalStates.ProviderNotConfigured))
+    {
+        <div class="mt-3">
+            <DetailList Items="Items()" />
+        </div>
+    }
+    @if (CanRetry)
+    {
+        <MudButton Class="mt-3" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Refresh" Disabled="Busy" OnClick="OnRetry" data-testid="retry-external">
+            Retry provider check
+        </MudButton>
+    }
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public VerificationExternalDto External { get; set; } = default!;
+
+    [Parameter] public string Type { get; set; } = string.Empty;
+
+    [Parameter] public bool CanRetry { get; set; }
+
+    [Parameter] public bool Busy { get; set; }
+
+    [Parameter] public EventCallback OnRetry { get; set; }
+
+    private IReadOnlyList<DetailItem> Items() =>
+    [
+        new("Provider", External.ProviderId),
+        new("Provider reference", External.Reference),
+        new("Answered", External.CompletedAt is null ? null : VerificationText.When(External.CompletedAt)),
+    ];
+}

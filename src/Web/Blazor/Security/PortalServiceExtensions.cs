@@ -76,6 +76,10 @@ public static class PortalServiceExtensions
             services.AddScoped<IBillingApiClient, StubBillingApiClient>();
             services.AddScoped<IAdminBillingApiClient, StubAdminBillingApiClient>();
             services.AddScoped<IDevBillingApiClient, StubDevBillingApiClient>();
+            services.AddSingleton<StubVerificationStore>();
+            services.AddScoped<IVerificationApiClient, StubVerificationApiClient>();
+            services.AddScoped<IAdminVerificationApiClient, StubAdminVerificationApiClient>();
+            services.AddScoped<IVerificationDownloads, StubVerificationDownloads>();
         }
         else
         {
@@ -86,6 +90,9 @@ public static class PortalServiceExtensions
             services.AddScoped<IDashboardApiClient, DashboardApiClient>();
             services.AddScoped<IBillingApiClient, BillingApiClient>();
             services.AddScoped<IAdminBillingApiClient, AdminBillingApiClient>();
+            services.AddScoped<IVerificationApiClient, VerificationApiClient>();
+            services.AddScoped<IAdminVerificationApiClient, AdminVerificationApiClient>();
+            services.AddScoped<IVerificationDownloads, VerificationDownloads>();
             if (PortalStartupGuards.AllowsInsecureApi(environment))
             {
                 // The payment simulator exists only where the API also has it (Development/Testing); elsewhere the page has no client to call.

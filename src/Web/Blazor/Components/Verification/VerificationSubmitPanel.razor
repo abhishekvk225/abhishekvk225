@@ -1,0 +1,323 @@
+@using NexaVerify.Contracts.Verification
+@using NexaVerify.Web.Services
+@implements IDisposable
+@inject IVerificationApiClient Api
+@inject IDialogService Dialogs
+@inject IAppSnackbar Snackbar
+@inject NavigationManager Navigation
+@inject TimeProvider Clock
+@inject CurrentUserState User
+
+@* Everything the three submission pages share: catalogue limits, the disabled-module state, file + details, cost confirmation, progress,
+   a stable idempotency key, the 202 answer and the wait for the result. The pages only supply their own fields and the API call. *@
+<PageHeader Title="@Title" Subtitle="@Subtitle" />
+
+<MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4" data-testid="purpose-note">@VerificationText.SubmitPurposeNote</MudAlert>
+
+@if (_modules is null)
+{
+    <MudPaper Class="nv-card nv-card-pad" Elevation="0" data-testid="submit-loading"><SkeletonCard Lines="4" /></MudPaper>
+}
+else if (!_modules.IsSuccess)
+{
+    <MudPaper Class="nv-card" Elevation="0"><ErrorState Error="_modules.Error" OnRetry="EventCallback.Factory.Create(this, LoadModulesAsync)" /></MudPaper>
+}
+else if (_disabled || _module is null || _module.IsDisabled)
+{
+    <MudPaper Class="nv-card" Elevation="0" data-testid="module-disabled">
+        <EmptyState Icon="@Icons.Material.Outlined.PauseCircle" Title="Temporarily unavailable"
+                    Message="This check is switched off right now. Nothing was sent and no credits were used. Please try again later or contact support.">
+            <MudButton Variant="Variant.Outlined" Href="client/verification">Back to document verification</MudButton>
+        </EmptyState>
+    </MudPaper>
+}
+else if (_accepted is not null)
+{
+    <MudPaper Class="nv-card nv-card-pad" Elevation="0" data-testid="accepted-panel" data-state="@(_final ? "done" : "waiting")">
+        <div class="nv-status-panel" role="status" aria-live="polite">
+            @if (!_final)
+            {
+                <MudProgressCircular Indeterminate="true" Size="Size.Large" aria-label="Checking your document" />
+            }
+            <MudText Typo="Typo.h4" HtmlTag="h2">@(_final ? "Your check has finished" : "We received your document")</MudText>
+            <MudText Class="nv-muted" Style="max-width: 52ch;">
+                @if (_final)
+                {
+                    <span>@VerificationText.Headline(_lastStatus?.Status, _lastStatus?.Stages.ExternalVerification, _lastStatus?.Stages.ExternalProviderId, _lastStatus?.Assurance)</span>
+                }
+                else if (_timedOut)
+                {
+                    <span>This is taking longer than usual. It keeps running on our side, so you do not need to submit again. Open the details to follow it.</span>
+                }
+                else
+                {
+                    <span>We are reading it and running the checks. This page updates by itself. Reference <strong data-testid="accepted-ref">@VerificationText.ShortId(_accepted.RequestId)</strong>.</span>
+                }
+            </MudText>
+            <div class="d-flex flex-wrap justify-center" style="gap: var(--nv-space-2);">
+                @if (User.Has(WebPermissions.VerificationRead))
+                {
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="@DetailsHref" data-testid="open-details">@(_final ? "See the result" : "Open details")</MudButton>
+                }
+                <MudButton Variant="Variant.Outlined" OnClick="StartAnother" data-testid="start-another">Check another</MudButton>
+            </div>
+        </div>
+    </MudPaper>
+}
+else
+{
+    <EditForm Model="Model" OnValidSubmit="SubmitAsync" novalidate>
+        <DataAnnotationsValidator />
+        <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+            <div class="nv-form">
+                <DocumentUpload Label="@DocumentLabel" Limits="_module.Limits" Value="_file" ValueChanged="OnFileChanged" Disabled="_busy" />
+                @if (_documentProblem is not null)
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true" role="alert" data-testid="document-problem">@_documentProblem</MudAlert>
+                }
+
+                <MudText Typo="Typo.subtitle2" HtmlTag="h2">Details</MudText>
+                @Fields
+                <MudTextField T="string" @bind-Value="Model.ConsentReference" For="() => Model.ConsentReference" Label="Where consent is recorded" Variant="Variant.Outlined" Immediate="true"
+                              Required="true" HelperText="For example a signed form number. We record the reference, not the form." MaxLength="100" Disabled="_busy" data-testid="consent" />
+                <MudTextField T="string" @bind-Value="Model.ExternalRef" For="() => Model.ExternalRef" Label="Your own reference (optional)" Variant="Variant.Outlined" Immediate="true"
+                              HelperText="Do not put personal details here." MaxLength="100" Disabled="_busy" data-testid="external-ref" />
+
+                @if (_busy)
+                {
+                    <div aria-live="polite" data-testid="upload-progress-wrap">
+                        <MudText Typo="Typo.body2">@(_sendPercent >= 100 ? "Upload finished. Waiting for confirmation…" : $"Uploading… {_sendPercent}%")</MudText>
+                        <MudProgressLinear Value="_sendPercent" Color="Color.Primary" Indeterminate="@(_file is null)" aria-label="Upload progress" data-testid="upload-progress" />
+                    </div>
+                }
+
+                @if (_error is not null)
+                {
+                    <div role="alert" data-testid="submit-error">
+                        <ErrorState Error="_error with { Message = VerificationText.SubmitProblem(_error) }" Title="@(PhotoGuard.IsRetryable(_error) ? "We could not send it" : "It was not accepted")" />
+                        @if (_error.FieldErrors is { Count: > 0 })
+                        {
+                            <ul class="mt-2">@foreach (var (field, messages) in _error.FieldErrors) { <li>@VerificationText.FieldLabel(field): @string.Join(" ", messages)</li> }</ul>
+                        }
+                        @if (_fileKept)
+                        {
+                            <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined" data-testid="file-kept">
+                                Your document is still here. Press the button again to retry; if the first attempt did go through, you will not be charged twice.
+                            </MudAlert>
+                        }
+                    </div>
+                }
+
+                <div>
+                    <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy" data-testid="submit-check">
+                        @(_busy ? "Sending…" : SubmitText)
+                    </MudButton>
+                </div>
+            </div>
+        </MudPaper>
+    </EditForm>
+}
+
+@code {
+    private ApiResult<IReadOnlyList<VerificationModuleInfo>>? _modules;
+    private VerificationModuleInfo? _module;
+    private DocumentUploadFile? _file;
+    private bool _busy;
+    private bool _disabled;
+    private bool _fileKept;
+    private bool _final;
+    private bool _timedOut;
+    private int _sendPercent;
+    private string? _documentProblem;
+    private ApiError? _error;
+    private VerificationAcceptedDto? _accepted;
+    private VerificationStatusDto? _lastStatus;
+    private readonly VerificationAttempt _attempt = new();
+    private readonly CancellationTokenSource _cts = new();
+
+    [Parameter, EditorRequired] public string ModuleKey { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    [Parameter] public string? Subtitle { get; set; }
+
+    [Parameter] public string DocumentLabel { get; set; } = "Document";
+
+    [Parameter] public string SubmitText { get; set; } = "Check document";
+
+    [Parameter, EditorRequired] public VerificationFormBase Model { get; set; } = default!;
+
+    /// <summary>The page's own fields (inside the form).</summary>
+    [Parameter] public RenderFragment? Fields { get; set; }
+
+    /// <summary>The request as sent, used with the document to keep one idempotency key per logical submit.</summary>
+    [Parameter, EditorRequired] public Func<object> RequestFingerprint { get; set; } = default!;
+
+    /// <summary>The page-specific call. Receives the document (null if none), the idempotency key and a progress sink.</summary>
+    [Parameter, EditorRequired] public Func<DocumentUploadFile?, string, IProgress<long>, CancellationToken, Task<ApiResult<VerificationAcceptedDto>>> Submit { get; set; } = default!;
+
+    /// <summary>A rule across fields and the document (for example "a document or a PAN number"). Return a message, or null when fine.</summary>
+    [Parameter] public Func<DocumentUploadFile?, string?>? ExtraCheck { get; set; }
+
+    /// <summary>Called after a successful accept, so the page can clear its fields.</summary>
+    [Parameter] public EventCallback OnAccepted { get; set; }
+
+    private string DetailsHref => $"client/verification/{_accepted!.RequestId}";
+
+    protected override Task OnInitializedAsync() => LoadModulesAsync();
+
+    private async Task LoadModulesAsync()
+    {
+        _modules = null;
+        var result = await Api.GetModulesAsync(_cts.Token);
+        _modules = result;
+        _module = result.IsSuccess ? result.Value.FirstOrDefault(m => m.Key == ModuleKey) : null;
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+        _file?.Wipe();
+    }
+
+    private void OnFileChanged(DocumentUploadFile? file)
+    {
+        _file = file;
+        _documentProblem = null;
+        _fileKept = false;
+        _attempt.Reset();
+    }
+
+    private string CostMessage()
+    {
+        var m = _module!;
+        var cost = m.ExtractionCredits is { } e
+            ? m.ProviderCredits is { } p && p > 0
+                ? $"It uses about {UiText.Plural(e, "credit")} for reading and checking the document, plus {UiText.Plural(p, "credit")} if an official provider check is run."
+                : $"It uses about {UiText.Plural(e, "credit")}."
+            : "It uses credits from your balance. The exact amount is shown on the result.";
+        return $"{cost} Credits are only used when the check finishes with a result; if it fails or cannot be read, nothing is charged.";
+    }
+
+    private async Task SubmitAsync()
+    {
+        _documentProblem = ExtraCheck?.Invoke(_file);
+        if (_documentProblem is not null)
+        {
+            return;
+        }
+
+        var confirmed = await Dialogs.ConfirmAsync("Run this check?", CostMessage(), "Run check");
+        if (confirmed is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        _sendPercent = 0;
+        var file = _file;
+        try
+        {
+            var key = _attempt.KeyFor(RequestFingerprint(), file);
+            var progress = new InlineProgress(sent =>
+            {
+                var percent = file is null || file.Data.Length == 0 ? 100 : (int)(sent * 100L / file.Data.Length);
+                if (percent != _sendPercent)
+                {
+                    _sendPercent = percent;
+                    _ = InvokeAsync(StateHasChanged);
+                }
+            });
+            ApiResult<VerificationAcceptedDto> result;
+            try
+            {
+                result = await Submit(file, key, progress, _cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            if (result.IsSuccess)
+            {
+                _accepted = result.Value;
+                file?.Wipe();
+                _file = null;
+                _fileKept = false;
+                _attempt.Reset();
+                Snackbar.Success("Your document was received.");
+                await OnAccepted.InvokeAsync();
+                _ = WaitForResultAsync(result.Value);
+            }
+            else
+            {
+                _error = result.Error;
+                if (result.Error!.Code == ErrorCodes.VerificationModuleDisabled)
+                {
+                    _disabled = true;
+                }
+
+                Snackbar.Error(result.Error!);
+                _fileKept = file is not null;
+                if (!PhotoGuard.IsRetryable(result.Error!))
+                {
+                    _attempt.Reset();
+                }
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task WaitForResultAsync(VerificationAcceptedDto accepted)
+    {
+        try
+        {
+            var outcome = await new VerificationPoller(Clock).RunAsync(
+                ct => Api.GetStatusAsync(accepted.RequestId, ct, passive: true),
+                async answer =>
+                {
+                    if (answer.IsSuccess)
+                    {
+                        _lastStatus = answer.Value;
+                    }
+
+                    await InvokeAsync(StateHasChanged);
+                },
+                _cts.Token,
+                accepted.PollAfterSeconds);
+            _timedOut = outcome.TimedOut;
+            _final = outcome.Last.IsSuccess && VerificationStatuses.IsTerminal(outcome.Last.Value.Status);
+            await InvokeAsync(() =>
+            {
+                StateHasChanged();
+                if (_final && User.Has(WebPermissions.VerificationRead))
+                {
+                    Navigation.NavigateTo(DetailsHref);
+                }
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            // The page was left: stop quietly. The check keeps running on the server.
+        }
+    }
+
+    private void StartAnother()
+    {
+        _accepted = null;
+        _lastStatus = null;
+        _final = false;
+        _timedOut = false;
+        _error = null;
+    }
+
+    private sealed class InlineProgress(Action<long> report) : IProgress<long>
+    {
+        public void Report(long value) => report(value);
+    }
+}

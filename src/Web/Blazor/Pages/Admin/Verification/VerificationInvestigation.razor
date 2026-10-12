@@ -1,0 +1,79 @@
+@page "/admin/verification/requests"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.VerificationAdminRead)]
+@inject IAdminVerificationApiClient Api
+
+<PageTitle>Verification investigation · Admin · NexaVerify</PageTitle>
+
+<PageHeader Title="Verification investigation" Subtitle="Look at one client's checks to help with a support case." />
+
+<div class="nv-banner mb-4" data-testid="privacy-banner" role="note">
+    <MudIcon Icon="@Icons.Material.Outlined.Lock" aria-hidden="true" />
+    <span>Documents, details read from them and check results are not visible to platform staff. You see when, what kind, how far it got, errors and credits. Every time you open a request, it is recorded in the audit log.</span>
+</div>
+
+<MudPaper Class="nv-card nv-card-pad mb-4" Elevation="0">
+    <div class="d-flex flex-wrap align-center" style="gap: var(--nv-space-3);">
+        <div style="min-width: 260px; flex: 1 1 320px; max-width: 480px;">
+            <ClientPicker Label="Choose a client" Value="_client" ValueChanged="OnClientChanged" Required="true" HelperText="Start typing a name or code." />
+        </div>
+        <MudSelect T="string" Value="_type" ValueChanged="v => FilterAsync(() => _type = string.IsNullOrEmpty(v) ? null : v)" Label="Type" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width: 160px;" data-testid="inv-type">
+            <MudSelectItem T="string" Value="@string.Empty">All types</MudSelectItem>
+            @foreach (var type in VerificationTypes.All) { <MudSelectItem T="string" Value="type">@VerificationTypes.Label(type)</MudSelectItem> }
+        </MudSelect>
+        <MudSelect T="string" Value="_status" ValueChanged="v => FilterAsync(() => _status = string.IsNullOrEmpty(v) ? null : v)" Label="Status" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width: 180px;" data-testid="inv-status">
+            <MudSelectItem T="string" Value="@string.Empty">All statuses</MudSelectItem>
+            @foreach (var status in VerificationStatuses.All) { <MudSelectItem T="string" Value="status">@VerificationText.StatusLabel(status)</MudSelectItem> }
+        </MudSelect>
+    </div>
+</MudPaper>
+
+@if (_client is null)
+{
+    <MudPaper Class="nv-card" Elevation="0">
+        <EmptyState Icon="@Icons.Material.Outlined.ManageSearch" Title="Pick a client to see its checks" Message="Requests are always shown for one client at a time." />
+    </MudPaper>
+}
+else
+{
+    <MudPaper Class="nv-card" Elevation="0">
+        <DataTable @ref="_table" @key="_client.Id" T="AdminVerificationItemDto" Caption="Verification requests" Columns="_columns" LoadPage="LoadAsync" PageSize="25"
+                   EmptyMessage="This client has no document checks that match.">
+            <RowActions Context="item">
+                <MudButton Variant="Variant.Text" Size="Size.Small" Href="@($"admin/verification/requests/{item.ClientId}/{item.RequestId}")" aria-label="@($"Open request {VerificationText.ShortId(item.RequestId)}")">Open</MudButton>
+            </RowActions>
+        </DataTable>
+    </MudPaper>
+}
+
+@code {
+    private NexaVerify.Contracts.Tenancy.ClientListItemDto? _client;
+    private DataTable<AdminVerificationItemDto>? _table;
+    private IReadOnlyList<DataColumn<AdminVerificationItemDto>> _columns = [];
+    private string? _type;
+    private string? _status;
+
+    protected override void OnInitialized() =>
+        _columns =
+        [
+            DataColumn<AdminVerificationItemDto>.Text("Request", i => VerificationText.ShortId(i.RequestId)),
+            DataColumn<AdminVerificationItemDto>.Text("Type", i => VerificationTypes.Label(i.Type)),
+            DataColumn<AdminVerificationItemDto>.Text("Submitted", i => VerificationText.When(i.CreatedAt)),
+            DataColumn<AdminVerificationItemDto>.Custom("Status", i => @<VerificationStatusChip Status="@i.Status" />),
+            DataColumn<AdminVerificationItemDto>.Text("Error", i => i.ErrorCode),
+            DataColumn<AdminVerificationItemDto>.Text("Credits", i => UiText.Number(i.CreditsCharged + i.ProviderCreditsCharged), numeric: true),
+        ];
+
+    private void OnClientChanged(NexaVerify.Contracts.Tenancy.ClientListItemDto? client) => _client = client;
+
+    private async Task FilterAsync(Action apply)
+    {
+        apply();
+        if (_table is not null)
+        {
+            await _table.ReloadAsync();
+        }
+    }
+
+    private Task<ApiResult<PagedResult<AdminVerificationItemDto>>> LoadAsync(PageRequest page, CancellationToken ct) =>
+        Api.ListRequestsAsync(_client!.Id, new AdminVerificationListQuery { Page = page.Page, PageSize = page.PageSize, Type = _type, Status = _status }, ct);
+}

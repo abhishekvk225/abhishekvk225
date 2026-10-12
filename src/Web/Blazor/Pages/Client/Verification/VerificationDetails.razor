@@ -1,0 +1,208 @@
+@page "/client/verification/{Id:guid}"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.VerificationRead)]
+@implements IDisposable
+@inject IVerificationApiClient Api
+@inject IDialogService Dialogs
+@inject IAppSnackbar Snackbar
+@inject TimeProvider Clock
+@inject CurrentUserState User
+
+<PageTitle>Check details · NexaVerify</PageTitle>
+
+<PageState T="VerificationResultDto" Result="_state.Result" OnRetry="LoadAsync">
+    <Loading><DashboardSkeleton Cards="3" /></Loading>
+    <ErrorContent Context="error">
+        <MudPaper Class="nv-card" Elevation="0" data-testid="details-error">
+            <ErrorState Error="error" Title="@(error.Status == 404 ? "We could not find this check" : "We could not load this check")" OnRetry="EventCallback.Factory.Create(this, LoadAsync)" />
+            <div class="d-flex justify-center pb-4"><MudButton Variant="Variant.Text" Href="client/verification/history">Back to history</MudButton></div>
+        </MudPaper>
+    </ErrorContent>
+    <ChildContent Context="r">
+        <PageHeader Title="@($"{VerificationTypes.Label(r.Type)} check")" Subtitle="@($"Reference {r.RequestId}")"
+                    Breadcrumbs="@(new List<BreadcrumbItem> { new("Verification history", "client/verification/history"), new(VerificationText.ShortId(r.RequestId), null, true) })">
+            <Actions>
+                @if (User.Has(WebPermissions.VerificationReportDownload))
+                {
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Download" Href="@($"bff/client/verification/{r.RequestId}/report?format=html")" data-enhance-nav="false" download="verification-report.html" data-testid="download-report">Download report</MudButton>
+                }
+                @if (VerificationActions.CanCancel(r.Status, r.Type, User.Has))
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="() => CancelAsync(r)" data-testid="cancel-check">Cancel check</MudButton>
+                }
+            </Actions>
+        </PageHeader>
+
+        <div aria-live="polite" class="mb-4" data-testid="headline" data-status="@r.Status">
+            <div class="d-flex align-center flex-wrap" style="gap: var(--nv-space-2);">
+                <VerificationStatusChip Status="@r.Status" />
+                <MudText Typo="Typo.h5" HtmlTag="h2">@VerificationText.Headline(r.Status, r.External.State, r.External.ProviderId, r.Assurance)</MudText>
+            </div>
+            @if (VerificationStatuses.IsInProgress(r.Status))
+            {
+                <MudProgressLinear Indeterminate="true" Class="mt-2" aria-label="Check in progress" data-testid="in-progress" />
+                <MudText Class="nv-muted mt-1">We are still working on it. This page updates by itself.</MudText>
+            }
+        </div>
+
+        @if (r.ErrorCode is not null || r.Status == VerificationStatuses.Failed)
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mb-4" role="alert" data-testid="failure">@VerificationText.FailureMessage(r.ErrorCode, r.ErrorMessage)</MudAlert>
+        }
+        <ReviewReasonsAlert Reasons="r.ReviewReasons" ReviewRequired="r.ReviewRequired" />
+
+        <MudGrid Spacing="3" Class="mt-1">
+            <MudItem xs="12" lg="7">
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0"><MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Stages</MudText><StageStepper Stages="r.Stages" /></MudPaper>
+            </MudItem>
+            <MudItem xs="12" lg="5">
+                <ExternalVerificationCard External="r.External" Type="@r.Type" Busy="_retrying" OnRetry="() => RetryAsync(r)"
+                                          CanRetry="VerificationActions.CanRetryExternal(r.Status, r.External.State, r.Type, ProviderConfigured(r.Type), User.Has, r.Document?.Purged == true)" />
+            </MudItem>
+
+            <MudItem xs="12">
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Individual checks</MudText>
+                    <CheckResultsTable Checks="r.Checks" Summary="r.Summary" />
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" lg="7"><ExtractedFieldsCard Data="r.Extracted" Purged="r.Document?.Purged == true" /></MudItem>
+            <MudItem xs="12" lg="5">
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Compared with what you entered</MudText>
+                    <FieldMatchList Matches="r.FieldMatches" />
+                </MudPaper>
+            </MudItem>
+
+            @if (r.Extracted?.BankStatement is { } bank)
+            {
+                <MudItem xs="12">
+                    <MudPaper Class="nv-card nv-card-pad" Elevation="0"><BankTransactionsTable RequestId="r.RequestId" Currency="@bank.Currency" /></MudPaper>
+                </MudItem>
+            }
+
+            @if (r.Credits is { } credits)
+            {
+                <MudItem xs="12" lg="6">
+                    <MudPaper Class="nv-card nv-card-pad" Elevation="0" data-testid="credits-card">
+                        <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Credits used</MudText>
+                        <DetailList Items="CreditItems(credits)" />
+                    </MudPaper>
+                </MudItem>
+            }
+            <MudItem xs="12" lg="6">
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">About this check</MudText>
+                    <DetailList Items="AboutItems(r)" />
+                    <MudText Typo="Typo.caption" Class="nv-muted mt-3 d-block" data-testid="disclaimer">@VerificationText.Disclaimer</MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    </ChildContent>
+</PageState>
+
+@code {
+    private readonly LoadState<VerificationResultDto> _state = new();
+    private IReadOnlyList<VerificationModuleInfo> _modules = [];
+    private CancellationTokenSource? _poll;
+    private bool _retrying;
+
+    [Parameter] public Guid Id { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadAsync();
+        _ = LoadModulesAsync();
+    }
+
+    public void Dispose()
+    {
+        _poll?.Cancel();
+        _poll?.Dispose();
+        _state.Dispose();
+    }
+
+    private async Task LoadModulesAsync()
+    {
+        var modules = await Api.GetModulesAsync();
+        if (modules.IsSuccess)
+        {
+            _modules = modules.Value;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private bool? ProviderConfigured(string type) => _modules.FirstOrDefault(m => m.Key == VerificationTypes.ModuleKey(type))?.ProviderConfigured;
+
+    private async Task LoadAsync()
+    {
+        _poll?.Cancel();
+        if (await _state.LoadAsync(ct => Api.GetResultAsync(Id, ct)) && _state.Result is { IsSuccess: true } loaded && !VerificationStatuses.IsTerminal(loaded.Value.Status))
+        {
+            _ = PollAsync();
+        }
+    }
+
+    private async Task PollAsync()
+    {
+        _poll?.Dispose();
+        var cts = _poll = new CancellationTokenSource();
+        try
+        {
+            var outcome = await new VerificationPoller(Clock).RunAsync(ct => Api.GetStatusAsync(Id, ct, passive: true), _ => Task.CompletedTask, cts.Token, firstHintSeconds: 2);
+            if (!cts.IsCancellationRequested && outcome.Last.IsSuccess && VerificationStatuses.IsTerminal(outcome.Last.Value.Status))
+            {
+                await _state.LoadAsync(ct => Api.GetResultAsync(Id, ct), keepCurrent: true);
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Left the page, or a newer load took over.
+        }
+    }
+
+    private async Task CancelAsync(VerificationResultDto r)
+    {
+        var result = await Dialogs.ConfirmAndApplyAsync(Snackbar, "Cancel this check?", "It will stop. Any step that already finished stays charged.", "Cancel check",
+            _ => Api.CancelAsync(r.RequestId), "The check was cancelled.", destructive: true);
+        if (result is { IsSuccess: true })
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task RetryAsync(VerificationResultDto r)
+    {
+        _retrying = true;
+        try
+        {
+            var result = await Dialogs.ConfirmAndApplyAsync(Snackbar, "Retry the provider check?", "Only the official check runs again. You are charged for it once the provider gives an answer.", "Retry",
+                _ => Api.RetryExternalAsync(r.RequestId), "The provider check was started.");
+            if (result is { IsSuccess: true })
+            {
+                await LoadAsync();
+            }
+        }
+        finally
+        {
+            _retrying = false;
+        }
+    }
+
+    private static IReadOnlyList<DetailItem> CreditItems(VerificationCreditsDto c) =>
+    [
+        new("Reading and checking", UiText.Plural(c.Extraction.Charged, "credit")),
+        new("Provider check", UiText.Plural(c.Provider.Charged, "credit")),
+    ];
+
+    private static IReadOnlyList<DetailItem> AboutItems(VerificationResultDto r) =>
+    [
+        new("Submitted", VerificationText.When(r.CreatedAt)),
+        new("Started", VerificationText.When(r.Processing.StartedAt)),
+        new("Finished", VerificationText.When(r.Processing.CompletedAt)),
+        new("Your reference", r.ExternalRef),
+        new("Document", r.Document is null ? null : r.Document.Purged ? "Erased" : $"{r.Document.Kind}, {UiText.Plural(r.Document.PageCount, "page")}"),
+        new("Support reference", r.CorrelationId),
+    ];
+}
