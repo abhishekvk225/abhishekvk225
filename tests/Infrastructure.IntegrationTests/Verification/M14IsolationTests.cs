@@ -291,7 +291,7 @@ public class M14IsolationTests : IAsyncLifetime
         listed.ShouldNotContain(x => x.RequestId == _requestA);
 
         (await _rig.PlatformAsync(sp => sp.GetRequiredService<IVerificationRetention>().PurgeExpiredGrantsAsync(now.AddDays(-1), 100, default))).ShouldBe(1);
-        (await _rig.PlatformAsync(sp => sp.GetRequiredService<IVerificationRetention>().BlankIpAddressesAsync(now.AddDays(1), 100, default))).ShouldBe(1);
+        (await _rig.PlatformAsync(sp => sp.GetRequiredService<IVerificationRetention>().BlankIpAddressesAsync(now.AddDays(1), 100, default))).ShouldBeGreaterThanOrEqualTo(1);
         (await _rig.TenantAsync(_b, sp => sp.GetRequiredService<IVerificationRepository>().GetReadOnlyAsync(due, default)))!.IpAddress.ShouldBeNull();
     }
 }

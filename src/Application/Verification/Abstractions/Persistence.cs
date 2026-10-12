@@ -5,8 +5,8 @@ namespace NexaVerify.Application.Verification.Abstractions;
 
 // Persistence ports of M14 (implemented in Infrastructure/Persistence and Infrastructure/Platform; schema `verification`, docs/02).
 // Database-agnostic and deliberately small. Scope rules (enforced by the EF filter, the SaveChanges write guard and SQL row-level security):
-//   * "tenant scope"   = the caller is inside BeginTenant(clientId) / an authenticated client request. Reads and writes see that client only.
-//   * "platform scope" = BeginPlatform(...). Can read/write VerificationRequests, VerificationEvents and VerificationDownloadGrants of every tenant,
+//   * "tenant scope"   = the caller is inside a tenant scope (explicit tenant entry) or an authenticated client request. Reads and writes see that client only.
+//   * "platform scope" = an explicit platform-scope entry. Can read/write VerificationRequests, VerificationEvents and VerificationDownloadGrants of every tenant,
 //                        but NEVER documents, blobs, results or checks (strict tenant tables): those need the owning tenant's scope.
 // Methods that only stage changes (`Add`, entity mutation) are persisted by IUnitOfWork.SaveChangesAsync, like every other repository.
 
@@ -104,7 +104,7 @@ public interface IVerificationResultStore
     Task<int> CountByIdentifierHashAsync(byte[] identifierHash, Guid? excludingRequestId, CancellationToken cancellationToken);
 }
 
-/// <summary>A request handed to a worker by <see cref="IVerificationQueue.ClaimDueAsync"/>. Work on it inside <c>BeginTenant(ClientId)</c>.</summary>
+/// <summary>A request handed to a worker by <see cref="IVerificationQueue.ClaimDueAsync"/>. Work on it inside the tenant scope of <c>ClientId</c>.</summary>
 public sealed record ClaimedVerification(Guid RequestId, Guid ClientId, VerificationType Type, int Attempts, Guid LeaseToken, DateTime LeaseUntil);
 
 public sealed record LeaseSweepResult(int Requeued, int Failed);
