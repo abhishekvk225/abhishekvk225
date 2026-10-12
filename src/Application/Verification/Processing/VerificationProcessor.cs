@@ -299,7 +299,7 @@ public sealed class VerificationProcessor : IVerificationProcessor
                 }
 
                 _unitOfWork.ClearTracked();
-                outcome = await CallProviderAsync(snapshot, module, envelope, ct).ConfigureAwait(false);
+                outcome = Sanitise(await CallProviderAsync(snapshot, module, envelope, ct).ConfigureAwait(false));
             }
         }
 
@@ -367,6 +367,22 @@ public sealed class VerificationProcessor : IVerificationProcessor
         }, ct).ConfigureAwait(false);
 
         return StepResult.Done;
+    }
+
+    /// <summary>
+    /// Rule V-1 belt and braces: a processor already routes provider answers through the call guard, but if one ever returned
+    /// <c>Verified</c> without a provider id and reference, or a state a provider may not give, it is downgraded to ProviderError here.
+    /// </summary>
+    private static ExternalStageOutcome Sanitise(ExternalStageOutcome outcome)
+    {
+        if (outcome.State == ExternalState.Verified && (string.IsNullOrWhiteSpace(outcome.ProviderId) || string.IsNullOrWhiteSpace(outcome.ProviderReference)))
+        {
+            return new ExternalStageOutcome(ExternalState.ProviderError, outcome.ProviderId, null, [], ProviderReasonCodes.ReferenceMissing);
+        }
+
+        return outcome.State is ExternalState.Pending or ExternalState.NotRequested
+            ? new ExternalStageOutcome(ExternalState.ProviderError, outcome.ProviderId, null, [], ProviderReasonCodes.InvalidResult)
+            : outcome;
     }
 
     private async Task<ExternalStageOutcome> CallProviderAsync(VerificationRequest snapshot, IModuleProcessor module, SubmissionEnvelope envelope, CancellationToken ct)

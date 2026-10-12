@@ -11,7 +11,7 @@ namespace NexaVerify.Application.Verification.Query;
 /// provider payload, and no wording that calls anything genuine. Only <c>External.State = Verified</c> with a provider id and reference
 /// is positive (Rule V-1).
 /// </summary>
-internal static class VerificationDtoMapper
+public static class VerificationDtoMapper
 {
     public const string Disclaimer =
         "This report records what was read from the document and which checks ran. It does not certify that the document is genuine unless External verification shows Verified by a named provider.";
@@ -142,4 +142,4 @@ internal static class VerificationDtoMapper
 }
 
 /// <summary>The decrypted contents of a request's result row: extracted data and the field-level outcomes (outcomes only, no values).</summary>
-internal sealed record SubmissionData(ExtractedData? Extracted, IReadOnlyList<FieldMatch> FieldMatches);
+public sealed record SubmissionData(ExtractedData? Extracted, IReadOnlyList<FieldMatch> FieldMatches);

@@ -184,7 +184,7 @@ public sealed class VerificationSubmissionCore
     }
 
     /// <summary>The identical-request fingerprint: the same caller key with a different document or different fields is a different request.</summary>
-    internal static string DeriveKey(Guid clientId, SubmissionPlan plan, string callerKey, byte[]? documentSha)
+    public static string DeriveKey(Guid clientId, SubmissionPlan plan, string callerKey, byte[]? documentSha)
     {
         var fields = string.Join('\u001f', plan.Fields.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => kv.Key + "=" + kv.Value?.Trim()));
         var material = $"{clientId:N}|{plan.Type}|{callerKey}|{(documentSha is null ? "-" : Convert.ToHexString(documentSha))}|{fields}|{plan.ExternalRef?.Trim()}|{plan.ConsentReference?.Trim()}";
