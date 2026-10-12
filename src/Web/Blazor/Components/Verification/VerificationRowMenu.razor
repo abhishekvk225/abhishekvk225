@@ -1,0 +1,70 @@
+@using NexaVerify.Web.Services
+@inject CurrentUserState User
+@inject IVerificationApiClient Api
+@inject IDialogService Dialogs
+@inject IAppSnackbar Snackbar
+
+@* Secondary actions of one check live here, not in the sidebar. Every entry is hidden when the person lacks the permission or the
+   check is in a state the action does not fit; the API still decides. *@
+<MudMenu Icon="@Icons.Material.Outlined.MoreVert" AriaLabel="@($"Actions for check {VerificationText.ShortId(Item.RequestId)}")" Size="Size.Small" Dense="true" data-testid="row-menu">
+    <MudMenuItem Href="@($"client/verification/{Item.RequestId}")" data-testid="act-view">View details</MudMenuItem>
+    @if (User.Has(WebPermissions.VerificationReportDownload))
+    {
+        <MudMenuItem Href="@($"bff/client/verification/{Item.RequestId}/report?format=html")" ForceLoad="true" data-testid="act-report-html">Download report (web page)</MudMenuItem>
+        <MudMenuItem Href="@($"bff/client/verification/{Item.RequestId}/report?format=json")" ForceLoad="true" data-testid="act-report-json">Download report (data file)</MudMenuItem>
+        @if (Item.Type == VerificationTypes.BankStatement)
+        {
+            <MudMenuItem Href="@($"bff/client/verification/{Item.RequestId}/transactions.csv")" ForceLoad="true" data-testid="act-csv">Download transactions (CSV)</MudMenuItem>
+        }
+    }
+    @if (VerificationActions.CanRetryExternal(Item.Status, Item.ExternalState, Item.Type, null, User.Has))
+    {
+        <MudMenuItem OnClick="RetryAsync" data-testid="act-retry">Retry provider check</MudMenuItem>
+    }
+    @if (VerificationActions.CanCancel(Item.Status, Item.Type, User.Has))
+    {
+        <MudMenuItem OnClick="CancelAsync" data-testid="act-cancel">Cancel check</MudMenuItem>
+    }
+    @if (User.Has(WebPermissions.VerificationErase) && !VerificationStatuses.IsInProgress(Item.Status))
+    {
+        <MudMenuItem OnClick="EraseAsync" data-testid="act-erase">Erase document and details</MudMenuItem>
+    }
+</MudMenu>
+
+@code {
+    [Parameter, EditorRequired] public VerificationListItemDto Item { get; set; } = default!;
+
+    /// <summary>Raised after an action changed the check, so the list can reload.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private async Task CancelAsync()
+    {
+        var result = await Dialogs.ConfirmAndApplyAsync(Snackbar, "Cancel this check?", "It will stop. Any step that already finished stays charged.", "Cancel check",
+            _ => Api.CancelAsync(Item.RequestId), "The check was cancelled.", destructive: true);
+        if (result is { IsSuccess: true })
+        {
+            await OnChanged.InvokeAsync();
+        }
+    }
+
+    private async Task RetryAsync()
+    {
+        var result = await Dialogs.ConfirmAndApplyAsync(Snackbar, "Retry the provider check?", "Only the official check runs again. You are charged for it once the provider gives an answer.", "Retry",
+            _ => Api.RetryExternalAsync(Item.RequestId), "The provider check was started.");
+        if (result is { IsSuccess: true })
+        {
+            await OnChanged.InvokeAsync();
+        }
+    }
+
+    private async Task EraseAsync()
+    {
+        var result = await Dialogs.ConfirmAndApplyAsync(Snackbar, "Erase this document and its details?",
+            "The uploaded document, the details read from it and the check results are deleted now and cannot be brought back. The record that a check happened stays for billing.",
+            "Erase", _ => Api.EraseAsync(Item.RequestId), "The document and its details were erased.", destructive: true, requiredPhrase: "ERASE");
+        if (result is { IsSuccess: true })
+        {
+            await OnChanged.InvokeAsync();
+        }
+    }
+}

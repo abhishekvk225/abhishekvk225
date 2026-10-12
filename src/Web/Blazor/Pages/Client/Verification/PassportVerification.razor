@@ -1,0 +1,30 @@
+@page "/client/verification/passport"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.VerificationPassportSubmit)]
+@inject IVerificationApiClient Api
+
+<PageTitle>Passport check · NexaVerify</PageTitle>
+
+<VerificationSubmitPanel ModuleKey="@VerificationModuleKeys.Passport" Title="Passport check"
+                         Subtitle="Upload the photo page of a passport. We read it, check the dates and the machine-readable zone, and compare it with the details you enter."
+                         DocumentLabel="Passport photo page" SubmitText="Check passport" Model="_form"
+                         RequestFingerprint="() => _form.ToRequest()" Submit="SubmitAsync" ExtraCheck="Check" OnAccepted="Reset">
+    <Fields>
+        <MudTextField T="string" @bind-Value="_form.PassportNumber" For="() => _form.PassportNumber" Label="Passport number (optional)" Variant="Variant.Outlined" Immediate="true" MaxLength="9" />
+        <MudTextField T="string" @bind-Value="_form.FullName" For="() => _form.FullName" Label="Full name (optional)" Variant="Variant.Outlined" Immediate="true" MaxLength="150" />
+        <MudDatePicker @bind-Date="_form.DateOfBirth" Label="Date of birth (optional)" Variant="Variant.Outlined" Editable="true" />
+        <MudTextField T="string" @bind-Value="_form.Nationality" For="() => _form.Nationality" Label="Nationality code (optional)" Variant="Variant.Outlined" Immediate="true" MaxLength="3" HelperText="3 letters, for example IND." />
+        <MudDatePicker @bind-Date="_form.DateOfIssue" Label="Issue date (optional)" Variant="Variant.Outlined" Editable="true" />
+        <MudDatePicker @bind-Date="_form.DateOfExpiry" Label="Expiry date (optional)" Variant="Variant.Outlined" Editable="true" />
+    </Fields>
+</VerificationSubmitPanel>
+
+@code {
+    private PassportForm _form = new();
+
+    private static string? Check(DocumentUploadFile? file) => file is null ? "Add the passport photo page first." : null;
+
+    private Task<ApiResult<VerificationAcceptedDto>> SubmitAsync(DocumentUploadFile? file, string key, IProgress<long> progress, CancellationToken ct) =>
+        Api.SubmitPassportAsync(_form.ToRequest(), file!, key, progress, ct);
+
+    private void Reset() => _form = new();
+}

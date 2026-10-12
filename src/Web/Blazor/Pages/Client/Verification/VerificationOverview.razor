@@ -1,0 +1,55 @@
+@page "/client/verification"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.VerificationRead)]
+@implements IDisposable
+@inject IVerificationApiClient Api
+
+<PageTitle>Document verification · NexaVerify</PageTitle>
+
+<PageHeader Title="Document verification" Subtitle="Read bank statements, PAN cards and passports and check them for mistakes and inconsistencies.">
+    <Actions>
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.History" Href="client/verification/history">Verification history</MudButton>
+    </Actions>
+</PageHeader>
+
+<MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4" data-testid="overview-note">@VerificationText.Disclaimer</MudAlert>
+
+<PageState T="IReadOnlyList<VerificationModuleInfo>" Result="_state.Result" OnRetry="LoadAsync" IsEmpty="@(m => m.Count == 0)"
+           EmptyTitle="No document checks are set up" EmptyMessage="Ask your administrator or NexaVerify support to switch document verification on for your account.">
+    <Loading>
+        <div class="nv-module-grid" data-testid="overview-loading">@for (var i = 0; i < 3; i++) { <MudPaper Class="nv-card nv-card-pad" Elevation="0"><SkeletonCard Lines="3" /></MudPaper> }</div>
+    </Loading>
+    <ChildContent Context="modules">
+        @{
+            var available = modules.Where(m => !m.IsUpcoming).OrderBy(m => m.Key).ToList();
+            var upcoming = modules.Where(m => m.IsUpcoming).ToList();
+        }
+        <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Available now</MudText>
+        <div class="nv-module-grid" data-testid="available-modules">
+            @foreach (var module in available)
+            {
+                <ModuleCard Module="module" />
+            }
+        </div>
+        @if (upcoming.Count > 0)
+        {
+            <MudText Typo="Typo.h5" HtmlTag="h2" Class="mt-6 mb-1">Upcoming</MudText>
+            <MudText Typo="Typo.body2" Class="nv-muted mb-3">These are planned. They cannot be used yet, they cost nothing and nothing is checked.</MudText>
+            <div class="nv-module-grid" data-testid="upcoming-modules">
+                @foreach (var module in upcoming)
+                {
+                    <UpcomingModuleCard Module="module" />
+                }
+            </div>
+        }
+    </ChildContent>
+</PageState>
+
+@code {
+    private readonly LoadState<IReadOnlyList<VerificationModuleInfo>> _state = new();
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private Task LoadAsync() => _state.LoadAsync(ct => Api.GetModulesAsync(ct));
+
+    public void Dispose() => _state.Dispose();
+}

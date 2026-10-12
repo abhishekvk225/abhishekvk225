@@ -1,0 +1,15 @@
+@using NexaVerify.Web.Services
+
+@* Catalogue only: no link, no button, no cost, not focusable. It cannot lead anywhere because nothing exists behind it yet. *@
+<div class="nv-card nv-module-card nv-module-upcoming" aria-disabled="true" data-testid="upcoming-card" data-module="@Module.Key">
+    <div class="d-flex align-center justify-space-between" style="gap: var(--nv-space-2);">
+        <MudText Typo="Typo.h6" HtmlTag="h3">@Module.DisplayName</MudText>
+        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" tabindex="-1">Upcoming</MudChip>
+    </div>
+    <MudText Typo="Typo.body2" Class="nv-muted">@Module.Description</MudText>
+    <MudText Typo="Typo.body2" data-testid="upcoming-note">@VerificationText.UpcomingNote</MudText>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public VerificationModuleInfo Module { get; set; } = default!;
+}

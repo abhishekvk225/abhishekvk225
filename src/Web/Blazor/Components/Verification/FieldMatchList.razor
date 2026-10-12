@@ -1,0 +1,22 @@
+@using NexaVerify.Contracts.Verification
+
+@if (Matches.Count == 0)
+{
+    <MudText Class="nv-muted" data-testid="no-matches">Nothing was compared with details you entered.</MudText>
+}
+else
+{
+    <ul class="ma-0 pa-0" style="list-style:none;display:grid;gap:var(--nv-space-2);" data-testid="field-matches" aria-label="Comparison with the details you entered">
+        @foreach (var match in Matches)
+        {
+            <li class="d-flex align-center justify-space-between flex-wrap" style="gap: var(--nv-space-2);">
+                <span>@VerificationText.FieldLabel(match.Field)</span>
+                <StatusChip Kind="StatusKind.FieldMatch" Value="@match.Outcome" />
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<VerificationFieldMatchDto> Matches { get; set; } = [];
+}

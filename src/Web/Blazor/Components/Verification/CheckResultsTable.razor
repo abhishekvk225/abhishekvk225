@@ -1,0 +1,28 @@
+@using NexaVerify.Contracts.Verification
+@using NexaVerify.Contracts.Common
+
+<MudText Typo="Typo.body2" Class="mb-2" data-testid="check-summary">
+    @Summary.Passed passed, @Summary.Warned with warnings, @Summary.Failed failed, @Summary.NotEvaluated not checked.
+</MudText>
+<DataTable T="VerificationCheckDto" Caption="Individual checks" Columns="_columns" LoadData="Load" PageSize="50" PageSizeOptions="@(new[] { 50 })" Dense="true"
+           EmptyMessage="No individual checks were recorded." />
+
+@code {
+    private IReadOnlyList<DataColumn<VerificationCheckDto>> _columns = [];
+
+    [Parameter, EditorRequired] public IReadOnlyList<VerificationCheckDto> Checks { get; set; } = [];
+
+    [Parameter, EditorRequired] public VerificationSummaryDto Summary { get; set; } = new(0, 0, 0, 0);
+
+    protected override void OnInitialized() =>
+        _columns =
+        [
+            DataColumn<VerificationCheckDto>.Custom("Check", c => @<span><strong>@VerificationText.CheckTitle(c.Code, c.Message)</strong><br /><span class="nv-muted">@c.Message</span></span>),
+            DataColumn<VerificationCheckDto>.Custom("Result", c => @<StatusChip Kind="StatusKind.Check" Value="@c.Outcome" />),
+            DataColumn<VerificationCheckDto>.Custom("Importance", c => @<StatusChip Kind="StatusKind.Severity" Value="@c.Severity" />),
+            DataColumn<VerificationCheckDto>.Text("About", c => c.Field is null ? "—" : VerificationText.FieldLabel(c.Field)),
+        ];
+
+    private Task<ApiResult<PagedResult<VerificationCheckDto>>> Load(PageRequest request) =>
+        Task.FromResult(ApiResult<PagedResult<VerificationCheckDto>>.Ok(new PagedResult<VerificationCheckDto>(Checks, 1, Math.Max(1, Checks.Count), Checks.Count)));
+}

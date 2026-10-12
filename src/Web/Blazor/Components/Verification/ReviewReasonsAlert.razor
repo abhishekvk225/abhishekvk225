@@ -1,0 +1,27 @@
+@using NexaVerify.Contracts.Verification
+
+@if (Reasons.Count > 0 || ReviewRequired)
+{
+    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" role="status" data-testid="review-reasons">
+        <MudText Typo="Typo.subtitle2" HtmlTag="h2">Needs review</MudText>
+        @if (Reasons.Count > 0)
+        {
+            <ul class="ma-0 pl-4">
+                @foreach (var reason in Reasons)
+                {
+                    <li>@reason.Message</li>
+                }
+            </ul>
+        }
+        else
+        {
+            <span>Please look at the checks below before relying on this result.</span>
+        }
+    </MudAlert>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<VerificationReviewReasonDto> Reasons { get; set; } = [];
+
+    [Parameter] public bool ReviewRequired { get; set; }
+}
