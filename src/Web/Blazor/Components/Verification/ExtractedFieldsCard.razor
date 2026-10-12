@@ -75,6 +75,7 @@
         yield return new("Number check digit", VerificationText.MrzLabel(c.DocumentNumber));
         yield return new("Birth date check digit", VerificationText.MrzLabel(c.DateOfBirth));
         yield return new("Expiry check digit", VerificationText.MrzLabel(c.DateOfExpiry));
+        yield return new("Personal number check digit", VerificationText.MrzLabel(c.PersonalNumber));
         yield return new("Overall check digit", VerificationText.MrzLabel(c.Composite));
     }
 }

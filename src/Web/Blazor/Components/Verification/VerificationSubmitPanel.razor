@@ -94,7 +94,7 @@ else
                 @if (_error is not null)
                 {
                     <div role="alert" data-testid="submit-error">
-                        <ErrorState Error="_error" Title="@(PhotoGuard.IsRetryable(_error) ? "We could not send it" : "It was not accepted")" Message="@VerificationText.SubmitProblem(_error)" />
+                        <ErrorState Error="_error with { Message = VerificationText.SubmitProblem(_error) }" Title="@(PhotoGuard.IsRetryable(_error) ? "We could not send it" : "It was not accepted")" />
                         @if (_error.FieldErrors is { Count: > 0 })
                         {
                             <ul class="mt-2">@foreach (var (field, messages) in _error.FieldErrors) { <li>@VerificationText.FieldLabel(field): @string.Join(" ", messages)</li> }</ul>
