@@ -442,4 +442,41 @@ public class VerificationRequestTests
         grant.IsUsable(Now.AddSeconds(59)).ShouldBeTrue();
         grant.IsUsable(Now.AddSeconds(60)).ShouldBeFalse();
     }
+
+    [Fact]
+    public void The_retention_date_is_the_latest_purge_time_and_can_be_moved()
+    {
+        var request = NewRequest();
+        request.ExpiresAt.ShouldBe(Now.AddDays(7));
+        request.SetExpiresAt(Now.AddDays(90));
+        request.ExpiresAt.ShouldBe(Now.AddDays(90));
+    }
+
+    [Fact]
+    public void Retry_external_from_a_finished_request_goes_through_the_queue_never_straight_to_processing()
+    {
+        var request = Processing();
+        request.RecordDocumentStage(StageState.Completed, StageState.Completed, StageState.Completed, []);
+        request.RecordExternalResult(ExternalState.ProviderNotConfigured, null, null, Now);
+        request.Complete(Now);
+
+        request.RequeueForExternalRetry(Now.AddHours(1), VerificationActorType.ApiKey, null);
+
+        request.Status.ShouldBe(VerificationStatus.Queued);
+        request.LeaseToken.ShouldBeNull();
+        request.ExtractionState.ShouldBe(StageState.Completed); // the document stage is not repeated
+        request.ExternalState.ShouldBe(ExternalState.ProviderNotConfigured);
+        VerificationRules.CanTransition(VerificationStatus.Completed, VerificationStatus.Processing).ShouldBeFalse();
+        VerificationRules.CanTransition(VerificationStatus.ReviewRequired, VerificationStatus.Processing).ShouldBeFalse();
+        Should.Throw<DomainException>(() => request.RequeueForExternalRetry(Now, VerificationActorType.User, null)).Code.ShouldBe(VerificationDomainErrors.NotRetryable); // already queued
+    }
+
+    [Fact]
+    public void Field_outcomes_of_a_result_can_be_extended_without_touching_the_sealed_data()
+    {
+        var result = VerificationResult.Create(Client, Guid.NewGuid(), 1, [1, 2, 3], null, null, "[]", Now.AddDays(1));
+        result.SetFieldMatches("[{\"field\":\"name\",\"outcome\":\"Match\"}]");
+        result.FieldMatchesJson.ShouldContain("name");
+        result.DataEnc.ShouldBe([1, 2, 3]);
+    }
 }
