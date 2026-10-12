@@ -293,8 +293,8 @@ public static partial class VerificationText
 
     public static string When(DateTime? value) => value is null ? "—" : value.Value.ToString("d MMM yyyy, HH:mm", CultureInfo.InvariantCulture) + " UTC";
 
-    /// <summary>First eight characters of the request id, enough to quote to support; the full id is always available.</summary>
-    public static string ShortId(Guid id) => id.ToString("N")[..8];
+    /// <summary>Last eight characters of the request id (the first ones are a timestamp), enough to quote to support; the full id is always available.</summary>
+    public static string ShortId(Guid id) => id.ToString("N")[^8..];
 
     [GeneratedRegex("(?<=[a-z])(?=[A-Z])", RegexOptions.CultureInvariant)]
     private static partial Regex Words();

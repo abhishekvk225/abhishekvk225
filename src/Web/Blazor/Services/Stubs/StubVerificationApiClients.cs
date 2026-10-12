@@ -328,7 +328,7 @@ public sealed class StubAdminVerificationApiClient(StubVerificationStore store) 
             Mod("pan", "PAN verification", "PAN format, card reading and provider check.", 2, [new("pan", "Pan", false, none)], "PanExtraction", "PanProviderCheck"),
             Mod("passport", "Passport verification", "Passport reading, dates, MRZ and provider check.", 3, [new("passport", "Passport", false, none)], "PassportExtraction", "PassportProviderCheck"),
         ];
-        list.AddRange(Upcoming.Select((k, i) => new AdminVerificationModuleDto(k, k, "Planned for a later release.", "Upcoming", false, null, 10 + i, [], [], null, null)));
+        list.AddRange(Upcoming.Select((k, i) => new AdminVerificationModuleDto(k, k switch { "aadhaar" => "Aadhaar Verification", "driving-licence" => "Driving Licence Verification", "voter-id" => "Voter ID Verification", "digilocker" => "DigiLocker Integration", "govt-documents" => "Additional Government Document Verification", _ => "Additional KYC and fraud detection" }, "Planned for a later release.", "Upcoming", false, null, 10 + i, [], [], null, null)));
         return Task.FromResult(ApiResult<IReadOnlyList<AdminVerificationModuleDto>>.Ok(list));
     }
 

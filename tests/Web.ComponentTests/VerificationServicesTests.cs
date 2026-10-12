@@ -12,6 +12,13 @@ using NexaVerify.Web.Security;
 
 namespace NexaVerify.Web.ComponentTests;
 
+internal sealed class SyncProgress : IProgress<long>
+{
+    public List<long> Values { get; } = [];
+
+    public void Report(long value) { lock (Values) { Values.Add(value); } }
+}
+
 public class VerificationApiClientTests
 {
     private static async Task<(BffHarness Harness, VerificationApiClient Client)> NewAsync()
@@ -30,11 +37,11 @@ public class VerificationApiClientTests
         h.Api.Respond = _ => ScriptedApi.Json(HttpStatusCode.Accepted, AcceptedJson);
         var data = new byte[200_000];
         "%PDF-1.7"u8.CopyTo(data);
-        var sent = new List<long>();
+        var sent = new SyncProgress();
 
         var result = await client.SubmitBankStatementAsync(
             new SubmitBankStatementRequest("EXT-1", "CONSENT-9", "Priya Sharma", null, "4821", new DateOnly(2026, 1, 1), new DateOnly(2026, 3, 31)),
-            new DocumentUploadFile(data, "application/pdf", "priya-sharma-statement.pdf"), "key-123", new Progress<long>(sent.Add));
+            new DocumentUploadFile(data, "application/pdf", "priya-sharma-statement.pdf"), "key-123", sent);
 
         result.IsSuccess.ShouldBeTrue(result.Error?.Message);
         result.Value.PollAfterSeconds.ShouldBe(2);
@@ -51,9 +58,8 @@ public class VerificationApiClientTests
         text.ShouldContain("name=document; filename=upload.pdf");
         text.ShouldNotContain("priya-sharma-statement", Case.Insensitive);
         text.ShouldNotContain("name=bankName", Case.Sensitive);
-        await Task.Delay(50);
-        sent.Count.ShouldBeGreaterThan(1, "progress is reported in chunks");
-        sent.Max().ShouldBe(data.Length);
+        sent.Values.Count.ShouldBeGreaterThan(1, "progress is reported in chunks");
+        sent.Values.Max().ShouldBe(data.Length);
     }
 
     [Fact]
