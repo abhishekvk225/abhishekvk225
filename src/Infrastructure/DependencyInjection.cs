@@ -98,6 +98,7 @@ public static class DependencyInjection
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<EmailOptions>, EmailOptionsValidator>());
         services.AddOptions<SeedOptions>().Bind(configuration.GetSection(SeedOptions.SectionName));
         services.AddVerificationInfrastructure(configuration);
+        services.AddVerificationPersistence();
 
         // Repositories and identity services
         services.AddScoped<IUserRepository, UserRepository>();

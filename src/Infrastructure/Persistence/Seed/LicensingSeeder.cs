@@ -57,6 +57,7 @@ public sealed class LicensingSeeder
         }
 
         await _db.SaveChangesAsync(cancellationToken);
+        await VerificationSeed.EnsureAsync(_db, now, cancellationToken);
     }
 
     /// <summary>The public "Free trial": its public credits and period are the <c>Signup:TrialCredits</c> / <c>Signup:TrialDays</c> values.</summary>
