@@ -23,6 +23,9 @@
     <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
     <PackageVersion Include="SkiaSharp" Version="3.119.2" />
     <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.2" />
+    <!-- M14 document verification (docs/07 §6.1 as built): digital PDF text (Apache-2.0) and PDF rasterisation (PDFtoImage MIT + PDFium BSD-3/Apache-2.0; 5.2.1 is the newest line built against SkiaSharp 3.119.2). -->
+    <PackageVersion Include="PdfPig" Version="0.1.16" />
+    <PackageVersion Include="PDFtoImage" Version="5.2.1" />
     <!-- SMTP delivery for the email dispatcher (MIT licence; also pulls MimeKit and BouncyCastle.Cryptography, both MIT). -->
     <PackageVersion Include="MailKit" Version="4.18.1" />
     <PackageVersion Include="MudBlazor" Version="9.11.0" />

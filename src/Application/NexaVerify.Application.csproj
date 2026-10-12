@@ -4,6 +4,9 @@
     <ProjectReference Include="..\Contracts\NexaVerify.Contracts.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Verification\BankStatements\RuleSets\*.json" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="FluentValidation" />
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
     <PackageReference Include="Microsoft.Extensions.Options" />

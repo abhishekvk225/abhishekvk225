@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <ProjectReference Include="..\..\src\Application\NexaVerify.Application.csproj" />
+    <ProjectReference Include="..\TestSupport\NexaVerify.TestSupport.csproj" />
   </ItemGroup>
 </Project>

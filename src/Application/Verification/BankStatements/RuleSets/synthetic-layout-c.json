@@ -1,0 +1,23 @@
+{
+  "id": "synthetic-layout-c",
+  "displayName": "SYNTHETIC test layout C (not a real bank): lakh grouping, value date, single amount column",
+  "detectPatterns": ["(?i)synthetic\\s+bank\\s+gamma"],
+  "header": {
+    "holderName": "(?i)^name\\s*:\\s*(?<v>[A-Za-z][A-Za-z .'\\-]{1,80})$",
+    "bankName": "(?i)^(?<v>synthetic\\s+bank\\s+gamma)\\b",
+    "accountNumber": "(?i)^account\\s*no\\.?\\s*:\\s*(?<v>[0-9Xx*]{6,24})$",
+    "periodFrom": "(?i)^period\\s*:\\s*(?<v>\\d{2}\\.\\d{2}\\.\\d{4})",
+    "periodTo": "(?i)^period\\s*:.*?\\bto\\s+(?<v>\\d{2}\\.\\d{2}\\.\\d{4})",
+    "openingBalance": "(?i)^opening\\s+balance\\s*:\\s*(?<v>[\\d,]+\\.\\d{2})",
+    "closingBalance": "(?i)^closing\\s+balance\\s*:\\s*(?<v>[\\d,]+\\.\\d{2})"
+  },
+  "transactions": {
+    "lines": [
+      "^(?<date>\\d{2}\\.\\d{2}\\.\\d{4})\\s+(?<valueDate>\\d{2}\\.\\d{2}\\.\\d{4})\\s+(?<desc>.+?)\\s+(?<amount>[\\d,]+\\.\\d{2})\\s+(?<balance>[\\d,]+\\.\\d{2})$"
+    ],
+    "ignoreLines": ["(?i)^page\\s+\\d+", "(?i)^(?:txn\\s+)?date\\b", "(?i)^synthetic\\s+bank"]
+  },
+  "dateFormats": ["dd.MM.yyyy"],
+  "amounts": { "decimalSeparator": ".", "thousandsSeparator": ",", "lakhGrouping": true, "drCrSuffix": false },
+  "defaultCurrency": "INR"
+}

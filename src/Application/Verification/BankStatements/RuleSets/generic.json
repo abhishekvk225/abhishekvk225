@@ -1,0 +1,28 @@
+{
+  "id": "generic",
+  "displayName": "Generic columnar statement (best effort)",
+  "detectPatterns": [],
+  "header": {
+    "holderName": "(?i)^(?:account\\s+(?:holder|name)|customer\\s+name|name\\s+of\\s+(?:the\\s+)?account\\s+holder)\\s*[:\\-]\\s*(?<v>[A-Za-z][A-Za-z .'\\-]{1,80})$",
+    "bankName": "(?i)^bank(?:\\s+name)?\\s*[:\\-]\\s*(?<v>.{3,60})$",
+    "accountNumber": "(?i)^account\\s*(?:no|number|#)\\.?\\s*[:\\-]?\\s*(?<v>[0-9Xx*]{6,24})$",
+    "periodFrom": "(?i)(?:period|from)\\b[^0-9]{0,20}(?<v>\\d{1,2}[/\\-.]\\d{1,2}[/\\-.]\\d{4})",
+    "periodTo": "(?i)(?:period|from)\\b.*?\\bto\\b[^0-9]{0,10}(?<v>\\d{1,2}[/\\-.]\\d{1,2}[/\\-.]\\d{4})",
+    "openingBalance": "(?i)opening\\s+balance\\s*[:\\-]?\\s*(?:INR|Rs\\.?)?\\s*(?<v>[\\d,]+\\.\\d{2}(?:\\s?(?:Dr|Cr))?)",
+    "closingBalance": "(?i)closing\\s+balance\\s*[:\\-]?\\s*(?:INR|Rs\\.?)?\\s*(?<v>[\\d,]+\\.\\d{2}(?:\\s?(?:Dr|Cr))?)"
+  },
+  "transactions": {
+    "lines": [
+      "^(?<date>\\d{1,2}[/\\-.]\\d{1,2}[/\\-.]\\d{4})\\s+(?:(?<valueDate>\\d{1,2}[/\\-.]\\d{1,2}[/\\-.]\\d{4})\\s+)?(?<desc>.+?)\\s+(?<amount>[\\d,]+\\.\\d{2}(?:\\s?(?:Dr|Cr))?)\\s+(?<balance>[\\d,]+\\.\\d{2}(?:\\s?(?:Dr|Cr))?)$"
+    ],
+    "ignoreLines": [
+      "(?i)^page\\s+\\d+",
+      "(?i)^(?:date|txn\\s+date|transaction\\s+date)\\b",
+      "(?i)^(?:opening|closing)\\s+balance",
+      "(?i)^(?:account|statement|customer|bank)\\b"
+    ]
+  },
+  "dateFormats": ["dd/MM/yyyy", "dd-MM-yyyy", "dd.MM.yyyy", "d/M/yyyy", "d-M-yyyy"],
+  "amounts": { "decimalSeparator": ".", "thousandsSeparator": ",", "lakhGrouping": true, "drCrSuffix": true },
+  "defaultCurrency": "INR"
+}
