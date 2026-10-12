@@ -135,6 +135,12 @@ public static class ThrottlePolicies
     public const string Exports = "exports";
     public const string WebhookTest = "webhook-test";
     public const string WebhookRetry = "webhook-retry";
+
+    /// <summary>M14: document submissions and provider-check retries (each one stores a file and may later cost credits).</summary>
+    public const string VerificationSubmit = "verification-submit";
+
+    /// <summary>M14: report and document download links.</summary>
+    public const string VerificationDownload = "verification-download";
 }
 
 /// <summary>Per-principal (signed-in user or API key) throttle on expensive operations; shared across API nodes.</summary>

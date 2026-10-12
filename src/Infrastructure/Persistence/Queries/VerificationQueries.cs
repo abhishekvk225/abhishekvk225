@@ -148,6 +148,26 @@ internal sealed class VerificationAdminQueries : IVerificationAdminQueries
             r.ReviewRequired, r.Assurance.ToString(), r.ErrorCode, r.CreditsCharged, r.ProviderCreditsCharged, r.Attempts, r.CorrelationId, r.CreatedAt, r.StartedAt, r.CompletedAt)).ToList(), total);
     }
 
+    public async Task<(IReadOnlyList<NexaVerify.Domain.Auditing.AuditLog> Items, int Total)> ListPlatformAuditAsync(
+        DateTime? from, DateTime? to, int skip, int take, CancellationToken cancellationToken)
+    {
+        // Platform-level verification events (module switches, administrative views) are recorded under the platform tenant.
+        var query = _db.AuditLogs.AsNoTracking().Where(a => a.ClientId == NexaVerify.Domain.Common.PlatformTenant.ClientId && a.Action.StartsWith("verification."));
+        if (from is { } f)
+        {
+            query = query.Where(a => a.OccurredAt >= f);
+        }
+
+        if (to is { } t)
+        {
+            query = query.Where(a => a.OccurredAt <= t);
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query.OrderByDescending(a => a.Id).Skip(Math.Max(0, skip)).Take(Math.Clamp(take, 1, MaxPage)).ToListAsync(cancellationToken);
+        return (items, total);
+    }
+
     public async Task<AdminVerificationDetailDto?> GetDetailAsync(Guid clientId, Guid requestId, CancellationToken cancellationToken)
     {
         var r = await _db.VerificationRequests.AsNoTracking().Where(x => x.ClientId == clientId && x.Id == requestId)

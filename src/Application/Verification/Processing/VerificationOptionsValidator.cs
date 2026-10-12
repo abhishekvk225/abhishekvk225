@@ -33,6 +33,8 @@ public sealed class VerificationOptionsValidator : IValidateOptions<Verification
         Positive(errors, w.Parallelism, "Worker:Parallelism");
         Positive(errors, w.PollSeconds, "Worker:PollSeconds");
         Positive(errors, w.BatchSize, "Worker:BatchSize");
+        Positive(errors, w.PerClientLimit, "Worker:PerClientLimit");
+        Positive(errors, w.HousekeepingBatch, "Worker:HousekeepingBatch");
         var p = o.Processing;
         Positive(errors, p.TimeoutSeconds, "Processing:TimeoutSeconds");
         Positive(errors, p.MaxAttempts, "Processing:MaxAttempts");

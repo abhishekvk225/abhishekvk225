@@ -99,17 +99,26 @@ public interface IOcrProvider
     Task<OcrPage> RecognizeAsync(OcrRequest request, CancellationToken cancellationToken);
 }
 
-public sealed record StoredDocument(Guid DocumentId, Guid RequestId, int SizeBytes, byte[] Sha256);
+/// <summary>An encrypted document ready to be inserted together with its request (nothing is persisted by sealing).</summary>
+public sealed record SealedDocument(VerificationDocument Document, VerificationDocumentBlob Blob)
+{
+    public override string ToString() => nameof(SealedDocument);
+}
 
 /// <summary>Encrypted document storage (ADR-19). No public URLs; the tenant filter applies to every read.</summary>
 public interface IDocumentStorageService
 {
-    /// <summary>Encrypts with <c>IClientEncryption</c>, purpose <c>verification-document:{requestId:N}</c>.</summary>
-    Task<StoredDocument> StoreAsync(Guid clientId, Guid requestId, DocumentUpload upload, DocumentInspection inspection, CancellationToken cancellationToken);
+    /// <summary>
+    /// Encrypts the upload with <c>IClientEncryption</c> (purpose <c>verification-document:{requestId:N}</c>) and builds the metadata and
+    /// ciphertext rows. Nothing is saved: the submission inserts them with the request in one transaction, so a document never exists
+    /// without its request (and a lost idempotency race leaves no orphan).
+    /// </summary>
+    Task<SealedDocument> SealAsync(
+        Guid clientId, Guid requestId, DocumentUpload upload, DocumentInspection inspection, DateTime purgeAfter, CancellationToken cancellationToken);
 
-    /// <summary>Tenant filter applies; decrypts.</summary>
-    Task<Result<byte[]>> ReadAsync(Guid documentId, CancellationToken cancellationToken);
+    /// <summary>Tenant filter applies; decrypts. Failure when the request has no document or it was purged.</summary>
+    Task<Result<byte[]>> ReadAsync(Guid requestId, CancellationToken cancellationToken);
 
-    /// <summary>Hard-deletes the content and flags the metadata purged.</summary>
-    Task DeleteAsync(Guid documentId, CancellationToken cancellationToken);
+    /// <summary>Hard-deletes the content and flags the metadata purged (immediate; also used by erasure).</summary>
+    Task DeleteAsync(Guid requestId, CancellationToken cancellationToken);
 }

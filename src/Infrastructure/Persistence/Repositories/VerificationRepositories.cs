@@ -28,7 +28,8 @@ internal sealed class VerificationRepository : IVerificationRepository
         _db.VerificationRequests.AsNoTracking().FirstOrDefaultAsync(r => r.IdempotencyKey == idempotencyKey, cancellationToken);
 
     public async Task<VerificationCreateOutcome> CreateIdempotentAsync(
-        VerificationRequest request, VerificationDocument? document, VerificationDocumentBlob? blob, CancellationToken cancellationToken)
+        VerificationRequest request, VerificationDocument? document, VerificationDocumentBlob? blob, CancellationToken cancellationToken,
+        VerificationResult? submission = null)
     {
         var key = request.IdempotencyKey;
         if (key is not null && await FindByIdempotencyKeyAsync(key, cancellationToken) is { } existing)
@@ -46,6 +47,12 @@ internal sealed class VerificationRepository : IVerificationRepository
                     {
                         _db.VerificationDocuments.Add(document);
                         _db.VerificationDocumentBlobs.Add(blob);
+                    }
+
+                    if (submission is not null)
+                    {
+                        // The encrypted submitted fields travel with the request so a request can never exist without its inputs.
+                        _db.VerificationResults.Add(submission);
                     }
 
                     await _db.SaveChangesAsync(token);
@@ -199,6 +206,9 @@ internal sealed class VerificationModuleSettingStore : IVerificationModuleSettin
         _db.VerificationModuleSettings.FirstOrDefaultAsync(s => s.ModuleKey == moduleKey, cancellationToken);
 
     public void Add(VerificationModuleSetting setting) => _db.VerificationModuleSettings.Add(setting);
+
+    public void SetExpectedVersion(VerificationModuleSetting setting, byte[] rowVersion) =>
+        _db.Entry(setting).Property(s => s.RowVersion).OriginalValue = rowVersion;
 
     public Task<bool?> IsEnabledAsync(string moduleKey, CancellationToken cancellationToken) =>
         _db.VerificationModuleSettings.AsNoTracking().Where(s => s.ModuleKey == moduleKey).Select(s => (bool?)s.IsEnabled).FirstOrDefaultAsync(cancellationToken);

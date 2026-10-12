@@ -188,7 +188,9 @@ public sealed class VerificationQueue : IVerificationQueue
             UPDATE r SET Status = 'Expired', ErrorCode = 'EXPIRED', CompletedAt = @now, NextAttemptAt = NULL, UpdatedAt = @now
             OUTPUT inserted.Id, inserted.ClientId INTO @t
             FROM verification.Requests AS r WITH (UPDLOCK, READPAST, ROWLOCK)
-            WHERE r.Status = 'Queued' AND r.Id IN (SELECT TOP (@take) Id FROM verification.Requests WITH (READPAST) WHERE Status = 'Queued' AND CreatedAt < @before ORDER BY CreatedAt);
+            WHERE r.Status = 'Queued' AND r.ExtractionState = 'NotStarted' AND r.RulesState = 'NotStarted'
+              AND r.Id IN (SELECT TOP (@take) Id FROM verification.Requests WITH (READPAST)
+                           WHERE Status = 'Queued' AND ExtractionState = 'NotStarted' AND RulesState = 'NotStarted' AND CreatedAt < @before ORDER BY CreatedAt);
             {EventInsert}
             SELECT ClientId, Id, 'Queued', 'Expired', NULL, 'EXPIRED', 'System', NULL, @now FROM @t;
             SELECT COUNT(*) FROM @t;

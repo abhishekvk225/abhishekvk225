@@ -30,12 +30,22 @@ public sealed class ThrottleOptions
     [Range(1, 100_000)]
     public int WebhookRetriesPerMinute { get; set; } = 30;
 
+    /// <summary>Verification submissions and provider-check retries (<c>Throttle:VerificationSubmitsPerMinute</c>, docs/07 §5).</summary>
+    [Range(1, 100_000)]
+    public int VerificationSubmitsPerMinute { get; set; } = 20;
+
+    /// <summary>Report / document download links.</summary>
+    [Range(1, 100_000)]
+    public int VerificationDownloadsPerMinute { get; set; } = 30;
+
     public int LimitFor(string policy) => policy switch
     {
         ThrottlePolicies.Dashboards => DashboardsPerMinute,
         ThrottlePolicies.Exports => ExportsPerMinute,
         ThrottlePolicies.WebhookTest => WebhookTestsPerMinute,
         ThrottlePolicies.WebhookRetry => WebhookRetriesPerMinute,
+        ThrottlePolicies.VerificationSubmit => VerificationSubmitsPerMinute,
+        ThrottlePolicies.VerificationDownload => VerificationDownloadsPerMinute,
         _ => throw new ArgumentOutOfRangeException(nameof(policy), policy, "Unknown throttle policy."),
     };
 }

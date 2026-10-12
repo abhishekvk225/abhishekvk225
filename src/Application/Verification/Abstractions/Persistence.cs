@@ -49,7 +49,8 @@ public interface IVerificationRepository
     /// <c>Created = false</c>. Must not be called inside an outer transaction (it owns the transaction and clears the tracker on a conflict).
     /// </summary>
     Task<VerificationCreateOutcome> CreateIdempotentAsync(
-        VerificationRequest request, VerificationDocument? document, VerificationDocumentBlob? blob, CancellationToken cancellationToken);
+        VerificationRequest request, VerificationDocument? document, VerificationDocumentBlob? blob, CancellationToken cancellationToken,
+        VerificationResult? submission = null);
 
     /// <summary>
     /// Saves the pending changes with optimistic concurrency (<c>RowVersion</c>). Returns false when another writer changed the request in
@@ -224,6 +225,9 @@ public interface IVerificationAdminQueries
     Task<(IReadOnlyList<AdminVerificationItemDto> Items, int Total)> ListForClientAsync(Guid clientId, AdminVerificationListQuery query, CancellationToken cancellationToken);
 
     Task<AdminVerificationDetailDto?> GetDetailAsync(Guid clientId, Guid requestId, CancellationToken cancellationToken);
+
+    /// <summary>Platform-level audit rows whose action starts with <c>verification.</c> (module switches, administrative views), newest first. Platform scope only.</summary>
+    Task<(IReadOnlyList<Domain.Auditing.AuditLog> Items, int Total)> ListPlatformAuditAsync(DateTime? from, DateTime? to, int skip, int take, CancellationToken cancellationToken);
 }
 
 /// <summary>Write side of the global module switch (the read side is <c>IVerificationModuleSettingReader</c>). Not tenant-owned: no ClientId.</summary>
@@ -235,4 +239,7 @@ public interface IVerificationModuleSettings
     Task<VerificationModuleSetting?> GetAsync(string moduleKey, CancellationToken cancellationToken);
 
     void Add(VerificationModuleSetting setting);
+
+    /// <summary>Makes the save fail with a concurrency conflict if the row changed since <paramref name="rowVersion"/> was read.</summary>
+    void SetExpectedVersion(VerificationModuleSetting setting, byte[] rowVersion);
 }

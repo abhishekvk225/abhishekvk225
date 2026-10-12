@@ -19,6 +19,9 @@ public interface IVerificationMeter
 {
     Task<Result<VerificationMeterTicket>> PreflightAsync(Guid clientId, VerificationType type, bool includeProvider, CancellationToken cancellationToken);
 
+    /// <summary>Pre-flight for ONE stage (the provider stage is checked right before the vendor call, when extraction is already paid).</summary>
+    Task<Result<VerificationMeterTicket>> PreflightStageAsync(Guid clientId, VerificationType type, VerificationStage stage, CancellationToken cancellationToken);
+
     Task<Result<StageCharge>> ChargeStageAsync(
         Guid clientId, Guid requestId, VerificationType type, VerificationStage stage, MeterOutcome outcome, CancellationToken cancellationToken);
 }

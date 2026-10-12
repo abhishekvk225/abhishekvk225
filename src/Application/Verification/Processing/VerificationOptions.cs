@@ -98,6 +98,12 @@ public sealed class WorkerOptions
 
     /// <summary>Must exceed <c>Processing:TimeoutSeconds</c> + 30.</summary>
     public int LeaseSeconds { get; set; } = 300;
+
+    /// <summary>At most this many requests of one tenant are claimed per cycle, so one tenant cannot starve the others.</summary>
+    public int PerClientLimit { get; set; } = 2;
+
+    /// <summary>How many expired leases / stale queued requests one housekeeping pass handles.</summary>
+    public int HousekeepingBatch { get; set; } = 100;
 }
 
 public sealed class ProcessingOptions

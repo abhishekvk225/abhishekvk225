@@ -14,6 +14,9 @@ public enum ErrorType
     PayloadTooLarge,
     UnprocessableEntity,
     Unavailable,
+
+    /// <summary>A one-time resource that existed but is no longer available (an expired or used download link): HTTP 410.</summary>
+    Gone,
 }
 
 /// <summary>A business failure: stable <see cref="Code"/> (from ErrorCodes), human message, optional field errors.</summary>
@@ -46,4 +49,6 @@ public sealed record Error(
     public static Error Unprocessable(string code, string message) => new(code, message, ErrorType.UnprocessableEntity);
 
     public static Error Unavailable(string code, string message) => new(code, message, ErrorType.Unavailable);
+
+    public static Error Gone(string code, string message) => new(code, message, ErrorType.Gone);
 }

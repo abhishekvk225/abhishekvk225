@@ -90,6 +90,9 @@ public sealed class VerificationResult : IStrictTenantOwned
 
     public DateTime RetainUntil { get; private set; }
 
+    /// <summary>Replaces the field-level outcomes (the provider stage adds its own) without touching the sealed data or the masked identifier.</summary>
+    public void SetFieldMatches(string fieldMatchesJson) => FieldMatchesJson = fieldMatchesJson;
+
     public static VerificationResult Create(
         Guid clientId, Guid requestId, int schemaVersion, byte[] dataEnc, MaskedIdentifier? identifierMasked, byte[]? identifierHash,
         string fieldMatchesJson, DateTime retainUntil) =>

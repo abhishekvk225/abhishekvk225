@@ -203,3 +203,18 @@ public sealed record AdminVerificationListQuery
 
     public DateTime? To { get; init; }
 }
+
+/// <summary>A platform-level audit row about the verification module (module switch, administrative view). Ids and codes only.</summary>
+public sealed record AdminVerificationAuditItemDto(
+    long Id, DateTime OccurredAt, string Action, string EntityType, string EntityId, string ActorType, Guid? ActorId, string? CorrelationId);
+
+public sealed record AdminVerificationAuditQuery
+{
+    public int Page { get; init; } = 1;
+
+    public int PageSize { get; init; } = 25;
+
+    public DateTime? From { get; init; }
+
+    public DateTime? To { get; init; }
+}

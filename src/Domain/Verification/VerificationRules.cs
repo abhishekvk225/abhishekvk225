@@ -47,8 +47,8 @@ public static class VerificationRules
         (VerificationStatus.Processing, VerificationStatus.ReviewRequired) => true,
         (VerificationStatus.Processing, VerificationStatus.Failed) => true,
         (VerificationStatus.Processing, VerificationStatus.Cancelled) => true,
-        (VerificationStatus.Completed, VerificationStatus.Processing) => true, // retry-external (provider stage only)
-        (VerificationStatus.ReviewRequired, VerificationStatus.Processing) => true,
+        (VerificationStatus.Completed, VerificationStatus.Queued) => true, // retry-external: re-queued, then claimed under a lease (provider stage only)
+        (VerificationStatus.ReviewRequired, VerificationStatus.Queued) => true,
         _ => false,
     };
 

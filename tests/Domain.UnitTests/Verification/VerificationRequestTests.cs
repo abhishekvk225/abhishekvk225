@@ -65,8 +65,8 @@ public class VerificationRequestTests
         (VerificationStatus.Processing, VerificationStatus.ReviewRequired),
         (VerificationStatus.Processing, VerificationStatus.Failed),
         (VerificationStatus.Processing, VerificationStatus.Cancelled),
-        (VerificationStatus.Completed, VerificationStatus.Processing),
-        (VerificationStatus.ReviewRequired, VerificationStatus.Processing),
+        (VerificationStatus.Completed, VerificationStatus.Queued),
+        (VerificationStatus.ReviewRequired, VerificationStatus.Queued),
     ];
 
     public static TheoryData<VerificationStatus, VerificationStatus> AllPairs()
@@ -277,8 +277,16 @@ public class VerificationRequestTests
         request.Complete(Now);
         request.Status.ShouldBe(VerificationStatus.ReviewRequired);
 
-        request.BeginExternalRetry(Now, VerificationActorType.User, Guid.NewGuid());
+        request.RequeueForExternalRetry(Now, VerificationActorType.User, Guid.NewGuid());
+        request.Status.ShouldBe(VerificationStatus.Queued);
+        request.Attempts.ShouldBe(0);
+        request.LeaseToken.ShouldBeNull();
+        request.CompletedAt.ShouldBeNull();
+        request.NextAttemptAt.ShouldBe(Now);
+        request.Events[^1].NoteCode.ShouldBe("EXTERNAL_RETRY");
+        request.Claim(Guid.NewGuid(), Now.AddMinutes(5), Now); // a retry runs under a lease like any other claim
         request.Status.ShouldBe(VerificationStatus.Processing);
+        request.LeaseToken.ShouldNotBeNull();
         request.RecordExternalResult(ExternalState.Verified, "p", "ref", Now);
         request.Complete(Now);
 
@@ -293,14 +301,14 @@ public class VerificationRequestTests
         var verified = Processing();
         verified.RecordExternalResult(ExternalState.Verified, "p", "r", Now);
         verified.Complete(Now);
-        Should.Throw<DomainException>(() => verified.BeginExternalRetry(Now, VerificationActorType.User, null))
+        Should.Throw<DomainException>(() => verified.RequeueForExternalRetry(Now, VerificationActorType.User, null))
             .Code.ShouldBe(VerificationDomainErrors.NotRetryable);
 
         var purged = Processing();
         purged.RecordExternalResult(ExternalState.Timeout, "p", null, Now);
         purged.Complete(Now);
         purged.MarkPurged(Now);
-        Should.Throw<DomainException>(() => purged.BeginExternalRetry(Now, VerificationActorType.User, null))
+        Should.Throw<DomainException>(() => purged.RequeueForExternalRetry(Now, VerificationActorType.User, null))
             .Code.ShouldBe(VerificationDomainErrors.NotRetryable);
     }
 

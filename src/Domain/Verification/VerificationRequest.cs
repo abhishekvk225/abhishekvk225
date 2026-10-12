@@ -329,10 +329,12 @@ public sealed class VerificationRequest : AuditableEntity, ITenantOwned
     }
 
     /// <summary>
-    /// retry-external: Completed/ReviewRequired back to Processing for the provider stage only. Allowed when the external state is
-    /// retryable and the data has not been purged.
+    /// retry-external: a finished request goes back to the queue (never straight to Processing, which would run without a lease) and the worker
+    /// claims it like any other. The document stage flags are already complete, so the worker runs only the provider stage. Allowed when the
+    /// external state is retryable and the data has not been purged. The attempt counter restarts so a crash during the retry gets the normal
+    /// number of lease recoveries.
     /// </summary>
-    public void BeginExternalRetry(DateTime now, VerificationActorType actorType, Guid? actorId)
+    public void RequeueForExternalRetry(DateTime now, VerificationActorType actorType, Guid? actorId)
     {
         if (PurgedAt is not null || !VerificationRules.IsRetryable(ExternalState))
         {
@@ -344,9 +346,15 @@ public sealed class VerificationRequest : AuditableEntity, ITenantOwned
             throw new DomainException(VerificationDomainErrors.NotRetryable, "Only a finished verification can be retried.");
         }
 
-        Transition(VerificationStatus.Processing, now, "External", "EXTERNAL_RETRY", actorType, actorId);
+        Transition(VerificationStatus.Queued, now, "External", "EXTERNAL_RETRY", actorType, actorId);
         CompletedAt = null;
+        NextAttemptAt = now;
+        Attempts = 0;
+        ClearLease();
     }
+
+    /// <summary>The latest time any of this request's data (document, result, checks) is purged; the retention sweeper's due date.</summary>
+    public void SetExpiresAt(DateTime expiresAt) => ExpiresAt = expiresAt;
 
     public void MarkPurged(DateTime now) => PurgedAt = now;
 
