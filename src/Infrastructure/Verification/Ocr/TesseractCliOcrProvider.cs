@@ -172,7 +172,11 @@ public sealed partial class TesseractCliOcrProvider : IOcrProvider, IDisposable
                 return false;
             }
 
-            process.WaitForExit();
+            if (!Task.WaitAll([stdout, stderr], TimeSpan.FromSeconds(_pipeline.OcrProbeTimeoutSeconds)))
+            {
+                return false;
+            }
+
             var output = stdout.IsCompletedSuccessfully ? stdout.Result : string.Empty;
             output += "\n" + (stderr.IsCompletedSuccessfully ? stderr.Result : string.Empty); // older versions print the list to stderr
             var installed = output.Split('\n').Select(l => l.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);

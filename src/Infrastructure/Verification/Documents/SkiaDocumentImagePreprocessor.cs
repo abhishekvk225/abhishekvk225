@@ -48,7 +48,7 @@ public sealed class SkiaDocumentImagePreprocessor : IDocumentImagePreprocessor
                 return new Error(ErrorCodes.DocumentUnreadable, "The image could not be read.", ErrorType.UnprocessableEntity);
             }
 
-            using var decoded = SKBitmap.Decode(codec, new SKImageInfo(codec.Info.Width, codec.Info.Height, SKColorType.Rgba8888, SKAlphaType.Opaque));
+            using var decoded = SKBitmap.Decode(codec, new SKImageInfo(codec.Info.Width, codec.Info.Height, SKColorType.Rgba8888, SKAlphaType.Premul));
             if (decoded is null)
             {
                 return new Error(ErrorCodes.DocumentUnreadable, "The image could not be decoded.", ErrorType.UnprocessableEntity);

@@ -67,6 +67,7 @@ public class RealLibraryTests
         px.Red.ShouldBe(px.Green);
         px.Green.ShouldBe(px.Blue);
 
+        (await pre.PrepareForOcrAsync(SampleDocuments.Png(120, 80), CancellationToken.None)).IsSuccess.ShouldBeTrue(); // PNG with an alpha channel
         (await pre.PrepareForOcrAsync("garbage"u8.ToArray(), CancellationToken.None)).Error!.Code.ShouldBe(ErrorCodes.DocumentUnreadable);
         var tight = new SkiaDocumentImagePreprocessor(Options.Create(new VerificationOptions { Upload = { MaxImagePixels = 100 } }), Pipe);
         (await tight.PrepareForOcrAsync(SampleDocuments.Png(200, 200), CancellationToken.None)).IsFailure.ShouldBeTrue();
