@@ -1,0 +1,6 @@
+@* The overall state of a check ("Checks completed" is never shown as a green success: only an official provider answer is). *@
+<StatusChip Kind="StatusKind.Verification" Value="@Status" />
+
+@code {
+    [Parameter, EditorRequired] public string? Status { get; set; }
+}

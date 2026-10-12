@@ -26,6 +26,13 @@ public static class NavigationCatalog
             new("Credit packs", "admin/billing/packs", Icons.Material.Outlined.Sell, WebPermissions.BillingPacksManage),
             new("Orders", "admin/billing/orders", Icons.Material.Outlined.ReceiptLong, WebPermissions.BillingOrdersRead),
         ]),
+        new("Verification",
+        [
+            new("Operations", "admin/verification", Icons.Material.Outlined.QueryStats, WebPermissions.VerificationAdminRead, Exact: true),
+            new("Modules", "admin/verification/modules", Icons.Material.Outlined.Extension, WebPermissions.VerificationAdminRead),
+            new("Investigation", "admin/verification/requests", Icons.Material.Outlined.ManageSearch, WebPermissions.VerificationAdminRead),
+            new("Audit", "admin/verification/audit", Icons.Material.Outlined.History, WebPermissions.AuditRead),
+        ]),
         new("Insights",
         [
             new("Reports", "admin/reports", Icons.Material.Outlined.Assessment, WebPermissions.ReportsRead),
@@ -53,6 +60,14 @@ public static class NavigationCatalog
             new("Find a person", "client/identify", Icons.Material.Outlined.PersonSearch, WebPermissions.FacesIdentify),
             new("People", "client/profiles", Icons.Material.Outlined.Badge, WebPermissions.FacesRead),
             new("History", "client/history", Icons.Material.Outlined.History, WebPermissions.FacesHistory),
+        ]),
+        new("Document verification",
+        [
+            new("Overview", "client/verification", Icons.Material.Outlined.FactCheck, WebPermissions.VerificationRead, Exact: true),
+            new("Bank statement", "client/verification/bank-statement", Icons.Material.Outlined.AccountBalance, WebPermissions.VerificationBankStatementSubmit),
+            new("PAN", "client/verification/pan", Icons.Material.Outlined.CreditCard, WebPermissions.VerificationPanSubmit),
+            new("Passport", "client/verification/passport", Icons.Material.Outlined.Flight, WebPermissions.VerificationPassportSubmit),
+            new("Verification history", "client/verification/history", Icons.Material.Outlined.History, WebPermissions.VerificationRead),
         ]),
         new("Developer",
         [
