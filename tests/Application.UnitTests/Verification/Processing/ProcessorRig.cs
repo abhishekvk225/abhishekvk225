@@ -110,7 +110,7 @@ internal sealed class InMemoryRequests : IVerificationRepository
 {
     public Dictionary<Guid, VerificationRequest> Rows { get; } = [];
 
-    public VerificationRequest? Created { get; private set; }
+    public VerificationRequest? Created { get; set; }
 
     public VerificationResult? CreatedSubmission { get; private set; }
 

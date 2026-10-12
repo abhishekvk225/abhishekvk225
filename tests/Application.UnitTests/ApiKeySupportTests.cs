@@ -1,3 +1,4 @@
+using NexaVerify.Contracts.Identity;
 using NexaVerify.Application.Api;
 
 namespace NexaVerify.Application.UnitTests;
@@ -51,9 +52,12 @@ public class ApiKeySupportTests
     public void Rules_are_validated(string rule, bool valid) => IpRules.IsValid(rule).ShouldBe(valid);
 
     [Fact]
-    public void Only_face_scopes_are_assignable()
+    public void Only_integration_scopes_are_assignable()
     {
-        ApiKeyScopes.Assignable.ShouldAllBe(s => s.StartsWith("faces.", StringComparison.Ordinal));
+        ApiKeyScopes.Assignable.ShouldAllBe(s => s.StartsWith("faces.", StringComparison.Ordinal) || s.StartsWith("verification.", StringComparison.Ordinal));
         ApiKeyScopes.Assignable.ShouldNotContain("apikeys.manage");
+        ApiKeyScopes.Assignable.ShouldNotContain(Permissions.Verification.DocumentDownload); // identity documents are not for keys
+        ApiKeyScopes.Assignable.ShouldNotContain(Permissions.VerificationAdmin.Read);
+        ApiKeyScopes.Assignable.ShouldNotContain(Permissions.VerificationAdmin.Configure);
     }
 }
