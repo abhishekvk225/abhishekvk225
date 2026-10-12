@@ -1,0 +1,28 @@
+@using NexaVerify.Contracts.Verification
+@using NexaVerify.Contracts.Common
+@inject IVerificationApiClient Api
+
+<MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-2">Transactions</MudText>
+<DataTable T="BankTransactionDto" Caption="Transactions read from the statement" Columns="_columns" LoadPage="LoadAsync" PageSize="25" PageSizeOptions="@(new[] { 25, 50, 100 })" Dense="true"
+           EmptyMessage="No transactions could be read from this statement." />
+
+@code {
+    private IReadOnlyList<DataColumn<BankTransactionDto>> _columns = [];
+
+    [Parameter, EditorRequired] public Guid RequestId { get; set; }
+
+    [Parameter] public string Currency { get; set; } = "INR";
+
+    protected override void OnInitialized() =>
+        _columns =
+        [
+            DataColumn<BankTransactionDto>.Text("Date", t => VerificationText.Day(t.Date)),
+            DataColumn<BankTransactionDto>.Text("Description", t => t.Description),
+            DataColumn<BankTransactionDto>.Text("Debit", t => t.Debit is null ? "—" : VerificationText.Amount(t.Debit, Currency), numeric: true),
+            DataColumn<BankTransactionDto>.Text("Credit", t => t.Credit is null ? "—" : VerificationText.Amount(t.Credit, Currency), numeric: true),
+            DataColumn<BankTransactionDto>.Text("Balance", t => VerificationText.Amount(t.Balance, Currency), numeric: true),
+        ];
+
+    private Task<ApiResult<PagedResult<BankTransactionDto>>> LoadAsync(PageRequest page, CancellationToken ct) =>
+        Api.GetTransactionsAsync(RequestId, new VerificationTransactionsQuery { Page = page.Page, PageSize = page.PageSize }, ct);
+}

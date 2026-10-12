@@ -1,0 +1,31 @@
+@using NexaVerify.Contracts.Verification
+@using NexaVerify.Web.Services
+
+<ol class="nv-stepper" aria-label="Stages of this check" data-testid="stage-stepper">
+    @foreach (var (name, state) in Steps())
+    {
+        <li data-stage="@name" data-state="@state">
+            <span class="nv-step-name">@name</span>
+            <StatusChip Kind="StatusKind.Stage" Value="@state" />
+            <span class="nv-muted">@VerificationText.StageStateHelp(name, state)</span>
+        </li>
+    }
+    <li data-stage="Official verification" data-state="@Stages.ExternalVerification">
+        <span class="nv-step-name">Official verification</span>
+        <ExternalStateChip State="@Stages.ExternalVerification" />
+        <span class="nv-muted">@VerificationText.ExternalHeadline(Stages.ExternalVerification, Stages.ExternalProviderId)</span>
+    </li>
+</ol>
+<MudText Typo="Typo.caption" Class="nv-muted mt-2 d-block">"Done" means the step ran. The checks below show what it found.</MudText>
+
+@code {
+    [Parameter, EditorRequired] public VerificationStagesDto Stages { get; set; } = default!;
+
+    private IEnumerable<(string, string)> Steps() =>
+    [
+        ("Uploaded", Stages.Uploaded),
+        ("Extracted", Stages.Extracted),
+        ("Rules checked", Stages.RulesChecked),
+        ("Consistency checked", Stages.ConsistencyChecked),
+    ];
+}

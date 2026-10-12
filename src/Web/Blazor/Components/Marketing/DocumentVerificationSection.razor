@@ -1,0 +1,19 @@
+@* Public description of the document checks. Static copy: the three release-1 checks are Available; the rest are labelled Upcoming and
+   promise nothing. No claim that a document is genuine: only an approved, set-up provider can confirm details. *@
+<MkSection Id="documents" Tone="@Tone" Eyebrow="Document verification" Title="Read and check documents" Lead="Upload a document and get the details read out, with checks for mistakes and numbers that do not add up.">
+    <div class="mk-grid mk-grid-3" data-testid="doc-available">
+        <FeatureCard Icon="list" Title="Bank statements">Reads the account details and every transaction, then checks that balances and totals add up. Available.</FeatureCard>
+        <FeatureCard Icon="check-person" Title="PAN">Checks the PAN format and compares the card with the details you enter. Available.</FeatureCard>
+        <FeatureCard Icon="shield" Title="Passports">Reads the photo page, checks dates and the machine-readable zone, and compares it with your details. Available.</FeatureCard>
+    </div>
+    <aside class="mk-note" aria-label="What document checks do" data-testid="doc-note">
+        <MkIcon Name="info" Size="20" />
+        <p><strong>Good to know:</strong> these checks read a document and look for inconsistencies. They do not prove that a document is real or was issued to the person named on it. Confirming details with an official source needs an approved provider to be set up for your account, which is not the case until you arrange it with us.</p>
+    </aside>
+    <h3 class="mk-h3" data-testid="doc-upcoming-title">Upcoming</h3>
+    <p class="mk-muted">Planned, not available yet, and not charged for: Aadhaar, driving licence, voter ID, DigiLocker, further government documents, and additional KYC and fraud checks.</p>
+</MkSection>
+
+@code {
+    [Parameter] public string Tone { get; set; } = "alt";
+}

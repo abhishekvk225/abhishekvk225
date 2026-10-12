@@ -13,6 +13,8 @@
     <Using Include="MudBlazor" />
     <Using Include="MudBlazor.Services" />
     <Using Include="NexaVerify.Web.Components" />
+    <Using Include="NexaVerify.Web.Components.Verification" />
+    <Using Include="NexaVerify.Contracts.Verification" />
     <Using Include="NexaVerify.Web.Services" />
   </ItemGroup>
 </Project>

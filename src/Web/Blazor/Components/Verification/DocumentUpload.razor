@@ -1,0 +1,166 @@
+@using NexaVerify.Contracts.Verification
+@using NexaVerify.Web.Services
+@using Microsoft.AspNetCore.Components.Forms
+
+<div data-testid="document-upload">
+    <MudText Typo="Typo.subtitle2" HtmlTag="h2" Class="mb-1" id="@LabelId">@Label</MudText>
+    <MudText Typo="Typo.body2" Class="nv-muted mb-2" data-testid="upload-rules">
+        @AcceptedText
+    </MudText>
+
+    @if (Value is null)
+    {
+        <div class="nv-drop">
+            <MudFileUpload T="IBrowserFile" Accept="@Accept" OnFilesChanged="OnFilesChangedAsync" MaximumFileCount="1" Disabled="Disabled || _reading" DragAndDrop="true">
+                <CustomContent>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.UploadFile" OnClick="@(() => context.OpenFilePickerAsync())" Disabled="Disabled || _reading" aria-describedby="@LabelId" data-testid="choose-file">
+                        @(_reading ? "Reading file…" : "Choose a file")
+                    </MudButton>
+                </CustomContent>
+            </MudFileUpload>
+            @if (_reading)
+            {
+                <MudProgressLinear Value="_readPercent" Color="Color.Primary" aria-label="Reading the file" data-testid="read-progress" />
+            }
+        </div>
+    }
+    else
+    {
+        <MudAlert Severity="Severity.Success" Dense="true" Variant="Variant.Outlined" data-testid="file-ready" role="status">
+            File ready: @DocumentSniffer.KindLabel(Value.ContentType), @DocumentSniffer.SizeText(Value.Data.Length).
+            <MudButton Size="Size.Small" Variant="Variant.Text" Disabled="Disabled" OnClick="RemoveAsync" data-testid="file-remove">Remove file</MudButton>
+        </MudAlert>
+    }
+
+    @if (_problem is not null)
+    {
+        <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2" role="alert" data-testid="file-problem">@_problem</MudAlert>
+    }
+    @if (_hint is not null)
+    {
+        <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2" role="status" data-testid="file-hint">@_hint</MudAlert>
+    }
+</div>
+
+@code {
+    private string? _problem;
+    private string? _hint;
+    private bool _reading;
+    private int _readPercent;
+    private readonly string LabelId = "doc-label-" + Guid.NewGuid().ToString("N")[..6];
+
+    public const int FallbackMaxBytes = 10 * 1024 * 1024;
+
+    [Parameter] public string Label { get; set; } = "Document";
+
+    /// <summary>The module's limits from the catalogue; sensible defaults are used until they arrive.</summary>
+    [Parameter] public VerificationLimitsDto? Limits { get; set; }
+
+    [Parameter] public DocumentUploadFile? Value { get; set; }
+
+    [Parameter] public EventCallback<DocumentUploadFile?> ValueChanged { get; set; }
+
+    [Parameter] public bool Disabled { get; set; }
+
+    private long MaxBytes => Limits is { MaxFileBytes: > 0 } l ? l.MaxFileBytes : FallbackMaxBytes;
+
+    private IReadOnlyList<string> Extensions => Limits is { Extensions.Count: > 0 } l ? l.Extensions.Select(e => e.StartsWith('.') ? e.ToLowerInvariant() : "." + e.ToLowerInvariant()).ToList() : DocumentSniffer.DefaultExtensions;
+
+    private string Accept => string.Join(",", Extensions);
+
+    private string AcceptedText =>
+        $"Accepted: {string.Join(", ", Extensions.Select(e => e.TrimStart('.').ToUpperInvariant()))}. Up to {DocumentSniffer.SizeText(MaxBytes)}" +
+        (Limits is { MaxPages: > 0 } l ? $" and {UiText.Plural(l.MaxPages, "page")}." : ".");
+
+    private async Task OnFilesChangedAsync(InputFileChangeEventArgs args)
+    {
+        _problem = null;
+        _hint = null;
+        var file = args.File;
+        if (file.Size == 0)
+        {
+            _problem = "That file is empty. Choose a file that has content.";
+            return;
+        }
+
+        if (file.Size > MaxBytes)
+        {
+            _problem = $"That file is too large ({DocumentSniffer.SizeText(file.Size)}). The limit is {DocumentSniffer.SizeText(MaxBytes)}.";
+            return;
+        }
+
+        var extension = DocumentSniffer.ExtensionOf(file.Name);
+        if (!Extensions.Contains(extension))
+        {
+            _problem = $"That kind of file is not accepted. Use {string.Join(", ", Extensions.Select(e => e.TrimStart('.').ToUpperInvariant()))}.";
+            return;
+        }
+
+        _reading = true;
+        _readPercent = 0;
+        byte[] data;
+        try
+        {
+            data = new byte[file.Size];
+            await using var stream = file.OpenReadStream(MaxBytes);
+            var read = 0;
+            while (read < data.Length)
+            {
+                var n = await stream.ReadAsync(data.AsMemory(read));
+                if (n == 0)
+                {
+                    break;
+                }
+
+                read += n;
+                _readPercent = (int)(read * 100L / data.Length);
+                StateHasChanged();
+            }
+
+            if (read != data.Length)
+            {
+                _problem = "The file could not be read completely. Please choose it again.";
+                return;
+            }
+        }
+        catch (IOException)
+        {
+            _problem = "The file could not be read. Please choose it again.";
+            return;
+        }
+        finally
+        {
+            _reading = false;
+        }
+
+        var type = DocumentSniffer.Detect(data);
+        if (type is null || !Extensions.Contains(DocumentSniffer.ExtensionFor(type)))
+        {
+            _problem = "That file does not look like an accepted document. Use a real PDF or photo, not a renamed file.";
+            return;
+        }
+
+        if (!DocumentSniffer.ExtensionMatches(file.Name, type))
+        {
+            _problem = $"The file name says {extension.TrimStart('.').ToUpperInvariant()} but the contents are {DocumentSniffer.KindLabel(type)}. Please choose the original file.";
+            return;
+        }
+
+        if (type == DocumentSniffer.Pdf && Limits is { MaxPages: > 0 } limits && DocumentSniffer.EstimatePdfPages(data) is { } pages && pages > limits.MaxPages)
+        {
+            _hint = $"This PDF looks like it has about {pages} pages and the limit is {limits.MaxPages}. We will check properly when you submit, and may refuse it.";
+        }
+
+        Value = new DocumentUploadFile(data, type, file.Name);
+        await ValueChanged.InvokeAsync(Value);
+    }
+
+    private async Task RemoveAsync()
+    {
+        Value?.Wipe();
+        Value = null;
+        _problem = null;
+        _hint = null;
+        await ValueChanged.InvokeAsync(null);
+    }
+}

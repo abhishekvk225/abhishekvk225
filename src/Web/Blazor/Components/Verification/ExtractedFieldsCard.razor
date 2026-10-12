@@ -1,0 +1,81 @@
+@using NexaVerify.Contracts.Verification
+@using NexaVerify.Web.Services
+
+<MudPaper Class="nv-card nv-card-pad" Elevation="0" data-testid="extracted-card">
+    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-1">Details read from the document</MudText>
+    <MudText Typo="Typo.body2" Class="nv-muted mb-3">Reading can contain mistakes. Identifiers are partly hidden.</MudText>
+    @if (Data is null || (Data.BankStatement is null && Data.Pan is null && Data.Passport is null))
+    {
+        <EmptyState Icon="@Icons.Material.Outlined.Description" Title="No details to show"
+                    Message="@(Purged ? "The document and its details were erased." : "Nothing could be read from the document.")" />
+    }
+    else if (Data.BankStatement is { } bank)
+    {
+        <DetailList Items="BankItems(bank)" />
+    }
+    else if (Data.Pan is { } pan)
+    {
+        <DetailList Items="PanItems(pan)" />
+    }
+    else if (Data.Passport is { } passport)
+    {
+        <DetailList Items="PassportItems(passport)" />
+    }
+</MudPaper>
+
+@code {
+    [Parameter] public VerificationExtractedDto? Data { get; set; }
+
+    [Parameter] public bool Purged { get; set; }
+
+    private static IReadOnlyList<DetailItem> BankItems(BankStatementExtractedDto b) =>
+    [
+        new("Bank", b.BankName),
+        new("Account holder", b.AccountHolderName),
+        new("Account number", b.AccountNumberMasked),
+        new("Statement period", b.PeriodFrom is null && b.PeriodTo is null ? null : $"{VerificationText.Day(b.PeriodFrom)} to {VerificationText.Day(b.PeriodTo)}"),
+        new("Opening balance", VerificationText.Amount(b.OpeningBalance, b.Currency)),
+        new("Closing balance", VerificationText.Amount(b.ClosingBalance, b.Currency)),
+        new("Total credits", VerificationText.Amount(b.TotalCredits, b.Currency)),
+        new("Total debits", VerificationText.Amount(b.TotalDebits, b.Currency)),
+        new("Transactions found", UiText.Number(b.TransactionCount)),
+    ];
+
+    private static IReadOnlyList<DetailItem> PanItems(PanExtractedDto p) =>
+    [
+        new("PAN", p.PanMasked),
+        new("Holder type", p.HolderType ?? p.HolderTypeCode),
+        new("Name on the card", p.NameOnCard),
+        new("Father's name", p.FatherName),
+        new("Date of birth", VerificationText.Day(p.DateOfBirth)),
+    ];
+
+    private static IReadOnlyList<DetailItem> PassportItems(PassportExtractedDto p) =>
+    [
+        new("Passport number", p.PassportNumberMasked),
+        new("Surname", p.Surname),
+        new("Given names", p.GivenNames),
+        new("Nationality", p.Nationality),
+        new("Issued by", p.IssuingCountry),
+        new("Date of birth", VerificationText.Day(p.DateOfBirth)),
+        new("Sex", p.Sex),
+        new("Issue date", VerificationText.Day(p.DateOfIssue)),
+        new("Expiry date", VerificationText.Day(p.DateOfExpiry) + (p.IsExpired ? " (expired)" : string.Empty)),
+        new("Machine-readable zone", p.Mrz.Present ? "Found" : "Not found"),
+        .. MrzItems(p.Mrz),
+    ];
+
+    private static IEnumerable<DetailItem> MrzItems(MrzDto mrz)
+    {
+        if (mrz.Checks is not { } c)
+        {
+            yield break;
+        }
+
+        yield return new("Number check digit", VerificationText.MrzLabel(c.DocumentNumber));
+        yield return new("Birth date check digit", VerificationText.MrzLabel(c.DateOfBirth));
+        yield return new("Expiry check digit", VerificationText.MrzLabel(c.DateOfExpiry));
+        yield return new("Personal number check digit", VerificationText.MrzLabel(c.PersonalNumber));
+        yield return new("Overall check digit", VerificationText.MrzLabel(c.Composite));
+    }
+}

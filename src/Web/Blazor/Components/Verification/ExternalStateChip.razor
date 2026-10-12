@@ -1,0 +1,6 @@
+@* The official (provider) check. "Verified" appears here and nowhere else. *@
+<StatusChip Kind="StatusKind.External" Value="@State" />
+
+@code {
+    [Parameter, EditorRequired] public string? State { get; set; }
+}

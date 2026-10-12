@@ -1,0 +1,73 @@
+@page "/admin/verification/requests/{ClientId:guid}/{Id:guid}"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.VerificationAdminRead)]
+@implements IDisposable
+@inject IAdminVerificationApiClient Api
+
+<PageTitle>Request details · Admin · NexaVerify</PageTitle>
+
+<PageState T="AdminVerificationDetailDto" Result="_state.Result" OnRetry="LoadAsync">
+    <Loading><DashboardSkeleton Cards="2" /></Loading>
+    <ChildContent Context="detail">
+        @{ var item = detail.Item; }
+        <PageHeader Title="@($"{VerificationTypes.Label(item.Type)} request")" Subtitle="@($"Reference {item.RequestId}")"
+                    Breadcrumbs="@(new List<BreadcrumbItem> { new("Investigation", "admin/verification/requests"), new(VerificationText.ShortId(item.RequestId), null, true) })" />
+        <div class="nv-banner mb-4" role="note" data-testid="privacy-banner">
+            <MudIcon Icon="@Icons.Material.Outlined.Lock" aria-hidden="true" />
+            <span>Documents and extracted data are not visible to platform staff. Opening this request was recorded in the audit log.</span>
+        </div>
+        <MudGrid Spacing="3">
+            <MudItem xs="12" lg="6">
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Where it got to</MudText>
+                    <div class="mb-3"><VerificationStatusChip Status="@item.Status" /></div>
+                    <StageStepper Stages="item.Stages" />
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" lg="6">
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Summary</MudText>
+                    <DetailList Items="Summary(item)" />
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12">
+                <MudPaper Class="nv-card nv-card-pad" Elevation="0">
+                    <MudText Typo="Typo.h5" HtmlTag="h2" Class="mb-3">Timeline</MudText>
+                    <ol class="nv-feed" aria-label="Timeline" data-testid="timeline">
+                        @foreach (var e in detail.Events)
+                        {
+                            <li><span>@VerificationText.When(e.CreatedAt)</span><span>@(e.FromStatus is null ? "Created as" : VerificationText.StatusLabel(e.FromStatus) + " to") <strong>@VerificationText.StatusLabel(e.ToStatus)</strong> (@e.ActorType)@(e.NoteCode is null ? string.Empty : " · " + e.NoteCode)</span></li>
+                        }
+                    </ol>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    </ChildContent>
+</PageState>
+
+@code {
+    private readonly LoadState<AdminVerificationDetailDto> _state = new();
+
+    [Parameter] public Guid ClientId { get; set; }
+
+    [Parameter] public Guid Id { get; set; }
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    public void Dispose() => _state.Dispose();
+
+    private Task LoadAsync() => _state.LoadAsync(ct => Api.GetRequestAsync(ClientId, Id, ct));
+
+    private static IReadOnlyList<DetailItem> Summary(AdminVerificationItemDto i) =>
+    [
+        new("Status", VerificationText.StatusLabel(i.Status)),
+        new("Error code", i.ErrorCode),
+        new("Needs review", i.ReviewRequired ? "Yes" : "No"),
+        new("Attempts", UiText.Number(i.Attempts)),
+        new("Credits for reading", UiText.Number(i.CreditsCharged)),
+        new("Credits for provider check", UiText.Number(i.ProviderCreditsCharged)),
+        new("Submitted", VerificationText.When(i.CreatedAt)),
+        new("Started", VerificationText.When(i.StartedAt)),
+        new("Finished", VerificationText.When(i.CompletedAt)),
+        new("Support reference", i.CorrelationId),
+    ];
+}

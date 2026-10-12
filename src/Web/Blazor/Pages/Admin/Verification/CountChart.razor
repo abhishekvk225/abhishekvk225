@@ -1,0 +1,13 @@
+@* A titled bar chart of "key and count" rows with its accessible table alternative. *@
+<ChartCard Title="@Title" IsEmpty="@(Rows.Count == 0)">
+    <ChildContent><SimpleChart Kind="ChartKind.Bar" Series="Series" Description="@($"Bar chart: {Title}.")" /></ChildContent>
+    <TableContent><SeriesTable Series="Series" LabelHeader="Item" Caption="@Title" /></TableContent>
+</ChartCard>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired] public IReadOnlyList<VerificationCountDto> Rows { get; set; } = [];
+
+    private IReadOnlyList<TrendSeries> Series => [new TrendSeries("Count", Rows.Select(r => new TrendPoint(VerificationText.Humanize(r.Key), r.Count)).ToList())];
+}

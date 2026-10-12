@@ -1,0 +1,52 @@
+@using NexaVerify.Web.Services
+@inject CurrentUserState User
+
+<div class="nv-card nv-module-card" data-testid="module-card" data-module="@Module.Key">
+    <div class="d-flex align-center justify-space-between" style="gap: var(--nv-space-2);">
+        <MudText Typo="Typo.h6" HtmlTag="h3">@Module.DisplayName</MudText>
+        @if (Module.IsDisabled)
+        {
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" tabindex="-1">Temporarily unavailable</MudChip>
+        }
+        else
+        {
+            <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Text" tabindex="-1">Available</MudChip>
+        }
+    </div>
+    <MudText Typo="Typo.body2" Class="nv-muted">@Module.Description</MudText>
+    @if (Module.Limits is { } limits)
+    {
+        <MudText Typo="Typo.caption" Class="nv-muted">Up to @DocumentSniffer.SizeText(limits.MaxFileBytes), @string.Join(", ", limits.Extensions.Select(e => e.TrimStart('.').ToUpperInvariant()))@(limits.MaxPages > 0 ? $", up to {limits.MaxPages} pages" : string.Empty).</MudText>
+    }
+    @if (Module.ProviderConfigured == false)
+    {
+        <MudText Typo="Typo.caption" Class="nv-muted" data-testid="module-no-provider">Official verification is not set up yet. Documents are read and checked for consistency only.</MudText>
+    }
+    <div class="mt-auto pt-2">
+        @if (!Module.IsDisabled && CanStart)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="@Route" data-testid="module-start">Start a check</MudButton>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public VerificationModuleInfo Module { get; set; } = default!;
+
+    private string Route => Module.Key switch
+    {
+        "bank-statement" => VerificationTypes.SubmitRoute(VerificationTypes.BankStatement),
+        "pan" => VerificationTypes.SubmitRoute(VerificationTypes.Pan),
+        "passport" => VerificationTypes.SubmitRoute(VerificationTypes.Passport),
+        _ => "client/verification",
+    };
+
+    private bool CanStart => Module.Key is "bank-statement" or "pan" or "passport" && Module.RequiredPermissions.All(User.Has) && User.Has(PermissionFor(Module.Key));
+
+    private static string PermissionFor(string key) => key switch
+    {
+        "bank-statement" => WebPermissions.VerificationBankStatementSubmit,
+        "pan" => WebPermissions.VerificationPanSubmit,
+        _ => WebPermissions.VerificationPassportSubmit,
+    };
+}
