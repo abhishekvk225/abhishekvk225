@@ -106,3 +106,18 @@ public sealed class VerificationHistoryFilter
 
     public void Clear() => (Type, Status, ReviewOnly, From, To) = (null, null, false, null, null);
 }
+
+/// <summary>Editing the platform price of one verification step.</summary>
+public sealed class VerificationCostForm
+{
+    public required string Operation { get; init; }
+
+    [Range(0, 1000, ErrorMessage = "Use a number between 0 and 1,000.")]
+    public int Credits { get; set; }
+
+    [Required]
+    public string ChargePolicy { get; set; } = "OnCompleted";
+
+    [Required(ErrorMessage = "Say why the price is changing. It is kept in the audit log."), StringLength(300, ErrorMessage = "Use at most 300 characters.")]
+    public string? Reason { get; set; }
+}

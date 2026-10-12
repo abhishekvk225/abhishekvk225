@@ -1,0 +1,91 @@
+@page "/admin/verification"
+@attribute [Authorize(Policy = Policies.PermissionPrefix + WebPermissions.VerificationAdminRead)]
+@implements IDisposable
+@inject IAdminVerificationApiClient Api
+@inject DashboardRangeState Range
+@inject TimeProvider Clock
+
+<PageTitle>Verification operations · Admin · NexaVerify</PageTitle>
+
+<PageHeader Title="Verification operations" Subtitle="Volume, results, provider problems and credits used by document checks. Numbers only: no documents or personal details.">
+    <Actions>
+        <MudSelect T="string" Value="_type" ValueChanged="TypeChangedAsync" Label="Type" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width: 160px;" data-testid="ops-type">
+            <MudSelectItem T="string" Value="@string.Empty">All types</MudSelectItem>
+            @foreach (var type in VerificationTypes.All) { <MudSelectItem T="string" Value="type">@VerificationTypes.Label(type)</MudSelectItem> }
+        </MudSelect>
+        <RangeSelector />
+    </Actions>
+</PageHeader>
+
+<PageState T="VerificationStatsDto" Result="_state.Result" OnRetry="LoadAsync" IsEmpty="@(s => s.Total == 0)" EmptyTitle="No document checks in this period" EmptyMessage="Try a longer time range.">
+    <Loading><DashboardSkeleton Cards="6" /></Loading>
+    <ChildContent Context="s">
+        <MudGrid Spacing="3">
+            <MudItem xs="12" sm="6" md="4" lg="2"><StatCard Title="Checks" Value="@UiText.Number(s.Total)" Icon="@Icons.Material.Outlined.FactCheck" /></MudItem>
+            <MudItem xs="12" sm="6" md="4" lg="2"><StatCard Title="Completed" Value="@UiText.Number(Count(s.ByStatus, "Completed"))" Icon="@Icons.Material.Outlined.TaskAlt" /></MudItem>
+            <MudItem xs="12" sm="6" md="4" lg="2"><StatCard Title="Failed" Value="@UiText.Number(Count(s.ByStatus, "Failed"))" Icon="@Icons.Material.Outlined.ErrorOutline" /></MudItem>
+            <MudItem xs="12" sm="6" md="4" lg="2"><StatCard Title="Needs review" Value="@($"{s.ReviewRequired:N0} ({Percent(s.ReviewRequired, s.Total)})")" Icon="@Icons.Material.Outlined.RateReview" /></MudItem>
+            <MudItem xs="12" sm="6" md="4" lg="2"><StatCard Title="Provider problems" Value="@UiText.Number(Count(s.ProviderOutcomes, "ProviderError") + Count(s.ProviderOutcomes, "Timeout"))" Icon="@Icons.Material.Outlined.LinkOff" /></MudItem>
+            <MudItem xs="12" sm="6" md="4" lg="2"><StatCard Title="Credits used" Value="@UiText.Number(s.ExtractionCreditsCharged + s.ProviderCreditsCharged)" Icon="@Icons.Material.Outlined.Toll">
+                <MudText Typo="Typo.caption" Class="nv-muted">Reading @UiText.Number(s.ExtractionCreditsCharged), provider @UiText.Number(s.ProviderCreditsCharged)</MudText></StatCard></MudItem>
+
+            <MudItem xs="12" md="6" lg="4"><StatCard Title="Waiting in the queue" Value="@UiText.Number(s.QueueDepth)" Icon="@Icons.Material.Outlined.Schedule">
+                <MudText Typo="Typo.caption" Class="nv-muted">@(s.OldestQueuedAgeSeconds is { } age ? $"Oldest has waited {Seconds(age)}" : "Nothing is waiting")</MudText></StatCard></MudItem>
+            <MudItem xs="12" md="6" lg="4"><StatCard Title="Typical processing time" Value="@(s.P50ProcessingSeconds is { } p50 ? Seconds(p50) : "—")" Icon="@Icons.Material.Outlined.Speed">
+                <MudText Typo="Typo.caption" Class="nv-muted">Slowest 5%: @(s.P95ProcessingSeconds is { } p95 ? Seconds(p95) : "—")</MudText></StatCard></MudItem>
+
+            <MudItem xs="12" lg="6"><CountChart Title="Checks by type" Rows="s.ByType" /></MudItem>
+            <MudItem xs="12" lg="6"><CountChart Title="Checks by result" Rows="s.ByStatus" /></MudItem>
+            <MudItem xs="12" lg="6"><CountChart Title="Official check outcomes" Rows="s.ProviderOutcomes" /></MudItem>
+            <MudItem xs="12" lg="6"><CountChart Title="Why checks failed" Rows="s.FailuresByErrorCode" /></MudItem>
+            <MudItem xs="12" lg="6">
+                <ChartCard Title="Credits used" Subtitle="@($"Last {Range.Days} days")" IsEmpty="@(s.ExtractionCreditsCharged + s.ProviderCreditsCharged == 0)">
+                    <ChildContent><SimpleChart Kind="ChartKind.Bar" Series="CreditSeries(s)" Description="Bar chart of credits used for reading documents and for provider checks." /></ChildContent>
+                    <TableContent><SeriesTable Series="CreditSeries(s)" LabelHeader="Step" Caption="Credits used by step" /></TableContent>
+                </ChartCard>
+            </MudItem>
+            <MudItem xs="12" lg="6"><UsageCsvCard DownloadPath="bff/admin/verification/stats.csv" Title="Export (CSV)" Description="These numbers as a spreadsheet." MaxDays="92" /></MudItem>
+        </MudGrid>
+    </ChildContent>
+</PageState>
+
+@code {
+    private readonly LoadState<VerificationStatsDto> _state = new();
+    private string _type = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Range.Changed += OnRangeChanged;
+        await LoadAsync();
+    }
+
+    public void Dispose() { Range.Changed -= OnRangeChanged; _state.Dispose(); }
+
+    private void OnRangeChanged() => _ = InvokeAsync(async () =>
+    {
+        try { await LoadAsync(); StateHasChanged(); }
+        catch (Exception) { /* LoadState never throws for API failures; do not take the circuit down from a callback. */ }
+    });
+
+    private Task TypeChangedAsync(string? type)
+    {
+        _type = type ?? string.Empty;
+        return LoadAsync();
+    }
+
+    private Task LoadAsync()
+    {
+        var now = Clock.GetUtcNow().UtcDateTime;
+        return _state.LoadAsync(ct => Api.GetStatsAsync(new VerificationStatsQuery { From = now.AddDays(-Range.Days), To = now, Type = string.IsNullOrEmpty(_type) ? null : _type }, ct));
+    }
+
+    private static int Count(IReadOnlyList<VerificationCountDto> rows, string key) => rows.FirstOrDefault(r => r.Key == key)?.Count ?? 0;
+
+    private static string Percent(int part, int total) => total == 0 ? "0%" : $"{part * 100.0 / total:0.#}%";
+
+    private static string Seconds(double seconds) => seconds < 90 ? $"{seconds:0.#} s" : $"{seconds / 60:0.#} min";
+
+    private static IReadOnlyList<TrendSeries> CreditSeries(VerificationStatsDto s) =>
+        [new TrendSeries("Credits", [new TrendPoint("Reading and checking", s.ExtractionCreditsCharged), new TrendPoint("Provider check", s.ProviderCreditsCharged)])];
+
+}
