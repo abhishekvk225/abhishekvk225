@@ -1,0 +1,23 @@
+{
+  "id": "synthetic-layout-b",
+  "displayName": "SYNTHETIC test layout B (not a real bank): separate debit and credit columns, dd/MM/yy",
+  "detectPatterns": ["(?i)synthetic\\s+bank\\s+beta"],
+  "header": {
+    "holderName": "(?i)^customer\\s*:\\s*(?<v>[A-Za-z][A-Za-z .'\\-]{1,80})$",
+    "bankName": "(?i)^(?<v>synthetic\\s+bank\\s+beta)\\b",
+    "accountNumber": "(?i)^a/c\\s*no\\s*:\\s*(?<v>[0-9Xx*]{6,24})$",
+    "periodFrom": "(?i)^from\\s*:\\s*(?<v>\\d{2}/\\d{2}/\\d{2})\\b",
+    "periodTo": "(?i)^from\\s*:.*?\\bto\\s*:\\s*(?<v>\\d{2}/\\d{2}/\\d{2})\\b",
+    "openingBalance": "(?i)^opening\\s+bal\\s*:\\s*(?<v>[\\d,]+\\.\\d{2})",
+    "closingBalance": "(?i)^closing\\s+bal\\s*:\\s*(?<v>[\\d,]+\\.\\d{2})"
+  },
+  "transactions": {
+    "lines": [
+      "^(?<date>\\d{2}/\\d{2}/\\d{2})\\s+(?<ref>[A-Z0-9]{6,16})\\s+(?<desc>.+?)\\s+(?<debit>[\\d,]+\\.\\d{2}|-)\\s+(?<credit>[\\d,]+\\.\\d{2}|-)\\s+(?<balance>[\\d,]+\\.\\d{2})$"
+    ],
+    "ignoreLines": ["(?i)^page\\s+\\d+", "(?i)^date\\b", "(?i)^synthetic\\s+bank"]
+  },
+  "dateFormats": ["dd/MM/yy"],
+  "amounts": { "decimalSeparator": ".", "thousandsSeparator": ",", "lakhGrouping": false, "drCrSuffix": false },
+  "defaultCurrency": "INR"
+}

@@ -8,7 +8,8 @@ public sealed record BankHeaderPatterns(
     string? HolderName, string? BankName, string? AccountNumber, string? PeriodFrom, string? PeriodTo, string? OpeningBalance, string? ClosingBalance);
 
 /// <summary>Regex with named groups <c>date, valueDate, desc, ref, debit, credit, balance</c>. Rule files are deploy-time config, validated at start-up.</summary>
-public sealed record BankTransactionPatterns(IReadOnlyList<string> Lines);
+/// <remarks><c>IgnoreLines</c> (additive, optional): page furniture such as column headings and "Page 2 of 3", skipped and never treated as description continuations.</remarks>
+public sealed record BankTransactionPatterns(IReadOnlyList<string> Lines, IReadOnlyList<string>? IgnoreLines = null);
 
 public sealed record AmountFormat(string DecimalSeparator, string ThousandsSeparator, bool LakhGrouping, bool DrCrSuffix);
 
