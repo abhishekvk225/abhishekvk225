@@ -133,6 +133,22 @@ public class AppDbContext : DbContext, IUnitOfWork
 
     public DbSet<Domain.Faces.MatchResult> MatchResults => Set<Domain.Faces.MatchResult>();
 
+    public DbSet<Domain.Verification.VerificationRequest> VerificationRequests => Set<Domain.Verification.VerificationRequest>();
+
+    public DbSet<Domain.Verification.VerificationDocument> VerificationDocuments => Set<Domain.Verification.VerificationDocument>();
+
+    public DbSet<Domain.Verification.VerificationDocumentBlob> VerificationDocumentBlobs => Set<Domain.Verification.VerificationDocumentBlob>();
+
+    public DbSet<Domain.Verification.VerificationResult> VerificationResults => Set<Domain.Verification.VerificationResult>();
+
+    public DbSet<Domain.Verification.VerificationCheck> VerificationChecks => Set<Domain.Verification.VerificationCheck>();
+
+    public DbSet<Domain.Verification.VerificationEvent> VerificationEvents => Set<Domain.Verification.VerificationEvent>();
+
+    public DbSet<Domain.Verification.VerificationDownloadGrant> VerificationDownloadGrants => Set<Domain.Verification.VerificationDownloadGrant>();
+
+    public DbSet<Domain.Verification.VerificationModuleSetting> VerificationModuleSettings => Set<Domain.Verification.VerificationModuleSetting>();
+
     // Read by the compiled query filters at query time (EF re-evaluates them per context instance).
     private bool FilterIsPlatform => _tenant.IsPlatform;
 

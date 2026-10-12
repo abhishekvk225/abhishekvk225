@@ -1207,7 +1207,7 @@ namespace NexaVerify.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_RecognitionRequests_Credits", "[CreditsCharged] >= 0");
 
-                            t.HasCheckConstraint("CK_RecognitionRequests_Operation", "[Operation] IN ('Enroll', 'Verify', 'Identify', 'Detect')");
+                            t.HasCheckConstraint("CK_RecognitionRequests_Operation", "[Operation] IN ('Enroll', 'Verify', 'Identify', 'Detect', 'BankStatementExtraction', 'PanExtraction', 'PanProviderCheck', 'PassportExtraction', 'PassportProviderCheck')");
 
                             t.HasCheckConstraint("CK_RecognitionRequests_Outcome", "[Outcome] IN ('Enrolled', 'Matched', 'NoMatch', 'NoFaceDetected', 'MultipleFaces', 'LowQuality', 'ProviderError', 'Rejected')");
 
@@ -1841,7 +1841,7 @@ namespace NexaVerify.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_ClientCostRules_Credits", "[Credits] BETWEEN 0 AND 1000");
 
-                            t.HasCheckConstraint("CK_ClientCostRules_Operation", "[Operation] IN ('Enroll', 'Verify', 'Identify', 'Detect')");
+                            t.HasCheckConstraint("CK_ClientCostRules_Operation", "[Operation] IN ('Enroll', 'Verify', 'Identify', 'Detect', 'BankStatementExtraction', 'PanExtraction', 'PanProviderCheck', 'PassportExtraction', 'PassportProviderCheck')");
                         });
                 });
 
@@ -1901,7 +1901,7 @@ namespace NexaVerify.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_CostRules_Credits", "[Credits] BETWEEN 0 AND 1000");
 
-                            t.HasCheckConstraint("CK_CostRules_Operation", "[Operation] IN ('Enroll', 'Verify', 'Identify', 'Detect')");
+                            t.HasCheckConstraint("CK_CostRules_Operation", "[Operation] IN ('Enroll', 'Verify', 'Identify', 'Detect', 'BankStatementExtraction', 'PanExtraction', 'PanProviderCheck', 'PassportExtraction', 'PassportProviderCheck')");
                         });
                 });
 
@@ -2435,7 +2435,7 @@ namespace NexaVerify.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_LicenseTransactions_Balance", "[BalanceAfter] = [BalanceBefore] + [Credits] AND [BalanceAfter] >= 0");
 
-                            t.HasCheckConstraint("CK_LicenseTransactions_Operation", "[Operation] IN ('Enroll', 'Verify', 'Identify', 'Detect')");
+                            t.HasCheckConstraint("CK_LicenseTransactions_Operation", "[Operation] IN ('Enroll', 'Verify', 'Identify', 'Detect', 'BankStatementExtraction', 'PanExtraction', 'PanProviderCheck', 'PassportExtraction', 'PassportProviderCheck')");
 
                             t.HasCheckConstraint("CK_LicenseTransactions_Type", "[Type] IN ('Grant', 'Consume', 'Refund', 'Adjustment', 'Renewal', 'ExpiryWriteOff', 'Revocation')");
                         });
@@ -2987,6 +2987,598 @@ namespace NexaVerify.Infrastructure.Persistence.Migrations
                     b.ToTable("ContactRequests", "tenancy");
                 });
 
+            modelBuilder.Entity("NexaVerify.Domain.Verification.VerificationCheck", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(60)");
+
+                    b.Property<string>("Field")
+                        .HasMaxLength(60)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(60)");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<int>("Ordinal")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("Stage")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RequestId");
+
+                    b.HasIndex("ClientId", "RequestId", "Ordinal");
+
+                    b.ToTable("Checks", "verification", t =>
+                        {
+                            t.HasCheckConstraint("CK_Checks_Outcome", "[Outcome] IN ('Pass', 'Warn', 'Fail', 'NotApplicable', 'NotEvaluated')");
+
+                            t.HasCheckConstraint("CK_Checks_Severity", "[Severity] IN ('Info', 'Warning', 'Review')");
+
+                            t.HasCheckConstraint("CK_Checks_Stage", "[Stage] IN ('Extraction', 'Rules', 'Consistency', 'External')");
+                        });
+                });
+
+            modelBuilder.Entity("NexaVerify.Domain.Verification.VerificationDocument", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<string>("Extension")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(10)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<int>("PageCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("PurgeAfter")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<DateTime?>("PurgedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("Sha256")
+                        .IsRequired()
+                        .HasColumnType("binary(32)");
+
+                    b.Property<int>("SizeBytes")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RequestId");
+
+                    b.HasIndex("ClientId", "PurgeAfter")
+                        .HasFilter("[PurgedAt] IS NULL");
+
+                    b.HasIndex("ClientId", "RequestId")
+                        .IsUnique();
+
+                    b.ToTable("Documents", "verification", t =>
+                        {
+                            t.HasCheckConstraint("CK_Documents_Kind", "[Kind] IN ('Pdf', 'Jpeg', 'Png', 'WebP')");
+
+                            t.HasCheckConstraint("CK_Documents_Size", "[SizeBytes] > 0 AND [PageCount] >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("NexaVerify.Domain.Verification.VerificationDocumentBlob", b =>
+                {
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("Content")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.HasKey("DocumentId");
+
+                    b.HasIndex("ClientId");
+
+                    b.ToTable("DocumentBlobs", "verification");
+                });
+
+            modelBuilder.Entity("NexaVerify.Domain.Verification.VerificationDownloadGrant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<string>("Format")
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<Guid>("PrincipalId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("TokenHash")
+                        .IsRequired()
+                        .HasColumnType("binary(32)");
+
+                    b.Property<DateTime?>("UsedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("RequestId");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("ClientId", "RequestId");
+
+                    b.ToTable("DownloadGrants", "verification", t =>
+                        {
+                            t.HasCheckConstraint("CK_DownloadGrants_Kind", "[Kind] IN ('Report', 'TransactionsCsv', 'OriginalDocument')");
+                        });
+                });
+
+            modelBuilder.Entity("NexaVerify.Domain.Verification.VerificationEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<Guid?>("ActorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActorType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<string>("FromStatus")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("NoteCode")
+                        .HasMaxLength(60)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(60)");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Stage")
+                        .HasMaxLength(30)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(30)");
+
+                    b.Property<string>("ToStatus")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RequestId");
+
+                    b.HasIndex("ClientId", "RequestId", "Id");
+
+                    b.ToTable("Events", "verification", t =>
+                        {
+                            t.HasCheckConstraint("CK_Events_ActorType", "[ActorType] IN ('System', 'User', 'ApiKey', 'Platform')");
+
+                            t.HasCheckConstraint("CK_Events_FromStatus", "[FromStatus] IN ('Queued', 'Processing', 'Completed', 'ReviewRequired', 'Failed', 'Cancelled', 'Expired')");
+
+                            t.HasCheckConstraint("CK_Events_ToStatus", "[ToStatus] IN ('Queued', 'Processing', 'Completed', 'ReviewRequired', 'Failed', 'Cancelled', 'Expired')");
+                        });
+                });
+
+            modelBuilder.Entity("NexaVerify.Domain.Verification.VerificationModuleSetting", b =>
+                {
+                    b.Property<string>("ModuleKey")
+                        .HasMaxLength(40)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(40)");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("ModuleKey");
+
+                    b.ToTable("ModuleSettings", "verification");
+                });
+
+            modelBuilder.Entity("NexaVerify.Domain.Verification.VerificationRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Assurance")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CancelRequestedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<string>("ConsentReference")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ConsistencyState")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("CreditsCharged")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("DocumentSha256")
+                        .HasColumnType("binary(32)");
+
+                    b.Property<string>("ErrorCode")
+                        .HasMaxLength(50)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(50)");
+
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<DateTime?>("ExternalCompletedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<string>("ExternalProviderId")
+                        .HasMaxLength(50)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(50)");
+
+                    b.Property<string>("ExternalRef")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ExternalReference")
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<string>("ExternalState")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("ExtractionState")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(45)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(45)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid?>("LeaseToken")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("LeaseUntil")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<long?>("LicenseTransactionId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("NextAttemptAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<int?>("PageCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ProviderAttempts")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ProviderCreditsCharged")
+                        .HasColumnType("int");
+
+                    b.Property<long?>("ProviderLicenseTransactionId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("PurgedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<string>("ReviewReasonCodesJson")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<bool>("ReviewRequired")
+                        .HasColumnType("bit");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("RulesState")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<Guid?>("SubmittedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SubmittedByType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("UploadState")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt")
+                        .HasDatabaseName("IX_Requests_Stats")
+                        .HasFilter("[IpAddress] IS NOT NULL");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("CreatedAt"), new[] { "ClientId", "Type", "Status", "ReviewRequired", "ExternalState", "ExternalProviderId", "ErrorCode", "CreditsCharged", "ProviderCreditsCharged", "StartedAt", "CompletedAt" });
+
+                    b.HasIndex("ExpiresAt")
+                        .HasDatabaseName("IX_Requests_Retention")
+                        .HasFilter("[PurgedAt] IS NULL AND [ExpiresAt] IS NOT NULL");
+
+                    b.HasIndex("ClientId", "CreatedAt")
+                        .IsDescending(false, true);
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("ClientId", "CreatedAt"), new[] { "Type", "Status" });
+
+                    b.HasIndex("ClientId", "DocumentSha256")
+                        .HasFilter("[DocumentSha256] IS NOT NULL");
+
+                    b.HasIndex("ClientId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasFilter("[IdempotencyKey] IS NOT NULL");
+
+                    b.HasIndex("Status", "LeaseUntil")
+                        .HasDatabaseName("IX_Requests_Lease")
+                        .HasFilter("[Status] = 'Processing'");
+
+                    b.HasIndex("Status", "NextAttemptAt")
+                        .HasDatabaseName("IX_Requests_Claim")
+                        .HasFilter("[Status] = 'Queued'");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("Status", "NextAttemptAt"), new[] { "ClientId" });
+
+                    b.HasIndex("ClientId", "Status", "CreatedAt")
+                        .IsDescending(false, false, true);
+
+                    b.HasIndex("ClientId", "Type", "Status", "CreatedAt")
+                        .IsDescending(false, false, false, true);
+
+                    b.ToTable("Requests", "verification", t =>
+                        {
+                            t.HasCheckConstraint("CK_Requests_Assurance", "[Assurance] IN ('None', 'ExtractedOnly', 'ChecksCompleted', 'AuthoritativelyVerified')");
+
+                            t.HasCheckConstraint("CK_Requests_ConsistencyState", "[ConsistencyState] IN ('NotStarted', 'Completed', 'Failed', 'Skipped')");
+
+                            t.HasCheckConstraint("CK_Requests_Counters", "[CreditsCharged] >= 0 AND [ProviderCreditsCharged] >= 0 AND [Attempts] >= 0 AND [ProviderAttempts] >= 0");
+
+                            t.HasCheckConstraint("CK_Requests_ExternalState", "[ExternalState] IN ('NotRequested', 'ProviderNotConfigured', 'Pending', 'Verified', 'NotVerified', 'Inconclusive', 'ProviderError', 'Timeout')");
+
+                            t.HasCheckConstraint("CK_Requests_ExtractionState", "[ExtractionState] IN ('NotStarted', 'Completed', 'Failed', 'Skipped')");
+
+                            t.HasCheckConstraint("CK_Requests_Lease", "([LeaseToken] IS NULL AND [LeaseUntil] IS NULL) OR ([LeaseToken] IS NOT NULL AND [LeaseUntil] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_Requests_RulesState", "[RulesState] IN ('NotStarted', 'Completed', 'Failed', 'Skipped')");
+
+                            t.HasCheckConstraint("CK_Requests_Source", "[Source] IN ('Portal', 'Api')");
+
+                            t.HasCheckConstraint("CK_Requests_Status", "[Status] IN ('Queued', 'Processing', 'Completed', 'ReviewRequired', 'Failed', 'Cancelled', 'Expired')");
+
+                            t.HasCheckConstraint("CK_Requests_SubmittedByType", "[SubmittedByType] IN ('System', 'User', 'ApiKey', 'Platform')");
+
+                            t.HasCheckConstraint("CK_Requests_Type", "[Type] IN ('BankStatement', 'Pan', 'Passport')");
+
+                            t.HasCheckConstraint("CK_Requests_UploadState", "[UploadState] IN ('NotStarted', 'Completed', 'Failed', 'Skipped')");
+                        });
+                });
+
+            modelBuilder.Entity("NexaVerify.Domain.Verification.VerificationResult", b =>
+                {
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("DataEnc")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<string>("FieldMatchesJson")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<byte[]>("IdentifierHash")
+                        .HasColumnType("binary(32)");
+
+                    b.Property<string>("IdentifierMasked")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTime>("RetainUntil")
+                        .HasPrecision(3)
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<int>("SchemaVersion")
+                        .HasColumnType("int");
+
+                    b.HasKey("RequestId");
+
+                    b.HasIndex("ClientId", "IdentifierHash")
+                        .HasFilter("[IdentifierHash] IS NOT NULL");
+
+                    b.HasIndex("ClientId", "RetainUntil");
+
+                    b.ToTable("Results", "verification");
+                });
+
             modelBuilder.Entity("NexaVerify.Domain.Api.ApiKey", b =>
                 {
                     b.HasOne("NexaVerify.Domain.Tenancy.Client", null)
@@ -3412,6 +4004,105 @@ namespace NexaVerify.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("NexaVerify.Domain.Verification.VerificationCheck", b =>
+                {
+                    b.HasOne("NexaVerify.Domain.Tenancy.Client", null)
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NexaVerify.Domain.Verification.VerificationRequest", null)
+                        .WithMany()
+                        .HasForeignKey("RequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("NexaVerify.Domain.Verification.VerificationDocument", b =>
+                {
+                    b.HasOne("NexaVerify.Domain.Tenancy.Client", null)
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NexaVerify.Domain.Verification.VerificationRequest", null)
+                        .WithMany()
+                        .HasForeignKey("RequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("NexaVerify.Domain.Verification.VerificationDocumentBlob", b =>
+                {
+                    b.HasOne("NexaVerify.Domain.Tenancy.Client", null)
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NexaVerify.Domain.Verification.VerificationDocument", null)
+                        .WithOne()
+                        .HasForeignKey("NexaVerify.Domain.Verification.VerificationDocumentBlob", "DocumentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("NexaVerify.Domain.Verification.VerificationDownloadGrant", b =>
+                {
+                    b.HasOne("NexaVerify.Domain.Tenancy.Client", null)
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NexaVerify.Domain.Verification.VerificationRequest", null)
+                        .WithMany()
+                        .HasForeignKey("RequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("NexaVerify.Domain.Verification.VerificationEvent", b =>
+                {
+                    b.HasOne("NexaVerify.Domain.Tenancy.Client", null)
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NexaVerify.Domain.Verification.VerificationRequest", null)
+                        .WithMany("Events")
+                        .HasForeignKey("RequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("NexaVerify.Domain.Verification.VerificationRequest", b =>
+                {
+                    b.HasOne("NexaVerify.Domain.Tenancy.Client", null)
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("NexaVerify.Domain.Verification.VerificationResult", b =>
+                {
+                    b.HasOne("NexaVerify.Domain.Tenancy.Client", null)
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NexaVerify.Domain.Verification.VerificationRequest", null)
+                        .WithOne()
+                        .HasForeignKey("NexaVerify.Domain.Verification.VerificationResult", "RequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("NexaVerify.Domain.Faces.RecognitionRequest", b =>
                 {
                     b.Navigation("Matches");
@@ -3420,6 +4111,11 @@ namespace NexaVerify.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("NexaVerify.Domain.Identity.Role", b =>
                 {
                     b.Navigation("Permissions");
+                });
+
+            modelBuilder.Entity("NexaVerify.Domain.Verification.VerificationRequest", b =>
+                {
+                    b.Navigation("Events");
                 });
 #pragma warning restore 612, 618
         }
