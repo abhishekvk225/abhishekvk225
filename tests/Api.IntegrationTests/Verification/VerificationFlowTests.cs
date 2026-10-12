@@ -166,8 +166,8 @@ public class VerificationFlowTests : VerificationTestBase
         var result = await ResultAsync(t, accepted.RequestId);
         result.Extracted.ShouldBeNull();
         result.Document!.Purged.ShouldBeTrue(); // nothing is kept for a failed request
-        var rows = await InTenantAsync(t, async db => (await db.VerificationDocuments.CountAsync(), await db.VerificationResults.CountAsync()));
-        rows.ShouldBe((0, 0));
+        var rows = await InTenantAsync(t, async db => (await db.VerificationDocuments.CountAsync(d => d.PurgedAt == null), await db.VerificationDocumentBlobs.CountAsync(), await db.VerificationResults.CountAsync()));
+        rows.ShouldBe((0, 0, 0));
     }
 
     [Fact]

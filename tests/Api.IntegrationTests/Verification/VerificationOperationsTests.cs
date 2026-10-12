@@ -140,7 +140,7 @@ public class VerificationOperationsTests : VerificationTestBase
         });
         await App.WithDbAsync(async db =>
         {
-            await db.VerificationRequests.Where(r => r.Id == due).ExecuteUpdateAsync(s => s.SetProperty(r => r.ExpiresAt, past).SetProperty(r => r.CreatedAt, DateTime.UtcNow.AddDays(-100)));
+            await db.VerificationRequests.Where(r => r.Id == due).ExecuteUpdateAsync(s => s.SetProperty(r => r.ExpiresAt, past).SetProperty(r => r.CreatedAt, DateTime.UtcNow.AddDays(-100)).SetProperty(r => r.IpAddress, "203.0.113.5"));
             return 0;
         });
 
@@ -149,7 +149,7 @@ public class VerificationOperationsTests : VerificationTestBase
         swept.Results.ShouldBeGreaterThanOrEqualTo(0);
         swept.Requests.ShouldBe(1);
         swept.Grants.ShouldBe(1);
-        swept.IpAddresses.ShouldBeGreaterThanOrEqualTo(1);
+        swept.IpAddresses.ShouldBe(1);
 
         var gone = await ResultAsync(t, due);
         gone.Extracted.ShouldBeNull();

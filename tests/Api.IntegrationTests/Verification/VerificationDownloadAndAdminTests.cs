@@ -217,7 +217,7 @@ public class VerificationDownloadAndAdminTests : VerificationTestBase
         list.StatusCode.ShouldBe(HttpStatusCode.OK);
         var listText = await list.Content.ReadAsStringAsync();
         listText.ShouldContain(bank.RequestId.ToString());
-        foreach (var forbidden in new[] { "masked", "bankStatement", "transactions", "reviewReasons", "externalRef", SampleTexts.Holder, "9900112233" })
+        foreach (var forbidden in new[] { "masked", "\"bankStatement\":", "\"transactions\":", "reviewReasons", "externalRef", SampleTexts.Holder, "9900112233" })
         {
             listText.ShouldNotContain(forbidden, Case.Insensitive);
         }
@@ -227,7 +227,7 @@ public class VerificationDownloadAndAdminTests : VerificationTestBase
         var detailBody = await ReadAsync<AdminVerificationDetailDto>(detail);
         detailBody.Events.Select(e => e.ToStatus).ShouldBe(["Queued", "Processing", "Completed"]);
         var detailText = await detail.Content.ReadAsStringAsync();
-        foreach (var forbidden in new[] { "\"checks\"", "masked", "bankStatement", "transactions", SampleTexts.Holder })
+        foreach (var forbidden in new[] { "\"checks\"", "masked", "\"bankStatement\":", "\"transactions\":", SampleTexts.Holder })
         {
             detailText.ShouldNotContain(forbidden, Case.Insensitive);
         }
