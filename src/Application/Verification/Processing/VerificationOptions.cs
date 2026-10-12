@@ -175,6 +175,9 @@ public sealed class PassportOptions
 
     /// <summary>Validity longer than this raises a warning.</summary>
     public int MaxValidityYears { get; set; } = 10;
+
+    /// <summary>A date of birth implying an older holder than this is implausible (PP_AGE_PLAUSIBLE).</summary>
+    public int MaxAgeYears { get; set; } = 120;
 }
 
 public sealed class NameOptions
