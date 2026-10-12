@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Options;
 using NexaVerify.Application.Abstractions;
 using NexaVerify.Application.Common;
+using NexaVerify.Application.Licensing;
+using NexaVerify.Domain.Licensing;
 using NexaVerify.Application.Verification.Abstractions;
 using NexaVerify.Application.Verification.Modules;
 using NexaVerify.Application.Verification.Processing;
@@ -46,6 +48,7 @@ public sealed class VerificationQueryService : IVerificationQueryService
     private readonly IPermissionEvaluator _permissions;
     private readonly VerificationOptions _options;
     private readonly TimeProvider _time;
+    private readonly ICostRuleResolver _costs;
 
     public VerificationQueryService(
         ICurrentUser user,
@@ -57,8 +60,10 @@ public sealed class VerificationQueryService : IVerificationQueryService
         VerificationEnvelopeCodec codec,
         IPermissionEvaluator permissions,
         IOptions<VerificationOptions> options,
-        TimeProvider time)
+        TimeProvider time,
+        ICostRuleResolver costs)
     {
+        _costs = costs;
         _user = user;
         _requests = requests;
         _documents = documents;
@@ -88,10 +93,23 @@ public sealed class VerificationQueryService : IVerificationQueryService
                 (int)Math.Min(int.MaxValue, _options.Upload.MaxFileBytes), _options.Upload.AllowedExtensions, _options.Upload.MaxPages.For(type));
             modules.Add(new VerificationModuleDto(
                 d.Key, d.DisplayName, d.Description, status.ToString(), status == ModuleStatus.Available, d.SubmitPermissions,
-                _providers.HasProviderStage(type) ? _providers.IsConfigured(type) : null, limits, null));
+                _providers.HasProviderStage(type) ? _providers.IsConfigured(type) : null, limits, null,
+                await CostAsync(type, VerificationStage.Extraction, cancellationToken).ConfigureAwait(false),
+                _providers.HasProviderStage(type) && _providers.IsConfigured(type) ? await CostAsync(type, VerificationStage.Provider, cancellationToken).ConfigureAwait(false) : null));
         }
 
         return modules;
+    }
+
+    /// <summary>The price this client pays for a stage (client override, then platform default). Null when the stage does not exist.</summary>
+    private async Task<int?> CostAsync(VerificationType type, VerificationStage stage, CancellationToken cancellationToken)
+    {
+        if (_user.ClientId is not { } clientId || VerificationOperations.For(type, stage) is not { } operation)
+        {
+            return null;
+        }
+
+        return (await _costs.ResolveAsync(clientId, null, operation, _time.GetUtcNow().UtcDateTime, cancellationToken).ConfigureAwait(false)).Credits;
     }
 
     public async Task<Result<PagedResult<VerificationListItemDto>>> ListAsync(VerificationListQuery query, CancellationToken cancellationToken)

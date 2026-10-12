@@ -244,8 +244,14 @@ public class VerificationDownloadAndAdminTests : VerificationTestBase
     public async Task Credit_costs_per_verification_operation_use_the_existing_cost_rule_admin()
     {
         var t = await NewTenantAsync("D7");
-        (await App.PutAsync("/api/v1/admin/cost-rules/default", new SetCostRuleRequest("PanExtraction", 4, "OnCompleted", null), Platform.AccessToken)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await App.PutAsync("/api/v1/admin/cost-rules/default", new SetCostRuleRequest("PanExtraction", 4, "OnCompleted", null, "pricing review"), Platform.AccessToken)).StatusCode.ShouldBe(HttpStatusCode.OK);
         (await App.PutAsync($"/api/v1/admin/cost-rules/clients/{t.ClientId}", new SetCostRuleRequest("PanProviderCheck", 7, "OnCompleted", null), Platform.AccessToken)).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var catalogue = await ReadAsync<List<VerificationModuleDto>>(await App.GetAsync("/api/v1/verifications/modules", t.Token));
+        var panModule = catalogue.Single(m => m.Key == "pan");
+        (panModule.ExtractionCredits, panModule.ProviderCredits).ShouldBe((4, 7));
+        catalogue.Single(m => m.Key == "bank-statement").ProviderCredits.ShouldBeNull();
+        catalogue.Where(m => m.Status == "Upcoming").ShouldAllBe(m => m.ExtractionCredits == null);
 
         var result = await ProcessAsync(t, await SubmitPanAsync(t, PanPdf("ABCPV1234V"), PanFields("ABCPV1234V")));
         result.Credits!.Extraction.Charged.ShouldBe(4);

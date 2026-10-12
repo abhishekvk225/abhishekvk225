@@ -184,7 +184,7 @@ public sealed class CostRuleService : ICostRuleService
 
         _rules.Add(rule);
         _audit.Record(new AuditEntry("costrule.set", nameof(CostRule), rule.Id.ToString(),
-            NewValues: new { PlanId = planId, Operation = operation.ToString(), request.Credits, Policy = policy.ToString() }));
+            NewValues: new { PlanId = planId, Operation = operation.ToString(), request.Credits, Policy = policy.ToString(), Reason = request.Reason?.Trim() }));
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         return Map(rule);
     }
@@ -220,7 +220,7 @@ public sealed class CostRuleService : ICostRuleService
 
         _rules.Add(rule);
         _audit.Record(new AuditEntry("costrule.client_set", nameof(ClientCostRule), rule.Id.ToString(), clientId,
-            NewValues: new { Operation = operation.ToString(), request.Credits, Policy = policy.ToString() }));
+            NewValues: new { Operation = operation.ToString(), request.Credits, Policy = policy.ToString(), Reason = request.Reason?.Trim() }));
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         return Map(rule);
     }

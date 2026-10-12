@@ -110,5 +110,6 @@ public sealed class SetCostRuleRequestValidator : AbstractValidator<SetCostRuleR
         RuleFor(x => x.Operation).NotEmpty().MaximumLength(30);
         RuleFor(x => x.ChargePolicy).NotEmpty().MaximumLength(30);
         RuleFor(x => x.Credits).InclusiveBetween(0, 1000);
+        RuleFor(x => x.Reason).MaximumLength(300);
     }
 }

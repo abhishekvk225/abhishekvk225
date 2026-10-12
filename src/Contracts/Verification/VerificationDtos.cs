@@ -138,7 +138,8 @@ public sealed record VerificationLimitsDto(int MaxFileBytes, IReadOnlyList<strin
 /// <summary>Upcoming entries have <c>Available = false</c>, no required permissions and no limits: nothing can be submitted or charged.</summary>
 public sealed record VerificationModuleDto(
     string Key, string DisplayName, string Description, string Status, bool Available, IReadOnlyList<string> RequiredPermissions,
-    bool? ProviderConfigured, VerificationLimitsDto? Limits, string? PlannedNote);
+    bool? ProviderConfigured, VerificationLimitsDto? Limits, string? PlannedNote,
+    int? ExtractionCredits = null, int? ProviderCredits = null);
 
 // ---- Downloads -----------------------------------------------------------------------------------------------------------------
 

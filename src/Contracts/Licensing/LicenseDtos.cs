@@ -88,7 +88,7 @@ public sealed record CostRuleDto(
     Guid Id, string Scope, Guid? ClientId, Guid? PlanId, string Operation, int Credits, string ChargePolicy,
     DateTime EffectiveFrom, DateTime? EffectiveTo);
 
-public sealed record SetCostRuleRequest(string Operation, int Credits, string ChargePolicy, DateTime? EffectiveFrom);
+public sealed record SetCostRuleRequest(string Operation, int Credits, string ChargePolicy, DateTime? EffectiveFrom, string? Reason = null);
 
 /// <summary>The first row of a license's ledger that fails verification (null when only the balance disagrees).</summary>
 public sealed record LedgerBreakDto(Guid LicenseId, Guid ClientId, long? FirstBrokenEntryId, string Reason);
